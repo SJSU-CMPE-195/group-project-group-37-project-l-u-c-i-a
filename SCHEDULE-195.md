@@ -12,8 +12,8 @@
 
 | Date | Duration | Format | Attendees | Summary | Action Items |
 |------|----------|--------|-----------|---------|--------------|
-| 2/6/2026 | 30 minutes | Remote | Christian, Ling, Ethan, Noel| Introduction Project Discussion | 2 |
-| | | In-person / Remote | | | |
+| 2/6/2026 | 30 minutes | Remote | Christian, Ling, Ethan, Noel | Introduction Project Discussion | 2 |
+| 2/27/2026| 30 minutes | Remote | Christian, Ling, Ethan, Noel | Project Updated Discussion | |
 | | | In-person / Remote | | | |
 | | | In-person / Remote | | | |
 | | | In-person / Remote | | | |
@@ -124,7 +124,7 @@ Christian, Ling, Ethan, Noel
 
 ---
 
-### 1/26/2026 - Team Meeting
+### 2/26/2026 - Team Meeting
 
 **Attendees:**
 Christian, Ling, Ethan, Noel
@@ -134,19 +134,14 @@ Christian, Ling, Ethan, Noel
 - Organized all our tasks through Jira.
 
 ---
-### [Date] - [Advisor/Team] Meeting
+### 2/27/2026 - Advisor Meeting
 
 **Attendees:**
+Christian, Ling, Ethan, Noel
 
 **Discussion:**
--
-
-**Decisions:**
--
-
-**Action Items:**
-- [ ] [Task] - [Owner] - [Due]
-- [ ] [Task] - [Owner] - [Due]
+- Updated our advisor on our progress of our roomba.
+- Talked about future plans for this week and next week.
 
 ---
 
