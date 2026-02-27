@@ -33,8 +33,8 @@
 |------|----------|--------|-----------|---------|--------------|
 | 1/23/26 | 3 hours | In-person | Christian, Ling, Ethan, Noel | Preliminary setup | 2 |
 | 2/10/26 | 2 hours | In-person | Christian, Ling, Ethan, Noel | Pitch Preparation | 1 |
-| 2/13/26 | 2.5 hours | In-person | Christian, Ling, Ethan, Noel | Roomba Tear-down  | 1|
-| | | In-person / Remote | | | |
+| 2/13/26 | 2.5 hours | In-person | Christian, Ling, Ethan, Noel | Roomba Tear-down  | 1 |
+| 2/26/26 | 30 minutes | Remote | Christian, Ling, Ethan, Noel | Project Organization |  |
 | | | In-person / Remote | | | |
 | | | In-person / Remote | | | |
 | | | In-person / Remote | | | |
@@ -124,6 +124,16 @@ Christian, Ling, Ethan, Noel
 
 ---
 
+### 1/26/2026 - Team Meeting
+
+**Attendees:**
+Christian, Ling, Ethan, Noel
+
+**Discussion:**
+- Preparing what to showcase for tomorrow's advisor meeting.
+- Organized all our tasks through Jira.
+
+---
 ### [Date] - [Advisor/Team] Meeting
 
 **Attendees:**
