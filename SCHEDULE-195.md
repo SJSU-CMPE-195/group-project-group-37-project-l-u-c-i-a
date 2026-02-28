@@ -29,13 +29,13 @@
 
 ## Team Meetings
 
-| Date | Duration | Format | Attendees | Summary | Action Items |
-|------|----------|--------|-----------|---------|--------------|
-| 1/23/26 | 3 hours | In-person | Christian, Ling, Ethan, Noel | Preliminary setup | 2 |
-| 2/10/26 | 2 hours | In-person | Christian, Ling, Ethan, Noel | Pitch Preparation | 1 |
-| 2/13/26 | 2.5 hours | In-person | Christian, Ling, Ethan, Noel | Roomba Tear-down  | 1 |
-| 2/26/26 | 30 minutes | Remote | Christian, Ling, Ethan, Noel | Project Organization |  |
-| | | In-person / Remote | | | |
+| Date | Duration | Format | Attendees | Summary | 
+|------|----------|--------|-----------|---------|
+| 1/23/26 | 3 hours | In-person | Christian, Ling, Ethan, Noel | Preliminary setup |
+| 2/10/26 | 2 hours | In-person | Christian, Ling, Ethan, Noel | Pitch Preparation |
+| 2/13/26 | 2.5 hours | In-person | Christian, Ling, Ethan, Noel | Roomba Tear-down |
+| 2/26/26 | 30 minutes | Remote | Christian, Ling, Ethan, Noel | Project Organization |
+| 2/27/26 | 3.5 hours | In-person | Christian, Ling, Ethan, Noel | Raspberry Pi Setup |
 | | | In-person / Remote | | | |
 | | | In-person / Remote | | | |
 | | | In-person / Remote | | | |
@@ -145,21 +145,16 @@ Christian, Ling, Ethan, Noel
 
 ---
 
-### [Date] - [Advisor/Team] Meeting
+### 2/27/2026 - Team Meeting
 
 **Attendees:**
+Christian, Ling, Ethan, Noel
 
 **Discussion:**
--
+- Bought Raspberry Pi and othre parts
+- Set up networking with the Raspberry Pi
+- Reassembled Roomba with removed parts while retaining movement functionality
 
-**Decisions:**
--
-
-**Action Items:**
-- [ ] [Task] - [Owner] - [Due]
-- [ ] [Task] - [Owner] - [Due]
-
----
 
 ### [Date] - [Advisor/Team] Meeting
 
