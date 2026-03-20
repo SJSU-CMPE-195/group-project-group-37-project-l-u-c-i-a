@@ -14,7 +14,7 @@
 |------|----------|--------|-----------|---------|--------------|
 | 2/6/2026 | 30 minutes | Remote | Christian, Ling, Ethan, Noel | Introduction Project Discussion | 2 |
 | 2/27/2026| 30 minutes | Remote | Christian, Ling, Ethan, Noel | Project Updated Discussion | |
-| | | In-person / Remote | | | |
+| 3/13/2026| | Remote | Christian, Ling, Ethan, Noel | Project Update and Future Meeting Planning | |
 | | | In-person / Remote | | | |
 | | | In-person / Remote | | | |
 | | | In-person / Remote | | | |
@@ -145,15 +145,16 @@ Christian, Ling, Ethan, Noel
 
 ---
 
-### [Date] - [Advisor/Team] Meeting
+### 3/13/2026 - Advisor Meeting
 
 **Attendees:**
-
+Christian, Ling, Ethan, Noel
 **Discussion:**
--
+- Updated advisor on current shipment progress for part acquisition
+- Finalized upcoming plans including a lab visit to acquire parts
 
 **Decisions:**
--
+- Meet on Sunday, March 22nd to discuss progress report and acquire parts
 
 **Action Items:**
 - [ ] [Task] - [Owner] - [Due]
