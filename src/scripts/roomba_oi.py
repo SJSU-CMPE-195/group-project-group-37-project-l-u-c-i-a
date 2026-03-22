@@ -12,7 +12,7 @@ Usage:
     with RoombaOI('/dev/ttyUSB0') as roomba:  # Linux
 
     roomba.start()
-    roomba.safe_mode()
+    roomba.full_mode()
     roomba.drive(200, 32768)  # forward at 200 mm/s
 """
 

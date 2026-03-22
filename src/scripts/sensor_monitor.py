@@ -1,12 +1,12 @@
 """
-sensor_reader.py
+sensor_monitor.py
 
 Continuously polls and displays Roomba sensor data in the terminal.
 Reads bump sensors, cliff sensors, battery state, and wheel encoders.
 
 Usage:
-    python sensor_reader.py --port COM5
-    python sensor_reader.py --port /dev/ttyUSB0 --interval 0.25
+    python sensor_monitor.py --port COM5
+    python sensor_monitor.py --port /dev/ttyUSB0 --interval 0.25
 """
 
 import argparse
@@ -57,7 +57,7 @@ def print_dashboard(bumps, cliffs, battery, encoders, iteration):
 
 
 def main():
-    parser = argparse.ArgumentParser(description='Roomba sensor reader')
+    parser = argparse.ArgumentParser(description='Roomba live sensor monitor')
     parser.add_argument('--port', default='COM5',
                         help='Serial port (e.g. COM5 or /dev/ttyUSB0)')
     parser.add_argument('--interval', type=float, default=0.5,
@@ -67,7 +67,7 @@ def main():
     print(f"Connecting on {args.port}...")
     with RoombaOI(args.port) as roomba:
         roomba.start()
-        roomba.safe_mode()
+        roomba.full_mode()
         time.sleep(0.5)
 
         iteration = 0

@@ -1,5 +1,5 @@
 """
-keyboard_control.py
+drive_keyboard.py
 
 Real-time keyboard control for the Roomba using pynput.
 Hold keys to drive — release to stop. Supports combined inputs
@@ -9,8 +9,8 @@ Requirements:
     pip install pynput
 
 Usage:
-    python keyboard_control.py --port COM5
-    python keyboard_control.py --port /dev/ttyUSB0 --speed 250
+    python drive_keyboard.py --port COM5
+    python drive_keyboard.py --port /dev/ttyUSB0 --speed 250
 
 Controls:
     W        — forward
@@ -26,7 +26,6 @@ Controls:
 
 import argparse
 import time
-import threading
 
 from pynput import keyboard
 from roomba_oi import RoombaOI
@@ -51,7 +50,7 @@ def on_release(key):
     except AttributeError:
         pressed.discard(key)
 
-    if key == keyboard.Key.esc or 'q' in pressed:
+    if key == keyboard.Key.esc or (hasattr(key, 'char') and key.char and key.char.lower() == 'q'):
         running = False
         return False  # stop listener
 
@@ -95,7 +94,6 @@ def compute_wheel_speeds(speed):
 
 
 def print_status(left, right):
-    arrow = "■"
     if left > 0 and right > 0:
         arrow = "▲  FORWARD"
     elif left < 0 and right < 0:
@@ -108,7 +106,7 @@ def print_status(left, right):
         arrow = "↗  ARC RIGHT"
     elif left != right and right > 0:
         arrow = "↖  ARC LEFT"
-    elif left == 0 and right == 0:
+    else:
         arrow = "■  STOPPED"
 
     print(f"\r  {arrow:<20}  L:{left:>5} mm/s   R:{right:>5} mm/s    ", end='', flush=True)

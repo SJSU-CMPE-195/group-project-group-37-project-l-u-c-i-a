@@ -1,16 +1,17 @@
 """
-drive_control.py
+drive_demos.py
 
-High-level drive commands built on top of RoombaOI.
-Provides timed straight movement and in-place turns.
+Automated drive patterns built on top of RoombaOI.
+Provides timed straight movement, in-place turns, and demo sequences.
 
 Note: timing-based movement is approximate. Accuracy depends on
 battery level, surface friction, and wheel slip. Use encoder
-odometry (see sensor_reader.py) for more precise positioning.
+odometry (see sensor_monitor.py) for more precise positioning.
 
 Usage:
-    python drive_control.py --port COM5
-    python drive_control.py --port /dev/ttyUSB0 --demo square
+    python drive_demos.py --port COM5 --demo square
+    python drive_demos.py --port COM5 --demo figure_eight
+    python drive_demos.py --port /dev/ttyUSB0 --demo square
 """
 
 import argparse
@@ -83,14 +84,12 @@ def demo_figure_eight(roomba, speed_mm_s=200):
     circumference = 2 * math.pi * radius
     duration = circumference / speed_mm_s
 
-    # Left circle
     print("  Left loop")
     roomba.drive(speed_mm_s, radius)
     time.sleep(duration)
     roomba.stop()
     time.sleep(0.3)
 
-    # Right circle
     print("  Right loop")
     roomba.drive(speed_mm_s, -radius)
     time.sleep(duration)
@@ -98,57 +97,29 @@ def demo_figure_eight(roomba, speed_mm_s=200):
     print("Done.")
 
 
-def demo_interactive(roomba):
-    """
-    Simple keyboard-driven control loop.
-    Press w/a/s/d to move, q to quit.
-    """
-    print("Interactive mode — controls: w=forward  s=backward  a=left  d=right  q=quit")
-    SPEED = 200
-    STEP_MM = 150
-    TURN_DEG = 30
-
-    while True:
-        key = input("> ").strip().lower()
-        if key == 'q':
-            break
-        elif key == 'w':
-            forward(roomba, SPEED, STEP_MM)
-        elif key == 's':
-            backward(roomba, SPEED, STEP_MM)
-        elif key == 'a':
-            turn_left(roomba, 150, TURN_DEG)
-        elif key == 'd':
-            turn_right(roomba, 150, TURN_DEG)
-        else:
-            print("  Unknown key. Use w/a/s/d/q.")
-
-
 # ------------------------------------------------------------------
 # Entry point
 # ------------------------------------------------------------------
 
 def main():
-    parser = argparse.ArgumentParser(description='Roomba drive control')
+    parser = argparse.ArgumentParser(description='Roomba automated drive demos')
     parser.add_argument('--port', default='COM5',
                         help='Serial port (e.g. COM5 or /dev/ttyUSB0)')
-    parser.add_argument('--demo', choices=['square', 'figure_eight', 'interactive'],
-                        default='interactive',
-                        help='Which demo to run (default: interactive)')
+    parser.add_argument('--demo', choices=['square', 'figure_eight'],
+                        default='square',
+                        help='Which demo to run (default: square)')
     args = parser.parse_args()
 
     print(f"Connecting on {args.port}...")
     with RoombaOI(args.port) as roomba:
         roomba.start()
-        roomba.safe_mode()
+        roomba.full_mode()
         time.sleep(0.5)
 
         if args.demo == 'square':
             demo_square(roomba)
         elif args.demo == 'figure_eight':
             demo_figure_eight(roomba)
-        elif args.demo == 'interactive':
-            demo_interactive(roomba)
 
 
 if __name__ == '__main__':
