@@ -13,7 +13,7 @@ Usage:
 
     roomba.start()
     roomba.full_mode()
-    roomba.drive(200, 32768)  # forward at 200 mm/s
+    roomba.drive(200, 32767)  # forward at 200 mm/s
 """
 
 import serial
@@ -125,16 +125,17 @@ class RoombaOI:
             velocity: mm/s, range -500 to 500
                       positive = forward, negative = backward
             radius:   mm, range -2000 to 2000
-                      32768  = drive straight
+                      32767  = drive straight
                       1      = spin counter-clockwise in place
                       -1     = spin clockwise in place
                       positive = turn left, negative = turn right
         """
         vel = max(-500, min(500, int(velocity)))
-        rad = max(-2000, min(2000, int(radius)))
-        # Special straight value doesn't fit in -2000..2000 clamp
-        if radius == 32768:
-            rad = 32768
+        # 32767 is the special straight value per OI spec
+        if radius == 32767:
+            rad = 32767
+        else:
+            rad = max(-2000, min(2000, int(radius)))
         self._send(self.OP_DRIVE, *struct.pack('>hh', vel, rad))
 
     def drive_direct(self, left_velocity, right_velocity):

@@ -27,7 +27,7 @@ WHEEL_BASE_MM = 235  # distance between left and right wheel contact points
 def forward(roomba, speed_mm_s, distance_mm):
     """Drive straight forward a given distance."""
     duration = distance_mm / abs(speed_mm_s)
-    roomba.drive(abs(speed_mm_s), 32768)
+    roomba.drive(abs(speed_mm_s), 32767)
     time.sleep(duration)
     roomba.stop()
 
@@ -35,7 +35,7 @@ def forward(roomba, speed_mm_s, distance_mm):
 def backward(roomba, speed_mm_s, distance_mm):
     """Drive straight backward a given distance."""
     duration = distance_mm / abs(speed_mm_s)
-    roomba.drive(-abs(speed_mm_s), 32768)
+    roomba.drive(-abs(speed_mm_s), 32767)
     time.sleep(duration)
     roomba.stop()
 

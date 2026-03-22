@@ -1,7 +1,7 @@
 """
-drive_keyboard.py
+drive_keyboard_windows.py
 
-Real-time keyboard control for the Roomba using pynput.
+Real-time keyboard control for the Roomba on Windows using pynput.
 Hold keys to drive — release to stop. Supports combined inputs
 (e.g. W+A arcs forward-left) via independent wheel speed control.
 
@@ -9,8 +9,8 @@ Requirements:
     pip install pynput
 
 Usage:
-    python drive_keyboard.py --port COM5
-    python drive_keyboard.py --port /dev/ttyUSB0 --speed 250
+    python drive_keyboard_windows.py --port COM5
+    python drive_keyboard_windows.py --port COM5 --speed 250
 
 Controls:
     W        — forward
@@ -56,10 +56,6 @@ def on_release(key):
 
 
 def compute_wheel_speeds(speed):
-    """
-    Map the current set of held keys to (left, right) wheel velocities.
-    Combined keys produce arced movement instead of jerky step turns.
-    """
     w = 'w' in pressed
     s = 's' in pressed
     a = 'a' in pressed
@@ -68,27 +64,22 @@ def compute_wheel_speeds(speed):
     if not any([w, s, a, d]):
         return 0, 0
 
-    # Forward + turn
     if w and a:
-        return speed // 2, speed       # left wheel slower → arc left
+        return speed // 2, speed
     if w and d:
-        return speed, speed // 2       # right wheel slower → arc right
-
-    # Backward + turn
+        return speed, speed // 2
     if s and a:
         return -(speed // 2), -speed
     if s and d:
         return -speed, -(speed // 2)
-
-    # Straight / spin in place
     if w:
         return speed, speed
     if s:
         return -speed, -speed
     if a:
-        return -speed, speed           # spin CCW
+        return -speed, speed
     if d:
-        return speed, -speed           # spin CW
+        return speed, -speed
 
     return 0, 0
 
@@ -113,11 +104,11 @@ def print_status(left, right):
 
 
 def main():
-    parser = argparse.ArgumentParser(description='Roomba real-time keyboard control')
+    parser = argparse.ArgumentParser(description='Roomba keyboard control (Windows)')
     parser.add_argument('--port', default='COM5',
-                        help='Serial port (e.g. COM5 or /dev/ttyUSB0)')
-    parser.add_argument('--speed', type=int, default=200,
-                        help='Base wheel speed in mm/s (default: 200, max: 500)')
+                        help='Serial port (e.g. COM5)')
+    parser.add_argument('--speed', type=int, default=300,
+                        help='Base wheel speed in mm/s (default: 300, max: 500)')
     args = parser.parse_args()
 
     speed = max(50, min(500, args.speed))
@@ -139,13 +130,12 @@ def main():
             while running and listener.is_alive():
                 left, right = compute_wheel_speeds(speed)
 
-                # Only send a command if the state changed — avoids flooding serial
                 if (left, right) != (last_left, last_right):
                     roomba.drive_direct(left, right)
                     print_status(left, right)
                     last_left, last_right = left, right
 
-                time.sleep(0.05)  # 20 Hz loop
+                time.sleep(0.05)
 
         except KeyboardInterrupt:
             pass

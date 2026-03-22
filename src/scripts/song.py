@@ -8,7 +8,7 @@ Notes are MIDI note numbers (31-127).
 Duration is in units of 1/64th of a second (e.g. 32 = 0.5s).
 
 Usage:
-    python song.py --port COM5 --song velvet_room
+    python song.py --port COM5 --song mass_destruction
     python song.py --port COM5 --song la_cucaracha
 """
 
@@ -21,7 +21,9 @@ from roomba_oi import RoombaOI
 # MIDI note numbers
 # ------------------------------------------------------------------
 C4  = 60
+CS4 = 61  # C#4
 D4  = 62
+DS4 = 63  # D#4
 E4  = 64
 F4  = 65
 FS4 = 66  # F#4
@@ -30,51 +32,43 @@ GS4 = 68  # G#4
 A4  = 69
 AS4 = 70  # A#4 / Bb4
 B4  = 71
-C5  = 72  # C'
-CS5 = 73  # C#'
-D5  = 74  # D'
 
 # ------------------------------------------------------------------
 # Song definitions — list of (midi_note, duration) tuples
 # ------------------------------------------------------------------
 
-# Velvet Room theme (Aria of the Soul - Persona)
-# Part A: E - A - C' - B - A - G# - A - B - A - E
-VELVET_ROOM_A = [
-    (E4,  32),
-    (A4,  32),
-    (C5,  32),
-    (B4,  32),
-    (A4,  32),
-    (GS4, 32),
-    (A4,  32),
-    (B4,  32),
-    (A4,  32),
-    (E4,  48),
+# Mass Destruction (Persona) — B G# G# F# D# C# C# B C# D#
+MASS_DESTRUCTION = [
+    (B4,  16),
+    (GS4, 16),
+    (GS4, 24),
+    (FS4, 16),
+    (DS4, 16),
+    (CS4, 16),
+    (CS4, 24),
+    (B4,  16),
+    (CS4, 16),
+    (DS4, 32),
 ]
 
-# Part B: E - B - D' - C' - B - A# - B - C#' - B - F#
-VELVET_ROOM_B = [
-    (E4,  32),
-    (B4,  32),
-    (D5,  32),
-    (C5,  32),
-    (B4,  32),
-    (AS4, 32),
-    (B4,  32),
-    (CS5, 32),
-    (B4,  32),
-    (FS4, 48),
+# La Cucaracha — split across two slots (16 note limit per slot)
+# Phrase 1: E E E | C E G
+# Phrase 2: G G F | E D C
+# Phrase 3: E E E | C E G  (same as phrase 1)
+# Phrase 4: G F# F | E G C (ending)
+LA_CUCARACHA_1 = [
+    (E4, 16), (E4, 16), (E4, 16),   # E E E
+    (C4, 12), (E4, 12), (G4, 24),   # C E G
+    (G4, 16), (G4, 16), (F4, 16),   # G G F
+    (E4, 16), (D4, 16), (C4, 24),   # E D C
+    (E4, 16), (E4, 16), (E4, 16),   # E E E
+    (C4, 12),                        # C ...
 ]
 
-# La Cucaracha
-LA_CUCARACHA = [
-    (E4, 16), (E4, 16), (E4, 16),
-    (C4, 12), (E4, 12), (G4, 24),
-    (G4, 16), (G4, 16), (F4, 16),
-    (E4, 16), (D4, 16), (C4, 24),
-    (E4, 16), (E4, 16), (E4, 16),
-    (C4, 12),
+LA_CUCARACHA_2 = [
+    (E4, 12), (G4, 24),              # ... E G  (finish phrase 3)
+    (G4, 16), (FS4, 16), (F4, 16),  # G F# F
+    (E4, 16), (G4, 16), (C4, 32),   # E G C (held ending)
 ]
 
 # ------------------------------------------------------------------
@@ -83,6 +77,8 @@ LA_CUCARACHA = [
 
 def load_song(roomba, slot, notes):
     """Send a Song definition command (opcode 140) to the Roomba."""
+    if len(notes) > 16:
+        raise ValueError(f"Song has {len(notes)} notes — Roomba max is 16 per slot.")
     cmd = [140, slot, len(notes)]
     for note, duration in notes:
         cmd.extend([note, duration])
@@ -108,9 +104,9 @@ def main():
     parser = argparse.ArgumentParser(description='Play songs on the Roomba speaker')
     parser.add_argument('--port', default='COM5',
                         help='Serial port (e.g. COM5 or /dev/ttyUSB0)')
-    parser.add_argument('--song', choices=['velvet_room', 'la_cucaracha'],
-                        default='velvet_room',
-                        help='Which song to play (default: velvet_room)')
+    parser.add_argument('--song', choices=['mass_destruction', 'la_cucaracha'],
+                        default='mass_destruction',
+                        help='Which song to play (default: mass_destruction)')
     args = parser.parse_args()
 
     print(f"Connecting on {args.port}...")
@@ -119,26 +115,26 @@ def main():
         roomba.full_mode()
         time.sleep(0.5)
 
-        if args.song == 'velvet_room':
-            print("Loading Velvet Room theme...")
-            load_song(roomba, 0, VELVET_ROOM_A)
-            load_song(roomba, 1, VELVET_ROOM_B)
-
-            print("Playing Part A...")
-            play_song(roomba, 0)
-            time.sleep(song_duration(VELVET_ROOM_A) + 0.3)
-
-            print("Playing Part B...")
-            play_song(roomba, 1)
-            time.sleep(song_duration(VELVET_ROOM_B) + 0.3)
-
-        elif args.song == 'la_cucaracha':
-            print("Loading La Cucaracha...")
-            load_song(roomba, 0, LA_CUCARACHA)
+        if args.song == 'mass_destruction':
+            print("Loading Mass Destruction...")
+            load_song(roomba, 0, MASS_DESTRUCTION)
 
             print("Playing...")
             play_song(roomba, 0)
-            time.sleep(song_duration(LA_CUCARACHA) + 0.3)
+            time.sleep(song_duration(MASS_DESTRUCTION) + 0.3)
+
+        elif args.song == 'la_cucaracha':
+            print("Loading La Cucaracha...")
+            load_song(roomba, 0, LA_CUCARACHA_1)
+            load_song(roomba, 1, LA_CUCARACHA_2)
+
+            print("Playing part 1...")
+            play_song(roomba, 0)
+            time.sleep(song_duration(LA_CUCARACHA_1) + 0.1)
+
+            print("Playing part 2...")
+            play_song(roomba, 1)
+            time.sleep(song_duration(LA_CUCARACHA_2) + 0.3)
 
         print("Done.")
 

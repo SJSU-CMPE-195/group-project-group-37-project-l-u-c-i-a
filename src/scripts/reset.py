@@ -22,11 +22,12 @@ def main():
     args = parser.parse_args()
 
     print(f"Connecting on {args.port}...")
-    with RoombaOI(args.port) as roomba:
-        roomba.start()
-        roomba._send(7)  # opcode 7 = soft reset
-        print("Reset command sent. Roomba is rebooting.")
-        time.sleep(3)    # allow time to reboot before closing port
+    roomba = RoombaOI(args.port)
+    roomba.start()
+    roomba._send(7)  # opcode 7 = soft reset
+    print("Reset command sent. Roomba is rebooting.")
+    time.sleep(3)    # allow time to reboot
+    roomba.ser.close()  # close port directly — skip stop/passive_mode on a rebooting Roomba
 
 
 if __name__ == '__main__':
