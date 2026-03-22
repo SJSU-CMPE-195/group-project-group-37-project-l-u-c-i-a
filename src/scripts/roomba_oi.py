@@ -274,10 +274,19 @@ class RoombaOI:
     # Context manager support
     # ------------------------------------------------------------------
 
+    def reset(self):
+        """
+        Soft reset the Roomba (opcode 7).
+        Reboots the OI and returns to a clean passive state.
+        Equivalent to removing and reinserting the battery.
+        """
+        self._send(7)
+        time.sleep(3)  # allow reboot to complete
+
     def close(self):
-        """Stop the robot and close the serial port cleanly."""
+        """Stop, reset, and close the serial port cleanly."""
         self.stop()
-        self.passive_mode()
+        self.reset()
         self.ser.close()
 
     def __enter__(self):
