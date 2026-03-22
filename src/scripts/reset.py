@@ -1,12 +1,33 @@
-import serial
+"""
+reset.py
+
+Sends a soft reset command to the Roomba (opcode 7).
+The Roomba will reboot its OI and return to passive mode.
+
+Usage:
+    python reset.py
+    python reset.py --port COM3
+"""
+
+import argparse
 import time
 
-ser = serial.Serial('COM5', 115200, timeout=1) # adjust COM port as needed
-time.sleep(2)
+from roomba_oi import RoombaOI
 
-# Start open interface
-ser.write(bytes([128])) # 128 start code
-time.sleep(0.1)
 
-# Reset roomba
-ser.write(bytes[7])
+def main():
+    parser = argparse.ArgumentParser(description='Soft reset the Roomba')
+    parser.add_argument('--port', default='COM5',
+                        help='Serial port (e.g. COM5 or /dev/ttyUSB0)')
+    args = parser.parse_args()
+
+    print(f"Connecting on {args.port}...")
+    with RoombaOI(args.port) as roomba:
+        roomba.start()
+        roomba._send(7)  # opcode 7 = soft reset
+        print("Reset command sent. Roomba is rebooting.")
+        time.sleep(3)    # allow time to reboot before closing port
+
+
+if __name__ == '__main__':
+    main()
