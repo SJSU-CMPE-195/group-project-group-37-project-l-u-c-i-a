@@ -127,7 +127,7 @@ def main():
     print(f"Connecting on {args.port}...")
     with RoombaOI(args.port) as roomba:
         roomba.start()
-        roomba.safe_mode()
+        roomba.full_mode()
         time.sleep(0.5)
 
         print("\nReady. Use W/A/S/D to drive, Q or ESC to quit.\n")

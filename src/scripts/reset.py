@@ -8,13 +8,5 @@ time.sleep(2)
 ser.write(bytes([128])) # 128 start code
 time.sleep(0.1)
 
-# Full mode
-ser.write(bytes([132]))
-time.sleep(0.1)
-
-# Display "LUCI"
-ser.write(bytes([164, 76, 85, 67, 73]))
-
-time.sleep(5)
-
-ser.close()
+# Reset roomba
+ser.write(bytes[7])
