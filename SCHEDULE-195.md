@@ -14,8 +14,8 @@
 |------|----------|--------|-----------|---------|--------------|
 | 2/6/2026 | 30 minutes | Remote | Christian, Ling, Ethan, Noel | Introduction Project Discussion | 2 |
 | 2/27/2026| 30 minutes | Remote | Christian, Ling, Ethan, Noel | Project Updated Discussion | |
-| 3/13/2026| | Remote | Christian, Ling, Ethan, Noel | Project Update and Future Meeting Planning | |
-| | | In-person / Remote | | | |
+| 3/13/2026| 30 minutes | Remote | Christian, Ling, Ethan, Noel | Project Update and Future Meeting Planning | |
+| 3/22/2026 | 1 hour | In-person | Christian, Ling, Ethan, Noel | High School Robotics Meeting | |
 | | | In-person / Remote | | | |
 | | | In-person / Remote | | | |
 | | | In-person / Remote | | | |
@@ -35,8 +35,8 @@
 | 2/10/26 | 2 hours | In-person | Christian, Ling, Ethan, Noel | Pitch Preparation | 1 |
 | 2/13/26 | 2.5 hours | In-person | Christian, Ling, Ethan, Noel | Roomba Tear-down  | 1 |
 | 2/26/26 | 30 minutes | Remote | Christian, Ling, Ethan, Noel | Project Organization |  |
-| | | In-person / Remote | | | |
-| | | In-person / Remote | | | |
+| 3/20/26 | 5 hours | In-person | Christian, Ling, Ethan, Noel | Reconfiguration and Measurements| |
+| 3/22/26 | 4 hours | In-person | Christian, Ling, Ethan, Noel | Basic Controls plus more measurements | |
 | | | In-person / Remote | | | |
 | | | In-person / Remote | | | |
 | | | In-person / Remote | | | |
@@ -149,48 +149,57 @@ Christian, Ling, Ethan, Noel
 
 **Attendees:**
 Christian, Ling, Ethan, Noel
+
 **Discussion:**
 - Updated advisor on current shipment progress for part acquisition
 - Finalized upcoming plans including a lab visit to acquire parts
 
 **Decisions:**
-- Meet on Sunday, March 22nd to discuss progress report and acquire parts
-
-**Action Items:**
-- [ ] [Task] - [Owner] - [Due]
-- [ ] [Task] - [Owner] - [Due]
+- Meet on Sunday, March 22nd to discuss progress report and acquire parts. 
 
 ---
 
-### [Date] - [Advisor/Team] Meeting
+### 3/20/2026 - Team Meeting
 
 **Attendees:**
+Christian, Ling, Ethan, Noel
 
 **Discussion:**
--
+- Reconfigured Raspberry Pi Wi-FI Including Documentation
+- Installed Raspberry Pi UPS hat
+- Measured roomba internal compartment measurement
+- Made the Roomba Control Drawer mockup
 
 **Decisions:**
--
-
-**Action Items:**
-- [ ] [Task] - [Owner] - [Due]
-- [ ] [Task] - [Owner] - [Due]
+- Meet on Sunday, March 22nd with advisor to discuss progress report and acquire parts
 
 ---
 
-### [Date] - [Advisor/Team] Meeting
+### 3/22/2026 - Team Meeting
 
 **Attendees:**
+Christian, Ling, Ethan, Noel
 
 **Discussion:**
--
+- Roomba control unit precise measurements
+- Roomba USB to Serial interface established
+- Roomba Basic controls deployed
 
 **Decisions:**
--
+- Will use the LiDAR sensor that our advisor provided for us
+- Will CAD the placement box for the Pi/Shield
 
-**Action Items:**
-- [ ] [Task] - [Owner] - [Due]
-- [ ] [Task] - [Owner] - [Due]
+---
+
+### 3/22/2026 - Advisor Meeting
+
+**Attendees:**
+Christian, Ling, Ethan, Noel
+
+**Discussion:**
+- Went to advisor's conference with 3 high school robotics teams
+- Listened to the robotics teams' presentations of their robots and background information
+- Demonstrated our project progress to the robotics teams 
 
 ---
 
