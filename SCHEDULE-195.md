@@ -151,7 +151,7 @@ Christian, Ling, Ethan, Noel
 Christian, Ling, Ethan, Noel
 
 **Discussion:**
-- Bought Raspberry Pi and othre parts
+- Bought Raspberry Pi and other parts
 - Set up networking with the Raspberry Pi
 - Reassembled Roomba with removed parts while retaining movement functionality
 
