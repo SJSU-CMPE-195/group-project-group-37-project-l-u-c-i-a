@@ -31,7 +31,13 @@ All scripts use the serial port at `/dev/ttyUSB0` by default.
 
 ### `control_panel_ssh.py` — Interactive Control Panel (SSH)
 
-The primary way to control the Roomba over SSH. Uses `curses` to draw a live terminal UI with real-time sensor data and keyboard drive controls — no display server or `evdev` required.
+The primary way to control the Roomba over SSH. Uses `curses` to draw a live terminal UI with real-time sensor data and keyboard drive controls — no display server or `evdev` required. Also displays live UPS data from the Geekworm X1202 (battery voltage, charge %, AC status) if the board is present.
+
+**Dependencies:**
+```bash
+pip install smbus2   # required for X1202 UPS readings
+# RPi.GPIO is pre-installed on Raspberry Pi OS
+```
 
 **Usage:**
 ```bash
@@ -44,7 +50,7 @@ PYTHONPATH=. python3 ssh/control_panel_ssh.py --port /dev/ttyUSB0 --speed 300
 | Argument | Default | Description |
 |----------|---------|-------------|
 | `--port` | `/dev/ttyUSB0` | Serial port |
-| `--speed` | `300` | Drive speed in mm/s |
+| `--speed` | `300` | Starting drive speed in mm/s |
 
 **Drive controls (hold key to move, release to stop):**
 
@@ -69,6 +75,19 @@ PYTHONPATH=. python3 ssh/control_panel_ssh.py --port /dev/ttyUSB0 --speed 300
 | `R` | Reset Roomba |
 | `X` | Power off Roomba |
 | `Q` / `ESC` | Quit |
+
+**Display panels:**
+
+| Panel | Data |
+|-------|------|
+| Sensors | Bump, wheel drop, cliff sensors |
+| Battery | Roomba battery voltage, current, temp, charge % |
+| Encoders | Raw left/right wheel encoder counts |
+| X1202 UPS | Pack voltage (V), state of charge (%), AC power status, charge status |
+| Drive | Direction, wheel speeds, current speed setting |
+| Controls | Key reference |
+
+> The X1202 UPS panel shows `(unavailable)` if `smbus2` or `RPi.GPIO` are not installed, or if the board is not connected.
 
 **Note on key-repeat and latency:** SSH terminals send repeated key events while a key is held. The script uses a grace window (`DRIVE_TIMEOUT`) — the Roomba keeps driving as long as a drive key was received within that window, then stops automatically.
 
@@ -196,3 +215,8 @@ PYTHONPATH=. python3 ssh/power_off.py --port /dev/ttyUSB0
 
 **Two scripts cannot run at the same time**
 - Only one process can hold the serial port at a time. Close any other running script before starting a new one.
+
+**X1202 UPS panel shows `(unavailable)`**
+- Install the dependency: `pip install smbus2`
+- Make sure I2C is enabled on the Pi: `sudo raspi-config` → Interface Options → I2C → Enable.
+- Verify the board is detected: `i2cdetect -y 1` should show `0x36` on the grid.

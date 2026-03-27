@@ -17,6 +17,8 @@ Drive controls (hold key to move, release to stop):
     W+A / W+D — not supported over SSH (only one key at a time)
 
 Hotkeys (single press):
+    +/=      — increase speed by 50 mm/s (max 500)
+    -        — decrease speed by 50 mm/s (min 50)
     1        — play Mass Destruction
     2        — play La Cucaracha
     T        — drive square demo
@@ -26,10 +28,10 @@ Hotkeys (single press):
 
 Note:
     SSH terminals send key-repeat events while a key is held. This script
-    uses a 300 ms grace window: the Roomba keeps driving as long as a drive
-    key was received within the last 300 ms, then stops automatically.
-    If driving feels laggy, your terminal's key-repeat delay may be high —
-    lower it with:  xset r rate 200 30
+    uses a 200 ms grace window: the Roomba keeps driving as long as a drive
+    key was received within the last 200 ms, then stops automatically.
+    For best response, lower your terminal's key-repeat delay before connecting:
+        xset r rate 150 50
 """
 
 import sys
@@ -40,6 +42,40 @@ import argparse
 import curses
 import threading
 import time
+
+try:
+    import smbus2
+    import RPi.GPIO as GPIO
+    _HAS_UPS = True
+except ImportError:
+    _HAS_UPS = False
+
+# X1202 UPS constants
+MAX17040_ADDR = 0x36
+GPIO_POWER    = 6    # HIGH = AC OK,      LOW = AC fail
+GPIO_CHARGE   = 16   # LOW  = charging,   HIGH = not charging
+
+def read_ups():
+    """Read MAX17040 voltage/SOC over I2C and GPIO power/charge pins."""
+    if not _HAS_UPS:
+        return {}
+    result = {}
+    try:
+        bus = smbus2.SMBus(1)
+        vcell = bus.read_i2c_block_data(MAX17040_ADDR, 0x02, 2)
+        soc   = bus.read_i2c_block_data(MAX17040_ADDR, 0x04, 2)
+        bus.close()
+        result['voltage'] = ((vcell[0] << 8 | vcell[1]) >> 4) * 1.25 / 1000
+        result['soc']     = soc[0] + soc[1] / 256.0
+    except Exception:
+        pass
+    try:
+        result['power_ok'] = bool(GPIO.input(GPIO_POWER))
+        result['charging'] = not bool(GPIO.input(GPIO_CHARGE))
+    except Exception:
+        pass
+    return result
+
 
 from roomba_oi import RoombaOI
 from song import (
@@ -130,6 +166,25 @@ def draw(stdscr, sensors, s_lock, left, right, speed, status_msg):
     enc_l = encoders.get('left', 0)
     enc_r = encoders.get('right', 0)
     stdscr.addstr(row, col, f"Encoders  L:{enc_l:>6}  R:{enc_r:>6}")
+    row += 2
+
+    ups = sensors.get('ups', {})
+    stdscr.addstr(row, col, "[ X1202 UPS ]", curses.A_BOLD)
+    row += 1
+    if ups:
+        volt = ups.get('voltage')
+        soc  = ups.get('soc')
+        power_ok = ups.get('power_ok')
+        charging = ups.get('charging')
+        if volt is not None:
+            stdscr.addstr(row, col, f"  {volt:.3f} V   {soc:.1f}%")
+            row += 1
+        if power_ok is not None:
+            pwr_str = "AC OK  " if power_ok else "AC FAIL"
+            chg_str = "Charging" if charging else "Not charging"
+            stdscr.addstr(row, col, f"  {pwr_str}  {chg_str}")
+    else:
+        stdscr.addstr(row, col, "  (unavailable)")
 
     col2 = w // 2
     row2 = 2
@@ -178,12 +233,14 @@ def sensor_poller(roomba, sensors, lock, stop_event):
             cliffs   = roomba.read_cliffs()
             battery  = roomba.read_battery()
             encoders = roomba.read_encoders()
+            ups      = read_ups()
             with lock:
                 sensors.update({
                     'bumps':    bumps,
                     'cliffs':   cliffs,
                     'battery':  battery,
                     'encoders': encoders,
+                    'ups':      ups,
                 })
         except Exception:
             pass
@@ -220,6 +277,11 @@ def run(stdscr, roomba, speed):
     curses.curs_set(0)
     stdscr.keypad(True)
     stdscr.timeout(20)   # getch blocks for at most 20 ms
+
+    if _HAS_UPS:
+        GPIO.setmode(GPIO.BCM)
+        GPIO.setup(GPIO_POWER,  GPIO.IN)
+        GPIO.setup(GPIO_CHARGE, GPIO.IN)
 
     sensors  = {}
     s_lock   = threading.Lock()
@@ -325,6 +387,8 @@ def run(stdscr, roomba, speed):
     finally:
         stop_evt.set()
         roomba.stop()
+        if _HAS_UPS:
+            GPIO.cleanup()
 
 
 def main():
