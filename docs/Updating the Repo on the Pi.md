@@ -32,7 +32,7 @@ No arguments needed. The script always restores the AP on exit, even if somethin
 2. Stops the system wpa_supplicant service and releases `wlan0` from NetworkManager
 3. Starts a temporary wpa_supplicant instance to connect to `lucia` WiFi
 4. Obtains an IP via dhcpcd
-5. Runs `git fetch --all && git pull` on the repo
+5. Runs `git fetch --all && git clean -fd && git reset --hard` on the repo (force pull, discards any local changes)
 6. Kills wpa_supplicant, restarts the system wpa_supplicant service, restores the AP, and restarts dnsmasq
 
 ## Configuration
