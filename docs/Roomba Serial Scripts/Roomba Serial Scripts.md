@@ -10,12 +10,34 @@ All scripts live in `src/scripts/` and communicate with the Roomba via USB-to-se
 
 **Dependencies:**
 ```
-pip install pyserial pynput
+pip install pyserial pynput evdev
 ```
+
+> `evdev` is Linux only and required for `drive_keyboard_linux.py` and `control_panel.py`.
 
 **Port values:**
 - Windows: `COM5` (check Device Manager if unsure)
-- Linux / WSL with usbipd: `/dev/ttyUSB0`
+- Linux: `/dev/ttyUSB0` (run `ls /dev/tty*` before and after plugging in to confirm)
+
+**Virtual environment (Ubuntu/Linux):**
+```bash
+python3 -m venv ~/roomba-env
+source ~/roomba-env/bin/activate
+pip install pyserial evdev
+```
+
+**Permissions (Linux serial port):**
+```bash
+sudo usermod -aG dialout $USER   # then log out and back in
+# or run once without the permanent fix:
+sudo chmod 666 /dev/ttyUSB0
+```
+
+**Permissions (Linux input device for keyboard scripts):**
+```bash
+sudo usermod -aG input $USER   # then log out and back in
+# or run with sudo
+```
 
 ---
 
@@ -25,7 +47,7 @@ pip install pyserial pynput
 
 Not run directly. Imported by all other scripts.
 
-Wraps the iRobot Open Interface serial protocol into a Python class. Handles serial connection setup, byte encoding, mode switching, motion commands, and sensor reads.
+Wraps the iRobot Open Interface serial protocol into a Python class. Handles serial connection setup, byte encoding, mode switching, motion commands, and sensor reads. Automatically resets the Roomba on exit via the context manager.
 
 **Key methods:**
 
@@ -37,6 +59,7 @@ Wraps the iRobot Open Interface serial protocol into a Python class. Handles ser
 | `drive(velocity, radius)` | Drive with a single velocity and turning radius. |
 | `drive_direct(left, right)` | Control each wheel independently. |
 | `stop()` | Stop all wheel movement. |
+| `reset()` | Soft reset the Roomba (opcode 7). Reboots the OI. |
 | `seek_dock()` | Command Roomba to return to charging dock. |
 | `display_text(text)` | Display up to 4 ASCII chars on the 7-segment display. |
 | `read_bumps()` | Returns bump and wheel-drop sensor states. |
@@ -48,13 +71,66 @@ Wraps the iRobot Open Interface serial protocol into a Python class. Handles ser
 ```python
 from roomba_oi import RoombaOI
 
-with RoombaOI('COM5') as roomba:
+with RoombaOI('/dev/ttyUSB0') as roomba:
     roomba.start()
     roomba.full_mode()
-    roomba.drive(200, 32768)  # forward at 200 mm/s
+    roomba.drive(200, 32767)  # forward at 200 mm/s
 ```
 
-The `with` block automatically stops the robot and closes the serial port on exit.
+The `with` block automatically stops and resets the Roomba, then closes the serial port on exit.
+
+---
+
+### `control_panel.py` — All-in-One Terminal Control Panel
+
+The primary way to interact with the Roomba. Combines real-time drive control, live sensor monitoring, and hotkeys for all actions in a single terminal UI.
+
+**Requirements:** `pip install evdev`
+
+**Usage:**
+```bash
+# List available keyboard input devices
+python3 control_panel.py --list-devices
+
+# Run the control panel
+python3 control_panel.py --port /dev/ttyUSB0 --device /dev/input/event3
+
+# With sudo if not in input group
+sudo ~/roomba-env/bin/python3 control_panel.py --port /dev/ttyUSB0 --device /dev/input/event3
+```
+
+**Arguments:**
+
+| Argument | Default | Description |
+|----------|---------|-------------|
+| `--port` | `/dev/ttyUSB0` | Serial port |
+| `--device` | auto-detect | Input device path (e.g. `/dev/input/event3`) |
+| `--speed` | `300` | Drive speed in mm/s |
+| `--list-devices` | — | Print available keyboard devices and exit |
+
+**Drive controls:**
+
+| Key(s) | Action |
+|--------|--------|
+| `W` / `↑` | Forward |
+| `S` / `↓` | Backward |
+| `A` / `←` | Spin left (CCW) |
+| `D` / `→` | Spin right (CW) |
+| `W + A` | Arc forward-left |
+| `W + D` | Arc forward-right |
+| `S + A` | Arc backward-left |
+| `S + D` | Arc backward-right |
+
+**Hotkeys:**
+
+| Key | Action |
+|-----|--------|
+| `1` | Play Mass Destruction |
+| `2` | Play La Cucaracha |
+| `T` | Run square drive demo |
+| `R` | Reset Roomba |
+| `X` | Power off Roomba |
+| `Q` / `ESC` | Quit |
 
 ---
 
@@ -64,8 +140,7 @@ Verifies the serial connection by displaying "LUCI" on the Roomba's 7-segment LE
 
 **Usage:**
 ```
-python test_led.py
-python test_led.py --port COM3
+python3 test_led.py --port /dev/ttyUSB0
 ```
 
 **Arguments:**
@@ -78,16 +153,41 @@ python test_led.py --port COM3
 
 ---
 
-### `drive_keyboard.py` — Real-Time Keyboard Control
+### `drive_keyboard_linux.py` — Real-Time Keyboard Control (Linux)
 
-Hold keys to drive the Roomba in real time. Releasing all keys stops the robot. Supports combined key inputs for smooth arced movement.
+Hold keys to drive the Roomba in real time. Uses `evdev` to read directly from the input device — no display server or special permissions required beyond input group access. Supports combined key inputs for smooth arced movement.
+
+**Requirements:** `pip install evdev`
+
+**Usage:**
+```bash
+python3 drive_keyboard_linux.py --list-devices
+python3 drive_keyboard_linux.py --port /dev/ttyUSB0 --device /dev/input/event3
+```
+
+**Arguments:**
+
+| Argument | Default | Description |
+|----------|---------|-------------|
+| `--port` | `/dev/ttyUSB0` | Serial port |
+| `--device` | auto-detect | Input device path |
+| `--speed` | `300` | Base wheel speed in mm/s (50–500) |
+| `--list-devices` | — | Print available keyboard devices and exit |
+
+**Controls:** Same as control panel (W/A/S/D + arrow keys, Q/ESC to quit).
+
+---
+
+### `drive_keyboard_windows.py` — Real-Time Keyboard Control (Windows)
+
+Same as the Linux version but uses `pynput` for key detection instead of `evdev`.
 
 **Requirements:** `pip install pynput`
 
 **Usage:**
 ```
-python drive_keyboard.py --port COM5
-python drive_keyboard.py --port COM5 --speed 300
+python drive_keyboard_windows.py --port COM5
+python drive_keyboard_windows.py --port COM5 --speed 400
 ```
 
 **Arguments:**
@@ -95,25 +195,7 @@ python drive_keyboard.py --port COM5 --speed 300
 | Argument | Default | Description |
 |----------|---------|-------------|
 | `--port` | `COM5` | Serial port |
-| `--speed` | `200` | Base wheel speed in mm/s (50–500) |
-
-**Controls:**
-
-| Key(s) | Action |
-|--------|--------|
-| `W` | Forward |
-| `S` | Backward |
-| `A` | Spin left (CCW) |
-| `D` | Spin right (CW) |
-| `W + A` | Arc forward-left |
-| `W + D` | Arc forward-right |
-| `S + A` | Arc backward-left |
-| `S + D` | Arc backward-right |
-| `Q` or `ESC` | Quit |
-
-**How it works:**
-
-Runs a 20 Hz loop that reads which keys are currently held, computes independent left/right wheel velocities, and sends `drive_direct` commands only when the state changes. Arc movements are achieved by running one wheel slower than the other (e.g. W+A runs the left wheel at half speed).
+| `--speed` | `300` | Base wheel speed in mm/s (50–500) |
 
 ---
 
@@ -123,8 +205,8 @@ Runs predefined autonomous movement patterns. Useful for validating drive comman
 
 **Usage:**
 ```
-python drive_demos.py --port COM5 --demo square
-python drive_demos.py --port COM5 --demo figure_eight
+python3 drive_demos.py --port /dev/ttyUSB0 --demo square
+python3 drive_demos.py --port /dev/ttyUSB0 --demo figure_eight
 ```
 
 **Arguments:**
@@ -141,7 +223,7 @@ python drive_demos.py --port COM5 --demo figure_eight
 | `square` | Four 600 mm legs with 90° left turns |
 | `figure_eight` | Two 600 mm diameter circles in opposite directions |
 
-**Note:** Movement accuracy is timing-based and approximate. Surface friction, battery level, and wheel slip all affect the result. Use `sensor_monitor.py` to observe encoder counts during a run.
+**Note:** Movement accuracy is timing-based and approximate. Surface friction, battery level, and wheel slip all affect the result.
 
 ---
 
@@ -151,8 +233,8 @@ Continuously polls and displays all major Roomba sensors in a refreshing termina
 
 **Usage:**
 ```
-python sensor_monitor.py --port COM5
-python sensor_monitor.py --port COM5 --interval 0.25
+python3 sensor_monitor.py --port /dev/ttyUSB0
+python3 sensor_monitor.py --port /dev/ttyUSB0 --interval 0.25
 ```
 
 **Arguments:**
@@ -176,9 +258,64 @@ Press `Ctrl+C` to exit.
 
 ---
 
+### `song.py` — Play Songs on the Roomba Speaker
+
+Plays songs through the Roomba's built-in piezo speaker. Songs are defined as lists of (MIDI note, duration) tuples and loaded into the Roomba's song slots (max 16 notes per slot, 4 slots total).
+
+**Usage:**
+```
+python3 song.py --port /dev/ttyUSB0 --song mass_destruction
+python3 song.py --port /dev/ttyUSB0 --song la_cucaracha
+```
+
+**Arguments:**
+
+| Argument | Default | Description |
+|----------|---------|-------------|
+| `--port` | `COM5` | Serial port |
+| `--song` | `mass_destruction` | Song to play: `mass_destruction` or `la_cucaracha` |
+
+---
+
+### `reset.py` — Soft Reset
+
+Sends opcode 7 to reboot the Roomba's OI. Equivalent to removing and reinserting the battery. The Roomba will return to passive mode after rebooting.
+
+**Usage:**
+```
+python3 reset.py --port /dev/ttyUSB0
+```
+
+**Arguments:**
+
+| Argument | Default | Description |
+|----------|---------|-------------|
+| `--port` | `COM5` | Serial port |
+
+> Note: All scripts automatically reset the Roomba on exit via the `RoombaOI` context manager. Use this script only if you need a manual reset without running another script.
+
+---
+
+### `power_off.py` — Power Off
+
+Powers down the Roomba using opcode 133. The Roomba will enter sleep mode and stop responding until the CLEAN button is pressed.
+
+**Usage:**
+```
+python3 power_off.py --port /dev/ttyUSB0
+```
+
+**Arguments:**
+
+| Argument | Default | Description |
+|----------|---------|-------------|
+| `--port` | `COM5` | Serial port |
+
+---
+
 ## OI Mode Reference
 
-The Roomba 650 OI has three active modes. All scripts use **Full Mode**.
+All scripts use **Full Mode**.
 
 | Mode | Opcode | Behavior |
 |------|--------|----------|
@@ -212,16 +349,27 @@ opcode  +150   radius=1 (CCW spin)
 
 ## Troubleshooting
 
+**`PermissionError: could not open port /dev/ttyUSB0`**
+- Run `sudo chmod 666 /dev/ttyUSB0` for a one-time fix.
+- Permanent fix: `sudo usermod -aG dialout $USER` then log out and back in.
+
 **`serial.SerialException: could not open port`**
 - Wrong port name. Check Device Manager (Windows) or `ls /dev/tty*` (Linux).
 - Cable not plugged in, or driver not installed for the USB-serial adapter.
 
+**Keyboard input not working in control panel or drive_keyboard_linux.py**
+- Run with `sudo` or add yourself to the input group: `sudo usermod -aG input $USER`
+- Use `--list-devices` to find the correct keyboard device path.
+- The Logitech USB Receiver may appear before your actual keyboard — pick the one named `AT Translated Set 2 keyboard` or similar.
+
 **Roomba does not move after connecting**
 - Must call `start()` then `full_mode()` before any drive commands.
 - Check battery level with `sensor_monitor.py`.
+- Make sure the Roomba is not on its charging dock.
 
 **Commands seem delayed or dropped**
-- Reduce polling frequency in `sensor_monitor.py` if running alongside another script — two scripts cannot share one serial port simultaneously.
+- Two scripts cannot share one serial port simultaneously. Close any other running script first.
 
-**WSL: port not found**
-- Use `usbipd` to forward the USB device into WSL, or run scripts natively on Windows.
+**`evdev` import error**
+- Install it: `pip install evdev`
+- If VSCode shows a warning, select the correct Python interpreter: `Ctrl+Shift+P` → `Python: Select Interpreter` → pick `roomba-env`.

@@ -10,7 +10,6 @@ Usage:
 """
 
 import argparse
-import time
 
 from roomba_oi import RoombaOI
 
