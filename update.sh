@@ -75,6 +75,6 @@ echo "Getting IP..."
 sudo dhcpcd wlan0 > /dev/null 2>&1
 
 echo "Pulling latest repo..."
-cd "$REPO" && git fetch --all && git pull
+cd "$REPO" && git fetch --all && git clean -fd && git reset --hard @{u}
 
 echo "Update complete."
