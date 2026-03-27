@@ -38,7 +38,7 @@
 | 2/27/26 | 3.5 hours | In-person | Christian, Ling, Ethan, Noel | Raspberry Pi Setup |
 | 3/20/26 | 5 hours | In-person | Christian, Ling, Ethan, Noel | Reconfiguration and Measurements| |
 | 3/22/26 | 4 hours | In-person | Christian, Ling, Ethan, Noel | Basic Controls plus more measurements | |
-| | | In-person / Remote | | | |
+| 3/27/26 | 5 hours | In-person | Christian, Ling, Ethan, Noel, Morrison | Remote control functionality and CAD Prototype #1 | |
 | | | In-person / Remote | | | |
 | | | In-person / Remote | | | |
 | | | In-person / Remote | | | |
@@ -215,18 +215,34 @@ Christian, Ling, Ethan, Noel
 
 ---
 
-### [Date] - [Advisor/Team] Meeting
+### 3/22/2026 - Team Meeting
 
 **Attendees:**
+Christian, Ling, Ethan, Noel, Morrison
 
 **Discussion:**
--
+- Roomba control unit precise measurements
+- Roomba USB to Serial interface established
+- Roomba Basic controls deployed
 
 **Decisions:**
--
+- Will use the LiDAR sensor that our advisor provided for us
+- Will CAD the placement box for the Pi/Shield
 
-**Action Items:**
-- [ ] [Task] - [Owner] - [Due]
-- [ ] [Task] - [Owner] - [Due]
+--
 
----
+### 3/27/2026 - Team Meeting
+
+**Attendees:**
+Christian, Ling, Ethan, Noel, Morrison
+
+**Discussion:**
+- Development session covering hardware bring-up, automated deployment tooling, SSH control panel improvements, and documentation cleanup for Project L.U.C.I.A.
+- Implemeted remote controls for the Roomba
+- Finished CAD'ing inital internal protoype of  Pi + Hat holder
+
+**Decisions:**
+- Will use the LiDAR sensor that our advisor provided for us
+- We will use Makerspace to 3d Print first CAD prototype
+
+--
