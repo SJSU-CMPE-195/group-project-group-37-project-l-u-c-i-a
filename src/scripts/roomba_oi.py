@@ -70,7 +70,7 @@ class RoombaOI:
             baud:    Baud rate (Roomba 650 default: 115200)
             timeout: Read timeout in seconds
         """
-        self.ser = serial.Serial(port, baud, timeout=timeout)
+        self.ser = serial.Serial(port, baud, timeout=2)
         time.sleep(2)  # allow connection to settle
 
     # ------------------------------------------------------------------
