@@ -49,8 +49,10 @@ from song import (
 from drive_demos import forward, turn_left
 
 # How long (seconds) to keep driving after the last keypress before stopping.
-# Bridges the initial key-repeat delay in SSH terminals (~250 ms).
-DRIVE_TIMEOUT = 0.3
+# Must be > the client's key-repeat initial delay (set with: xset r rate 150 50).
+# Default 0.3 s bridges the stock ~250 ms delay. Lower to 0.2 s if you have
+# applied the recommended xset r rate setting on the client machine.
+DRIVE_TIMEOUT = 0.2
 
 # ------------------------------------------------------------------
 # Drive helpers  (identical to local control_panel.py)
@@ -83,7 +85,7 @@ def direction_label(left, right):
 # UI drawing  (matches local control_panel.py layout)
 # ------------------------------------------------------------------
 
-def draw(stdscr, sensors, s_lock, left, right, status_msg):
+def draw(stdscr, sensors, s_lock, left, right, speed, status_msg):
     stdscr.erase()
     h, w = stdscr.getmaxyx()
 
@@ -137,12 +139,14 @@ def draw(stdscr, sensors, s_lock, left, right, status_msg):
     stdscr.addstr(row2,   col2, f"  Direction: {direction_label(left, right):<12}")
     stdscr.addstr(row2+1, col2, f"  L: {left:>5} mm/s")
     stdscr.addstr(row2+2, col2, f"  R: {right:>5} mm/s")
-    row2 += 4
+    stdscr.addstr(row2+3, col2, f"  Speed:  {speed:>3} mm/s")
+    row2 += 5
 
     stdscr.addstr(row2, col2, "[ CONTROLS ]", curses.A_BOLD)
     row2 += 1
     controls = [
         ("W/A/S/D", "Drive (hold)"),
+        ("+/-",     "Speed +/- 50 mm/s"),
         ("1",       "Mass Destruction"),
         ("2",       "La Cucaracha"),
         ("T",       "Square demo"),
@@ -203,6 +207,8 @@ HOTKEY_KEYS = {
     ord('r'): 'r', ord('R'): 'r',
     ord('x'): 'x', ord('X'): 'x',
     ord('q'): 'q', ord('Q'): 'q',
+    ord('+'): '+', ord('='): '+',
+    ord('-'): '-',
     27: 'esc',
 }
 
@@ -213,7 +219,7 @@ HOTKEY_KEYS = {
 def run(stdscr, roomba, speed):
     curses.curs_set(0)
     stdscr.keypad(True)
-    stdscr.timeout(50)   # getch blocks for at most 50 ms
+    stdscr.timeout(20)   # getch blocks for at most 20 ms
 
     sensors  = {}
     s_lock   = threading.Lock()
@@ -246,9 +252,17 @@ def run(stdscr, roomba, speed):
                 if key in ('q', 'esc'):
                     break
 
+                elif key == '+':
+                    speed = min(speed + 50, 500)
+                    status_msg = f"Speed: {speed} mm/s"
+
+                elif key == '-':
+                    speed = max(speed - 50, 50)
+                    status_msg = f"Speed: {speed} mm/s"
+
                 elif key == 'r':
                     status_msg = "Resetting..."
-                    draw(stdscr, sensors, s_lock, 0, 0, status_msg)
+                    draw(stdscr, sensors, s_lock, 0, 0, speed, status_msg)
                     roomba.stop()
                     roomba.reset()
                     roomba.start()
@@ -257,7 +271,7 @@ def run(stdscr, roomba, speed):
 
                 elif key == 'x':
                     status_msg = "Powering off..."
-                    draw(stdscr, sensors, s_lock, 0, 0, status_msg)
+                    draw(stdscr, sensors, s_lock, 0, 0, speed, status_msg)
                     roomba.stop()
                     roomba._send(133)
                     time.sleep(0.5)
@@ -306,7 +320,7 @@ def run(stdscr, roomba, speed):
                 if left == 0 and right == 0:
                     status_msg = ""
 
-            draw(stdscr, sensors, s_lock, left, right, status_msg)
+            draw(stdscr, sensors, s_lock, left, right, speed, status_msg)
 
     finally:
         stop_evt.set()

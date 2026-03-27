@@ -61,6 +61,8 @@ PYTHONPATH=. python3 ssh/control_panel_ssh.py --port /dev/ttyUSB0 --speed 300
 
 | Key | Action |
 |-----|--------|
+| `+` / `=` | Increase speed by 50 mm/s (max 500) |
+| `-` | Decrease speed by 50 mm/s (min 50) |
 | `1` | Play Mass Destruction |
 | `2` | Play La Cucaracha |
 | `T` | Run square drive demo |
@@ -68,10 +70,16 @@ PYTHONPATH=. python3 ssh/control_panel_ssh.py --port /dev/ttyUSB0 --speed 300
 | `X` | Power off Roomba |
 | `Q` / `ESC` | Quit |
 
-**Note on key-repeat:** SSH terminals send repeated key events while a key is held. The script uses a 300 ms grace window — the Roomba keeps driving as long as a drive key was received within the last 300 ms, then stops automatically. If driving feels laggy, lower the key-repeat delay in your local terminal with:
+**Note on key-repeat and latency:** SSH terminals send repeated key events while a key is held. The script uses a grace window (`DRIVE_TIMEOUT`) — the Roomba keeps driving as long as a drive key was received within that window, then stops automatically.
+
+For the best response, run this on your **local machine** (not the Pi) before connecting:
 ```bash
-xset r rate 200 30
+xset r rate 150 50
+#             ^   ^
+#     150 ms initial repeat delay
+#         50 repeats/sec (event every 20 ms)
 ```
+The script's `DRIVE_TIMEOUT` is set to 200 ms to match. If you skip the `xset` step, driving will feel choppy because the default ~250 ms initial delay exceeds the timeout.
 
 ---
 
@@ -174,8 +182,8 @@ PYTHONPATH=. python3 ssh/power_off.py --port /dev/ttyUSB0
 - Your terminal must support at least 80×24 characters. Resize the window and try again.
 - Make sure your SSH client is passing `$TERM` correctly. Try: `TERM=xterm-256color ssh lucia@10.42.0.1`
 
-**Driving feels unresponsive**
-- Your terminal's key-repeat initial delay may be too high. Lower it locally with `xset r rate 200 30`.
+**Driving feels unresponsive or choppy**
+- Run `xset r rate 150 50` on your local machine before SSHing in. This lowers the initial key-repeat delay to 150 ms, which is under the script's 200 ms `DRIVE_TIMEOUT`.
 - Only one key at a time is supported over SSH — diagonal movement is not available.
 
 **Roomba does not move after connecting**
