@@ -1,0 +1,333 @@
+"""
+control_panel_ssh.py
+
+SSH-compatible terminal control panel for the Roomba.
+Reads input from the terminal via curses — works over any SSH session.
+No physical keyboard or evdev required.
+
+Usage (run from src/scripts/):
+    PYTHONPATH=. python3 ssh/control_panel_ssh.py
+    PYTHONPATH=. python3 ssh/control_panel_ssh.py --port /dev/ttyUSB0 --speed 300
+
+Drive controls (hold key to move, release to stop):
+    W / ↑    — forward
+    S / ↓    — backward
+    A / ←    — spin left
+    D / →    — spin right
+    W+A / W+D — not supported over SSH (only one key at a time)
+
+Hotkeys (single press):
+    1        — play Mass Destruction
+    2        — play La Cucaracha
+    T        — drive square demo
+    R        — reset Roomba
+    X        — power off Roomba
+    Q / ESC  — quit
+
+Note:
+    SSH terminals send key-repeat events while a key is held. This script
+    uses a 300 ms grace window: the Roomba keeps driving as long as a drive
+    key was received within the last 300 ms, then stops automatically.
+    If driving feels laggy, your terminal's key-repeat delay may be high —
+    lower it with:  xset r rate 200 30
+"""
+
+import sys
+import os
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+import argparse
+import curses
+import threading
+import time
+
+from roomba_oi import RoombaOI
+from song import (
+    load_song, play_song, song_duration,
+    MASS_DESTRUCTION, LA_CUCARACHA_1, LA_CUCARACHA_2
+)
+from drive_demos import forward, turn_left
+
+# How long (seconds) to keep driving after the last keypress before stopping.
+# Bridges the initial key-repeat delay in SSH terminals (~250 ms).
+DRIVE_TIMEOUT = 0.3
+
+# ------------------------------------------------------------------
+# Drive helpers  (identical to local control_panel.py)
+# ------------------------------------------------------------------
+
+def compute_wheel_speeds(key, speed):
+    if key == 'w':
+        return speed, speed
+    if key == 's':
+        return -speed, -speed
+    if key == 'a':
+        return -speed, speed
+    if key == 'd':
+        return speed, -speed
+    return 0, 0
+
+
+def direction_label(left, right):
+    if left > 0 and right > 0 and left == right:
+        return "FORWARD"
+    if left < 0 and right < 0 and left == right:
+        return "BACKWARD"
+    if left > 0 and right < 0:
+        return "SPIN RIGHT"
+    if left < 0 and right > 0:
+        return "SPIN LEFT"
+    return "STOPPED"
+
+# ------------------------------------------------------------------
+# UI drawing  (matches local control_panel.py layout)
+# ------------------------------------------------------------------
+
+def draw(stdscr, sensors, s_lock, left, right, status_msg):
+    stdscr.erase()
+    h, w = stdscr.getmaxyx()
+
+    title = " LUCIA — Roomba Control Panel (SSH) "
+    stdscr.attron(curses.A_REVERSE)
+    stdscr.addstr(0, 0, title.center(w - 1))
+    stdscr.attroff(curses.A_REVERSE)
+
+    col = 2
+    row = 2
+
+    stdscr.addstr(row, col, "[ SENSORS ]", curses.A_BOLD)
+    row += 1
+
+    with s_lock:
+        bumps    = sensors.get('bumps', {})
+        cliffs   = sensors.get('cliffs', {})
+        battery  = sensors.get('battery', {})
+        encoders = sensors.get('encoders', {})
+
+    def yn(val):
+        return "YES" if val else "---"
+
+    stdscr.addstr(row,   col, f"Bump   L: {yn(bumps.get('bump_left'))}   R: {yn(bumps.get('bump_right'))}")
+    stdscr.addstr(row+1, col, f"Drop   L: {yn(bumps.get('wheeldrop_left'))}   R: {yn(bumps.get('wheeldrop_right'))}")
+    row += 3
+
+    stdscr.addstr(row, col, "Cliff:")
+    stdscr.addstr(row+1, col, f"  Left:{yn(cliffs.get('left'))}  FL:{yn(cliffs.get('front_left'))}")
+    stdscr.addstr(row+2, col, f"  FR:{yn(cliffs.get('front_right'))}  Right:{yn(cliffs.get('right'))}")
+    row += 4
+
+    volt = battery.get('voltage_mV', 0)
+    curr = battery.get('current_mA', 0)
+    temp = battery.get('temperature_C', 0)
+    pct  = battery.get('charge_pct', 0)
+    stdscr.addstr(row,   col, "Battery:")
+    stdscr.addstr(row+1, col, f"  {volt} mV  {curr} mA  {temp}°C")
+    stdscr.addstr(row+2, col, f"  Charge: {pct}%")
+    row += 4
+
+    enc_l = encoders.get('left', 0)
+    enc_r = encoders.get('right', 0)
+    stdscr.addstr(row, col, f"Encoders  L:{enc_l:>6}  R:{enc_r:>6}")
+
+    col2 = w // 2
+    row2 = 2
+
+    stdscr.addstr(row2, col2, "[ DRIVE ]", curses.A_BOLD)
+    row2 += 1
+    stdscr.addstr(row2,   col2, f"  Direction: {direction_label(left, right):<12}")
+    stdscr.addstr(row2+1, col2, f"  L: {left:>5} mm/s")
+    stdscr.addstr(row2+2, col2, f"  R: {right:>5} mm/s")
+    row2 += 4
+
+    stdscr.addstr(row2, col2, "[ CONTROLS ]", curses.A_BOLD)
+    row2 += 1
+    controls = [
+        ("W/A/S/D", "Drive (hold)"),
+        ("1",       "Mass Destruction"),
+        ("2",       "La Cucaracha"),
+        ("T",       "Square demo"),
+        ("R",       "Reset Roomba"),
+        ("X",       "Power off"),
+        ("Q/ESC",   "Quit"),
+    ]
+    for key, desc in controls:
+        stdscr.addstr(row2, col2, f"  {key:<8} {desc}")
+        row2 += 1
+
+    if status_msg:
+        stdscr.addstr(h - 2, 2, f">> {status_msg}", curses.A_BOLD)
+
+    stdscr.attron(curses.A_REVERSE)
+    stdscr.addstr(h - 1, 0, " Q/ESC to quit ".center(w - 1))
+    stdscr.attroff(curses.A_REVERSE)
+
+    stdscr.refresh()
+
+# ------------------------------------------------------------------
+# Sensor poller thread
+# ------------------------------------------------------------------
+
+def sensor_poller(roomba, sensors, lock, stop_event):
+    while not stop_event.is_set():
+        try:
+            bumps    = roomba.read_bumps()
+            cliffs   = roomba.read_cliffs()
+            battery  = roomba.read_battery()
+            encoders = roomba.read_encoders()
+            with lock:
+                sensors.update({
+                    'bumps':    bumps,
+                    'cliffs':   cliffs,
+                    'battery':  battery,
+                    'encoders': encoders,
+                })
+        except Exception:
+            pass
+        time.sleep(0.5)
+
+# ------------------------------------------------------------------
+# Key tables
+# ------------------------------------------------------------------
+
+DRIVE_KEYS = {
+    ord('w'): 'w', ord('W'): 'w', curses.KEY_UP:    'w',
+    ord('s'): 's', ord('S'): 's', curses.KEY_DOWN:  's',
+    ord('a'): 'a', ord('A'): 'a', curses.KEY_LEFT:  'a',
+    ord('d'): 'd', ord('D'): 'd', curses.KEY_RIGHT: 'd',
+}
+
+HOTKEY_KEYS = {
+    ord('1'): '1',
+    ord('2'): '2',
+    ord('t'): 't', ord('T'): 't',
+    ord('r'): 'r', ord('R'): 'r',
+    ord('x'): 'x', ord('X'): 'x',
+    ord('q'): 'q', ord('Q'): 'q',
+    27: 'esc',
+}
+
+# ------------------------------------------------------------------
+# Main loop
+# ------------------------------------------------------------------
+
+def run(stdscr, roomba, speed):
+    curses.curs_set(0)
+    stdscr.keypad(True)
+    stdscr.timeout(50)   # getch blocks for at most 50 ms
+
+    sensors  = {}
+    s_lock   = threading.Lock()
+    stop_evt = threading.Event()
+
+    st = threading.Thread(target=sensor_poller,
+                          args=(roomba, sensors, s_lock, stop_evt), daemon=True)
+    st.start()
+
+    current_key    = None   # active drive direction
+    last_drive_t   = 0.0    # time of last drive keypress
+    last_left      = None
+    last_right     = None
+    status_msg     = ""
+    action_thread  = None
+
+    try:
+        while True:
+            ch  = stdscr.getch()
+            now = time.time()
+
+            if ch in DRIVE_KEYS:
+                current_key  = DRIVE_KEYS[ch]
+                last_drive_t = now
+
+            elif ch in HOTKEY_KEYS:
+                current_key = None
+                key = HOTKEY_KEYS[ch]
+
+                if key in ('q', 'esc'):
+                    break
+
+                elif key == 'r':
+                    status_msg = "Resetting..."
+                    draw(stdscr, sensors, s_lock, 0, 0, status_msg)
+                    roomba.stop()
+                    roomba.reset()
+                    roomba.start()
+                    roomba.full_mode()
+                    status_msg = "Reset complete."
+
+                elif key == 'x':
+                    status_msg = "Powering off..."
+                    draw(stdscr, sensors, s_lock, 0, 0, status_msg)
+                    roomba.stop()
+                    roomba._send(133)
+                    time.sleep(0.5)
+                    break
+
+                elif key == '1' and (action_thread is None or not action_thread.is_alive()):
+                    status_msg = "Playing: Mass Destruction"
+                    def play_md():
+                        load_song(roomba, 0, MASS_DESTRUCTION)
+                        play_song(roomba, 0)
+                        time.sleep(song_duration(MASS_DESTRUCTION))
+                    action_thread = threading.Thread(target=play_md, daemon=True)
+                    action_thread.start()
+
+                elif key == '2' and (action_thread is None or not action_thread.is_alive()):
+                    status_msg = "Playing: La Cucaracha"
+                    def play_lc():
+                        load_song(roomba, 0, LA_CUCARACHA_1)
+                        load_song(roomba, 1, LA_CUCARACHA_2)
+                        play_song(roomba, 0)
+                        time.sleep(song_duration(LA_CUCARACHA_1) + 0.1)
+                        play_song(roomba, 1)
+                        time.sleep(song_duration(LA_CUCARACHA_2))
+                    action_thread = threading.Thread(target=play_lc, daemon=True)
+                    action_thread.start()
+
+                elif key == 't' and (action_thread is None or not action_thread.is_alive()):
+                    status_msg = "Running: Square demo"
+                    def run_square():
+                        for _ in range(4):
+                            forward(roomba, speed, 600)
+                            time.sleep(0.3)
+                            turn_left(roomba, 150, 90)
+                            time.sleep(0.3)
+                    action_thread = threading.Thread(target=run_square, daemon=True)
+                    action_thread.start()
+
+            # Stop driving if key hasn't been seen within DRIVE_TIMEOUT
+            if current_key is not None and (now - last_drive_t) > DRIVE_TIMEOUT:
+                current_key = None
+
+            left, right = compute_wheel_speeds(current_key, speed)
+            if (left, right) != (last_left, last_right):
+                roomba.drive_direct(left, right)
+                last_left, last_right = left, right
+                if left == 0 and right == 0:
+                    status_msg = ""
+
+            draw(stdscr, sensors, s_lock, left, right, status_msg)
+
+    finally:
+        stop_evt.set()
+        roomba.stop()
+
+
+def main():
+    parser = argparse.ArgumentParser(description='Roomba SSH control panel')
+    parser.add_argument('--port', default='/dev/ttyUSB0',
+                        help='Serial port (default: /dev/ttyUSB0)')
+    parser.add_argument('--speed', type=int, default=300,
+                        help='Drive speed in mm/s (default: 300)')
+    args = parser.parse_args()
+
+    print(f"Connecting on {args.port}...")
+    with RoombaOI(args.port) as roomba:
+        roomba.start()
+        roomba.full_mode()
+        time.sleep(0.5)
+        curses.wrapper(run, roomba, args.speed)
+
+
+if __name__ == '__main__':
+    main()
