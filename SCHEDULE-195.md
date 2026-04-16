@@ -215,6 +215,21 @@ Christian, Ling, Ethan, Noel
 
 ---
 
+### 4/10/2026 - Team Meeting
+
+**Attendees:**
+Christian, Ling, Ethan, Noel
+
+**Discussion:**
+- Researched documentation of Lidar system
+- Verified operation of Lidar
+- Discussed status of 3D printed Raspberry Pi housing ordered from MakerSpace
+
+**Decisions:**
+- Will reach out to Maker Space to learn about status of 3D printed Raspberry Pi housing
+
+---
+
 ### 3/22/2026 - Team Meeting
 
 **Attendees:**
