@@ -484,9 +484,7 @@ opcode  +150   radius=1 (CCW spin)
 
 # Demo
 ## 3/22 Demo
-<video width="320" height="240" controls>
-  <source src="media/0322_demo.mov" type="video/mp4">
-</video>
+![Demo 03/22/26](media/0322_demo.gif)
 
 ## Drawer V1 Drawing
 ![Drawer V1 Drawing](media/Drawer_V1_Drawing.png) 
