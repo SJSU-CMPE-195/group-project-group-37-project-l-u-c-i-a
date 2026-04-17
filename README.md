@@ -483,10 +483,13 @@ opcode  +150   radius=1 (CCW spin)
 - If VSCode shows a warning, select the correct Python interpreter: `Ctrl+Shift+P` → `Python: Select Interpreter` → pick `roomba-env`.
 
 # Demo
-| Date | Media |
-|---------|------------|
-| [Feature 1] | ![3/22 Demo](media/0322_demo.mov) |
-| [Feature 2] | ![Drawer V1 Drawing](media/Drawer_V1_Drawing.png) |
+## 3/22 Demo
+<video width="320" height="240" controls>
+  <source src="media/0322_demo.mov" type="video/mp4">
+</video>
+
+## Drawer V1 Drawing
+![Drawer V1 Drawing](media/Drawer_V1_Drawing.png) 
 
 # Technical Stack
 ## Languages
