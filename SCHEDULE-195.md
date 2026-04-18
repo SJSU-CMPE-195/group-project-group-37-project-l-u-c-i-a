@@ -230,22 +230,6 @@ Christian, Ling, Ethan, Noel
 
 ---
 
-### 3/22/2026 - Team Meeting
-
-**Attendees:**
-Christian, Ling, Ethan, Noel, Morrison
-
-**Discussion:**
-- Roomba control unit precise measurements
-- Roomba USB to Serial interface established
-- Roomba Basic controls deployed
-
-**Decisions:**
-- Will use the LiDAR sensor that our advisor provided for us
-- Will CAD the placement box for the Pi/Shield
-
---
-
 ### 3/27/2026 - Team Meeting
 
 **Attendees:**
@@ -260,4 +244,34 @@ Christian, Ling, Ethan, Noel, Morrison
 - Will use the LiDAR sensor that our advisor provided for us
 - We will use Makerspace to 3d Print first CAD prototype
 
---
+---
+
+### 4/17/2026 - Advisor Meeting
+
+**Attendees:**
+Christian, Ling, Ethan, Noel
+
+**Discussion:**
+- Shared and discussed formal reports with advisor
+- Acquired permission to borrow cameras and secondary Jetson Nano
+- Shared progress and limitations with current LiDAR sensor
+
+**Decisions:**
+- Will go into campus to pick up hardware for cameras
+
+---
+
+### 4/17/2026 - Team Meeting
+
+**Attendees:**
+Christian, Ling, Ethan, Noel
+
+**Discussion:**
+- Acquired V1 of Pi Drawer and started redesign of V2 of Pi Drawer
+- Planning addition of Jetson Nano and Camera on both hardware and software sides
+
+**Decisions:**
+- Will implement a camera to supplement LiDAR sensor to assist in scanning 3D spaces
+- Will improve CAD of existing drawer and implement camera and Jetson mounting into future designs
+
+---
