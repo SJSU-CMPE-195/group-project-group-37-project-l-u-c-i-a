@@ -488,16 +488,16 @@ opcode  +150   radius=1 (CCW spin)
 
 # CAD Drawings
 ## Pi Drawer V1 Drawing (March 27th)
-![Drawer V1 Drawing](media/CAD_Drawings/Drawer_V1_Drawing.png) 
+![Pi Drawer V1 Drawing](media/CAD_Drawings/Drawer_V1_Drawing.png) 
 
 ## Pi Drawer V2 Drawing (April 18th)
-![Drawer V1 Drawing](media/CAD_Drawings/Drawer_V2_Drawing.png) 
+![Pi Drawer V2 Drawing](media/CAD_Drawings/Drawer_V2_Drawing.png) 
 
-## Jetson Drawer V2 Drawing (April 18th)
-![Drawer V1 Drawing](media/CAD_Drawings/JetsonV1_Drawing.png) 
+## Jetson Drawer V1 Drawing (April 18th)
+![Jetson Drawer V1 Drawing](media/CAD_Drawings/Jetson_V1_Drawing.png) 
 
 ## Pi Jetson Drawer V1 Drawing (April 24th)
-![Drawer V1 Drawing](media/CAD_Drawings/PiJetson_V1_Drawing.png) 
+![Pi and Jetson Drawer V1 Drawing](media/CAD_Drawings/PiJetson_V1_Drawing.png) 
 
 # Technical Stack
 ## Languages
