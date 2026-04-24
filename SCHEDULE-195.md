@@ -16,7 +16,7 @@
 | 2/27/2026| 30 minutes | Remote | Christian, Ling, Ethan, Noel | Project Updated Discussion | |
 | 3/13/2026| 30 minutes | Remote | Christian, Ling, Ethan, Noel | Project Update and Future Meeting Planning | |
 | 3/22/2026 | 1 hour | In-person | Christian, Ling, Ethan, Noel | High School Robotics Meeting | |
-| | | In-person / Remote | | | |
+| 4/17/2026 | 30 minutes | Remote | Christian, Ling, Ethan, Noel | Project Update | |
 | | | In-person / Remote | | | |
 | | | In-person / Remote | | | |
 | | | In-person / Remote | | | |
@@ -29,18 +29,19 @@
 
 ## Team Meetings
 
-| Date | Duration | Format | Attendees | Summary | Action Items |
-|------|----------|--------|-----------|---------|--------------|
-| 1/23/26 | 3 hours | In-person | Christian, Ling, Ethan, Noel | Preliminary setup | 2 |
-| 2/10/26 | 2 hours | In-person | Christian, Ling, Ethan, Noel | Pitch Preparation | 1 |
-| 2/13/26 | 2.5 hours | In-person | Christian, Ling, Ethan, Noel | Roomba Tear-down  | 1 |
-| 2/26/26 | 30 minutes | Remote | Christian, Ling, Ethan, Noel | Project Organization |  |
+| Date | Duration | Format | Attendees | Summary |
+|------|----------|--------|-----------|---------|
+| 1/23/26 | 3 hours | In-person | Christian, Ling, Ethan, Noel | Preliminary setup |
+| 2/10/26 | 2 hours | In-person | Christian, Ling, Ethan, Noel | Pitch Preparation |
+| 2/13/26 | 2.5 hours | In-person | Christian, Ling, Ethan, Noel | Roomba Tear-down  |
+| 2/26/26 | 30 minutes | Remote | Christian, Ling, Ethan, Noel | Project Organization |
 | 2/27/26 | 3.5 hours | In-person | Christian, Ling, Ethan, Noel | Raspberry Pi Setup |
-| 3/20/26 | 5 hours | In-person | Christian, Ling, Ethan, Noel | Reconfiguration and Measurements| |
-| 3/22/26 | 4 hours | In-person | Christian, Ling, Ethan, Noel | Basic Controls plus more measurements | |
-| 3/27/26 | 5 hours | In-person | Christian, Ling, Ethan, Noel, Morrison | Remote control functionality and CAD Prototype #1 | |
-| | | In-person / Remote | | | |
-| | | In-person / Remote | | | |
+| 3/20/26 | 5 hours | In-person | Christian, Ling, Ethan, Noel | Reconfiguration and Measurements |
+| 3/22/26 | 4 hours | In-person | Christian, Ling, Ethan, Noel | Basic Controls plus more measurements |
+| 3/27/26 | 5 hours | In-person | Christian, Ling, Ethan, Noel, Morrison | Remote control functionality and CAD Prototype #1 |
+| 4/10/26 | 4 hours | In-person | Christian, Ling, Ethan, Noel | LiDAR System research and Pi drawer CAD printing |
+| 4/17/26 | 4 hours | In-person | Christian, Ling, Ethan, Noel | Pi Drawer V2 and Jetson Nano Research |
+| 4/24/26 | 5 hours | In-person | Christian, Ling, Ethan, Noel | Jetson Nano and Raspberry Pi CAD |
 | | | In-person / Remote | | | |
 | | | In-person / Remote | | | |
 | | | In-person / Remote | | | |
@@ -273,5 +274,18 @@ Christian, Ling, Ethan, Noel
 **Decisions:**
 - Will implement a camera to supplement LiDAR sensor to assist in scanning 3D spaces
 - Will improve CAD of existing drawer and implement camera and Jetson mounting into future designs
+
+---
+### 4/24/2026 - Team Meeting
+
+**Attendees:**
+Christian, Ling, Ethan, Noel
+
+**Discussion:**
+- Acquired Pi Drawer V2 and Jetson Nano Drawer V1
+- Undergo slight changes and combine both drawers to fit on the underside of Roomba.
+
+**Decisions:**
+- Combined Pi Drawer and Jetson Nano Drawer together as an STL file with additions of ventilation. Sent it to Makerspace to print.
 
 ---
