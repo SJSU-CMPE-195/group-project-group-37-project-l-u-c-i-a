@@ -7,6 +7,7 @@
 #   ./update.sh
 
 REPO="/home/lucia/repos/group-project-group-37-project-l-u-c-i-a"
+BRANCH="testing"
 SSID="lucia"
 PASSWORD="lucia-143-tomato"
 AP_CON="pi-ap"
@@ -74,7 +75,7 @@ fi
 echo "Getting IP..."
 sudo dhcpcd wlan0 > /dev/null 2>&1
 
-echo "Pulling latest repo..."
-cd "$REPO" && git fetch --all && git clean -fd && git reset --hard @{u}
+echo "Pulling latest repo (branch: $BRANCH)..."
+cd "$REPO" && git fetch --all && git checkout "$BRANCH" && git clean -fd && git reset --hard "origin/$BRANCH"
 
 echo "Update complete."
