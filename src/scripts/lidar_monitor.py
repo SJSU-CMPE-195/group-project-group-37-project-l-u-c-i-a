@@ -1,16 +1,16 @@
 """
 lidar_monitor.py
 
-Live terminal dashboard for the RPLiDAR sensor.
+Live terminal dashboard for the YDLIDAR G4 sensor.
 Displays device info, health, and per-scan statistics.
 Mirrors the style of sensor_monitor.py.
 
 Install:
-    pip install rplidar-robotics
+    pip install ydlidar
 
 Usage:
-    python3 lidar_monitor.py --port /dev/ttyUSB1
-    python3 lidar_monitor.py --port /dev/ttyUSB1 --min-quality 10
+    python3 lidar_monitor.py --port /dev/ttyUSB0
+    python3 lidar_monitor.py --port /dev/ttyUSB0 --min-range 80
 """
 
 import argparse
@@ -35,20 +35,20 @@ def clear_screen():
     os.system('cls' if os.name == 'nt' else 'clear')
 
 
-def nearest_in_sector(scan, lo, hi, min_quality):
+def nearest_in_sector(scan, lo, hi, min_range_mm):
     readings = [
-        dist for q, ang, dist in scan
-        if q >= min_quality and dist > 0 and lo <= ang < hi
+        dist for _, ang, dist in scan
+        if dist >= min_range_mm and lo <= ang < hi
     ]
     return min(readings) if readings else None
 
 
-def compass_nearest(scan, min_quality):
+def compass_nearest(scan, min_range_mm):
     result = {}
     for entry in COMPASS:
         direction = entry[0]
         lo, hi = entry[1], entry[2]
-        dist = nearest_in_sector(scan, lo, hi, min_quality)
+        dist = nearest_in_sector(scan, lo, hi, min_range_mm)
         if direction in result:
             if dist is not None:
                 prev = result[direction]
@@ -66,33 +66,33 @@ def dist_bar(dist_mm, max_mm=5000, width=20):
     return f'{bar}  {dist_mm:>5.0f} mm'
 
 
-def print_dashboard(info, health, scan, scan_num, min_quality):
+def print_dashboard(info, health, scan, scan_num, min_range_mm):
     clear_screen()
     print("=" * 50)
-    print("   LUCIA — LiDAR Monitor")
+    print("   LUCIA — LiDAR Monitor  (YDLIDAR G4)")
     print("=" * 50)
 
     print(f"\n[DEVICE]")
-    print(f"  Model:    {info.get('model', '?')}")
-    print(f"  Firmware: {info.get('firmware', '?')}")
-    print(f"  Serial:   {info.get('serialnumber', '?')}")
+    print(f"  Port:        {info.get('port', '?')}")
+    print(f"  Baudrate:    {info.get('baudrate', '?')}")
+    print(f"  Scan freq:   {info.get('scan_frequency', '?')} Hz")
+    print(f"  Sample rate: {info.get('sample_rate', '?')} kSps")
+    print(f"  Range:       {info.get('min_range_m', '?')} – {info.get('max_range_m', '?')} m")
 
     status, err = health
     print(f"\n[HEALTH]  {status}  (error code: {err})")
 
     if scan:
-        valid = [(q, a, d) for q, a, d in scan if q >= min_quality and d > 0]
-        distances = [d for _, _, d in valid]
+        distances = [d for _, _, d in scan]
         print(f"\n[SCAN #{scan_num}]")
-        print(f"  Points total:  {len(scan):>5}")
-        print(f"  Points valid:  {len(valid):>5}  (quality >= {min_quality})")
+        print(f"  Points valid:  {len(scan):>5}")
         if distances:
             print(f"  Nearest:  {min(distances):>7.0f} mm")
             print(f"  Farthest: {max(distances):>7.0f} mm")
             print(f"  Average:  {sum(distances)/len(distances):>7.0f} mm")
 
         print(f"\n[NEAREST PER DIRECTION]  (|####| = 5 m scale)")
-        sectors = compass_nearest(scan, min_quality)
+        sectors = compass_nearest(scan, min_range_mm)
         for direction in ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW']:
             bar = dist_bar(sectors.get(direction))
             print(f"  {direction:<2}  |{bar}|")
@@ -104,11 +104,11 @@ def print_dashboard(info, health, scan, scan_num, min_quality):
 
 
 def main():
-    parser = argparse.ArgumentParser(description='RPLiDAR live monitor')
-    parser.add_argument('--port', default='/dev/ttyUSB1',
-                        help='Serial port (default: /dev/ttyUSB1)')
-    parser.add_argument('--min-quality', type=int, default=5,
-                        help='Minimum point quality to display (default: 5)')
+    parser = argparse.ArgumentParser(description='YDLIDAR G4 live monitor')
+    parser.add_argument('--port', default='/dev/ttyUSB0',
+                        help='Serial port (default: /dev/ttyUSB0)')
+    parser.add_argument('--min-range', type=int, default=80,
+                        help='Minimum valid range in mm (default: 80)')
     args = parser.parse_args()
 
     print(f"Connecting on {args.port}...")
@@ -120,7 +120,7 @@ def main():
         try:
             for scan in lidar.iter_scans():
                 scan_num += 1
-                print_dashboard(info, health, scan, scan_num, args.min_quality)
+                print_dashboard(info, health, scan, scan_num, args.min_range)
         except KeyboardInterrupt:
             print("\nStopped.")
 
