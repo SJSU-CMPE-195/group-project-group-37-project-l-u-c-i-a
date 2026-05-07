@@ -32,7 +32,7 @@ target_include_directories(zed_publisher PUBLIC
 )
 
 target_link_libraries(zed_publisher
-  ${ZED_LIBS}
+  /usr/local/zed/lib/libsl_zed.so
   ${CUDA_LIBRARIES}
   ${OpenCV_LIBS}
 )
