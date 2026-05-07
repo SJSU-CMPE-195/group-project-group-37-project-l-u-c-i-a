@@ -13,7 +13,6 @@ find_package(sensor_msgs REQUIRED)
 find_package(nav_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(CUDA REQUIRED)
-find_package(ZED 3 REQUIRED)
 find_package(OpenCV REQUIRED)
 
 set(DEPENDENCIES
@@ -26,13 +25,14 @@ set(DEPENDENCIES
 add_executable(zed_publisher src/zed_publisher.cpp)
 
 target_include_directories(zed_publisher PUBLIC
-  ${ZED_INCLUDE_DIRS}
+  /usr/local/zed/include
   ${CUDA_INCLUDE_DIRS}
   ${OpenCV_INCLUDE_DIRS}
 )
 
 target_link_libraries(zed_publisher
   /usr/local/zed/lib/libsl_zed.so
+  /usr/local/zed/lib/libsl_ai.so
   ${CUDA_LIBRARIES}
   ${OpenCV_LIBS}
 )
