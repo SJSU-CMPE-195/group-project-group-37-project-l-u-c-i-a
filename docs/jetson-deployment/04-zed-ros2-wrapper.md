@@ -14,6 +14,21 @@ container with ZED SDK and CUDA mounted.
 
 ---
 
+## Result ✅
+
+All three topics confirmed publishing:
+
+| Topic | Rate |
+|-------|------|
+| `/zed/rgb/image/compressed` | ~14 Hz |
+| `/zed/odom` | ~13 Hz |
+| `/zed/objects` | ~13 Hz |
+
+Note: 14 Hz instead of 30 Hz target — Jetson Nano is CPU-limited handling
+JPEG compression + object detection simultaneously. Acceptable for navigation use.
+
+---
+
 ## Prerequisites
 
 - ZED SDK 4.x installed and self-test passing (Phase 2)

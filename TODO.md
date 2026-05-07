@@ -77,15 +77,12 @@
 - [ ] Add `lucia` to docker group (done ✅)
 - [ ] Test: `docker run --rm dustynv/ros:humble-ros-base-l4t-r32.7.1 ros2 topic list`
 
-### ZED ROS2 Publisher (`lucia_vision`) ← NEXT
-- [ ] Create `src/ros2/lucia_vision/` ROS2 package
-- [ ] Write custom C++ node using ZED SDK directly (no wrapper)
-  - Opens ZED 2i at HD720 30fps
-  - Publishes `/zed/rgb/image` (`sensor_msgs/CompressedImage`)
-  - Publishes `/zed/objects` (`vision_msgs/Detection3DArray`)
-  - Publishes `/zed/odom` (`nav_msgs/Odometry`)
-- [ ] Build inside dustynv Docker container with CUDA + ZED SDK mounted
-- [ ] Confirm all three topics publish at correct rates
+### ZED ROS2 Publisher (`lucia_vision`) ✅
+- [x] Created `src/ros2/lucia_vision/` ROS2 C++ package
+- [x] Custom node built successfully inside dustynv Docker container
+- [x] `/zed/rgb/image/compressed` publishing at ~14 Hz
+- [x] `/zed/odom` publishing at ~13 Hz
+- [x] `/zed/objects` publishing at ~13 Hz
 
 ### Network
 - [ ] Set static IP `192.168.1.2` on Jetson `eth0` (for direct Pi link)
