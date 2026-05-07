@@ -14,7 +14,6 @@ Usage:
 """
 
 import argparse
-import os
 
 from lidar_reader import LidarReader
 
@@ -32,7 +31,7 @@ COMPASS = [
 
 
 def clear_screen():
-    os.system('cls' if os.name == 'nt' else 'clear')
+    print('\033[2J\033[H', end='', flush=True)
 
 
 def nearest_in_sector(scan, lo, hi, min_range_mm):
