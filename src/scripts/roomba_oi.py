@@ -85,6 +85,17 @@ class RoombaOI:
     # Mode control
     # ------------------------------------------------------------------
 
+    def wake(self):
+        """
+        Wake the Roomba from sleep by pulsing the BRC pin low via DTR.
+        Call this before start() if the Roomba may be asleep.
+        Requires the USB-serial adapter's DTR line wired to the Mini-DIN BRC pin.
+        """
+        self.ser.dtr = False   # pull BRC low
+        time.sleep(1)
+        self.ser.dtr = True    # release
+        time.sleep(2)          # allow Roomba to fully wake
+
     def start(self):
         """Enter OI passive mode. Always call this first."""
         self._send(self.OP_START)

@@ -130,7 +130,20 @@ def main():
     print(f"Connecting to Roomba on {args.roomba_port}...")
 
     with LidarReader(args.lidar_port) as lidar, RoombaOI(args.roomba_port) as roomba:
+        print("Waking Roomba...")
+        roomba.wake()
         roomba.start()
+
+        battery = roomba.read_battery()
+        if battery['voltage_mV'] < 10000:
+            print(f"ERROR: Roomba appears to be off or not responding "
+                  f"(voltage: {battery['voltage_mV']} mV). "
+                  f"Power it on and try again.")
+            raise SystemExit(1)
+
+        print(f"Roomba online — battery {battery['charge_pct']}% "
+              f"({battery['voltage_mV']} mV)")
+
         roomba.safe_mode()   # keeps cliff + wheel-drop safety stops active
         time.sleep(0.5)
 
