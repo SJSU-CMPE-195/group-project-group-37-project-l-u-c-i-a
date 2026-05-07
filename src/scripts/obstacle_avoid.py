@@ -30,12 +30,45 @@ import time
 from lidar_reader import LidarReader
 from roomba_oi import RoombaOI
 
+try:
+    import smbus2
+    import RPi.GPIO as GPIO
+    _HAS_UPS = True
+except ImportError:
+    _HAS_UPS = False
+
+MAX17040_ADDR = 0x36
+GPIO_POWER    = 6    # HIGH = AC OK, LOW = AC fail
+GPIO_CHARGE   = 16   # LOW  = charging, HIGH = not charging
+
 FORWARD = 'FORWARD'
 BLOCKED = 'BLOCKED'
 TURNING = 'TURNING'
 
 SPIN_SPEED = 150   # mm/s, wheels opposite directions
 SPIN_TIME  = 0.8   # seconds per turn burst (~55° at 150 mm/s)
+
+
+def read_ups():
+    """Read UPS voltage and state-of-charge from the MAX17040 over I2C."""
+    if not _HAS_UPS:
+        return {}
+    result = {}
+    try:
+        bus   = smbus2.SMBus(1)
+        vcell = bus.read_i2c_block_data(MAX17040_ADDR, 0x02, 2)
+        soc   = bus.read_i2c_block_data(MAX17040_ADDR, 0x04, 2)
+        bus.close()
+        result['voltage'] = ((vcell[0] << 8 | vcell[1]) >> 4) * 1.25 / 1000
+        result['soc']     = soc[0] + soc[1] / 256.0
+    except Exception:
+        pass
+    try:
+        result['power_ok'] = bool(GPIO.input(GPIO_POWER))
+        result['charging'] = not bool(GPIO.input(GPIO_CHARGE))
+    except Exception:
+        pass
+    return result
 
 
 def clear_screen():
@@ -79,7 +112,7 @@ def lidar_worker(lidar, shared, lock, stop_event):
         pass
 
 
-def print_status(state, front_mm, left_mm, right_mm, scan_n, safe_dist):
+def print_status(state, front_mm, left_mm, right_mm, scan_n, safe_dist, ups, ups_warn, ups_stop):
     clear_screen()
     print("=" * 45)
     print("   LUCIA — Obstacle Avoidance Demo")
@@ -93,6 +126,18 @@ def print_status(state, front_mm, left_mm, right_mm, scan_n, safe_dist):
     print(f"  Left:     {fmt(left_mm)}")
     print(f"  Right:    {fmt(right_mm)}")
     print(f"\n  Scans:    {scan_n}")
+
+    soc = ups.get('soc')
+    if soc is not None:
+        flag = ' *** LOW BATTERY ***' if soc < ups_warn else ''
+        print(f"\n  UPS:      {soc:.1f}%  {ups.get('voltage', 0):.3f} V{flag}")
+        if ups.get('charging') is not None:
+            chg = 'Charging' if ups['charging'] else 'On battery'
+            pwr = 'AC OK' if ups.get('power_ok') else 'AC FAIL'
+            print(f"            {pwr}  {chg}")
+    elif _HAS_UPS:
+        print(f"\n  UPS:      (no data)")
+
     print(f"\n  Ctrl+C to stop.")
     print("=" * 45)
 
@@ -113,7 +158,16 @@ def main():
                         help='Minimum LiDAR point quality (default: 5)')
     parser.add_argument('--log',          default=None,
                         help='Path to write CSV sensor log (e.g. run.csv)')
+    parser.add_argument('--ups-warn',     type=int, default=20,
+                        help='UPS %% below which to show a warning (default: 20)')
+    parser.add_argument('--ups-stop',     type=int, default=10,
+                        help='UPS %% below which to stop the robot (default: 10)')
     args = parser.parse_args()
+
+    if _HAS_UPS:
+        GPIO.setmode(GPIO.BCM)
+        GPIO.setup(GPIO_POWER,  GPIO.IN)
+        GPIO.setup(GPIO_CHARGE, GPIO.IN)
 
     shared     = {'scan': []}
     lock       = threading.Lock()
@@ -124,7 +178,7 @@ def main():
     if args.log:
         log_file   = open(args.log, 'w', newline='')
         log_writer = csv.writer(log_file)
-        log_writer.writerow(['timestamp', 'scan_n', 'state', 'front_mm', 'left_mm', 'right_mm'])
+        log_writer.writerow(['timestamp', 'scan_n', 'state', 'front_mm', 'left_mm', 'right_mm', 'ups_soc', 'ups_voltage'])
 
     print(f"Connecting to LiDAR on  {args.lidar_port}...")
     print(f"Connecting to Roomba on {args.roomba_port}...")
@@ -177,6 +231,13 @@ def main():
                     front_mm = get_front(scan, args.fov, args.min_quality)
                     left_mm, right_mm = get_sides(scan, args.min_quality)
 
+                ups = read_ups()
+                ups_soc = ups.get('soc')
+                if ups_soc is not None and ups_soc < args.ups_stop:
+                    roomba.stop()
+                    print(f"\nUPS battery critical ({ups_soc:.1f}%) — stopping.")
+                    break
+
                 # ---- state machine ----
 
                 if state == FORWARD:
@@ -207,13 +268,16 @@ def main():
                         else:
                             state = BLOCKED   # still blocked — turn again
 
-                print_status(state, front_mm, left_mm, right_mm, scan_n, args.safe_dist)
+                print_status(state, front_mm, left_mm, right_mm, scan_n, args.safe_dist,
+                             ups, args.ups_warn, args.ups_stop)
                 if log_writer:
                     log_writer.writerow([
                         f'{time.time():.3f}', scan_n, state,
                         f'{front_mm:.0f}' if front_mm is not None else '',
                         f'{left_mm:.0f}'  if left_mm  is not None else '',
                         f'{right_mm:.0f}' if right_mm is not None else '',
+                        f'{ups_soc:.1f}'  if ups_soc  is not None else '',
+                        f'{ups.get("voltage", ""):.3f}' if ups.get('voltage') is not None else '',
                     ])
                 time.sleep(0.05)
 
@@ -225,6 +289,8 @@ def main():
             if log_file:
                 log_file.close()
                 print(f"Log saved to {args.log}")
+            if _HAS_UPS:
+                GPIO.cleanup()
 
 
 if __name__ == '__main__':
