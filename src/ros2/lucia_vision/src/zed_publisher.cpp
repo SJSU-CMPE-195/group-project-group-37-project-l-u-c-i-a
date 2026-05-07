@@ -65,7 +65,7 @@ public:
 
     sl::ObjectDetectionParameters od_params;
     od_params.enable_tracking = true;
-    od_params.detection_model = sl::DETECTION_MODEL::MULTI_CLASS_BOX_FAST;
+    od_params.detection_model = sl::DETECTION_MODEL::MULTI_CLASS_BOX;
     cam_.enableObjectDetection(od_params);
 
     RCLCPP_INFO(get_logger(), "ZED 2i opened — HD720 @ 30fps");
