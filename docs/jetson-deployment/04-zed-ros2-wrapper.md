@@ -1,7 +1,16 @@
-# Phase 4 — ZED ROS2 Wrapper
+# Phase 4 — ZED ROS2 Publisher (Custom Node)
 
-Build the Stereolabs ZED ROS2 wrapper and confirm the camera publishes
-the topics that Nav2 on the Pi will consume.
+> ⚠️ The official Stereolabs ZED ROS2 wrapper was abandoned due to dependency
+> incompatibility. All wrapper versions compatible with ROS2 Humble require
+> ZED SDK 4.x headers (`sl/Fusion.hpp`, `sl/CameraOne.hpp`) which do not exist
+> in ZED SDK 3.8.2 (the last version supporting JetPack 4.6 / CUDA 10.2).
+>
+> **Decision:** Write a minimal custom ROS2 C++ node (`lucia_vision`) that uses
+> the ZED C++ SDK directly. Only publishes what LUCIA needs — no GPS, no
+> CameraOne, no unnecessary dependencies.
+
+Build and run the custom `lucia_vision` ROS2 node inside the dustynv Docker
+container with ZED SDK and CUDA mounted.
 
 ---
 

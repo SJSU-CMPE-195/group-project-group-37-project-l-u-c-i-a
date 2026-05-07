@@ -20,18 +20,18 @@
   - Base: `ros:jazzy-ros-base` arm64
   - Should install: `ros-jazzy-rplidar-ros`, `ros-jazzy-slam-toolbox`, `ros-jazzy-nav2-bringup`, `python3-colcon-common-extensions`
 - [ ] Build `zed_msgs` inside the Pi container
-  - Needed so Nav2 on the Pi can deserialize ZED object detection messages from the Jetson (Humble → Jazzy cross-distro)
+  - Needed so Nav2 on the Pi can deserialize ZED object detection messages from the Jetson
 
 ### ROS2 Nodes — `lucia_control`
 - [ ] Implement `src/ros2/lucia_control/lucia_control/roomba_bridge.py`
   - Subscribe to `/cmd_vel` (`geometry_msgs/Twist`)
   - Translate `linear.x` + `angular.z` → `RoombaOI.drive_direct(left, right)`
   - Read bump and cliff sensors; enforce hard stop regardless of Nav2 commands if triggered
-  - Publish sensor state on `/roomba/bumpers` and `/roomba/cliffs` (`std_msgs/Bool` or custom)
+  - Publish sensor state on `/roomba/bumpers` and `/roomba/cliffs`
 
 ### ROS2 Config — `lucia_lidar`
 - [ ] Create `src/ros2/lucia_lidar/config/rplidar.yaml` — serial port, baud rate, frame ID
-- [ ] Create `src/ros2/lucia_lidar/config/slam_toolbox.yaml` — map update rate, scan topic, mode (mapping vs localization)
+- [ ] Create `src/ros2/lucia_lidar/config/slam_toolbox.yaml` — map update rate, scan topic, mode
 
 ### ROS2 Launch — `lucia_bringup`
 - [ ] Write `src/ros2/lucia_bringup/launch/pi_stack.launch.py`
@@ -47,49 +47,56 @@
 
 ## Jetson Nano
 
-### Hardware
-- [ ] Confirm J48 jumper is shorted (barrel jack power enabled)
-- [ ] Confirm 5V/4A power supply connected to barrel jack
+> **Credentials:** `lucia` / `lucia-143-tomato`
+> **SSH (USB):** `ssh lucia@192.168.55.1`
+> **SSH (Ethernet, when on same network):** `ssh lucia@192.168.0.21`
+> **Hostname:** `lucia-jetson`
+> **JetPack:** 4.6.1 / L4T R32.7.1 / Ubuntu 18.04 / CUDA 10.2
+
+### Hardware ✅
+- [x] Confirmed Jetson Nano 4GB (eMMC, B01 revision, 40-pin GPIO)
+- [x] Reflashed with L4T R32.7.1 via recovery mode (FC_REC pin + flash.sh)
+- [x] First boot setup complete — hostname `lucia-jetson`, user `lucia`, MAXN power mode
+- [x] System updated (`apt upgrade`), Docker 20.10.21 confirmed pre-installed
+- [x] `lucia` added to `docker` group
 - [ ] Confirm ZED 2i is in the **blue USB 3.0 port** (not USB 2.0)
-- [ ] Check JetPack version: `cat /etc/nv_tegra_release` (need R35.x for ZED SDK 4.x)
+- [ ] Confirm dedicated 5V/4A power supply for sustained operation (currently USB-powered from laptop)
 
-### ZED SDK
-- [ ] Download ZED SDK 4.x installer for JetPack 5.x from Stereolabs
-- [ ] Copy to Jetson and run installer (`chmod +x` → `./ZED_SDK_*.run`)
-  - Accept AI modules (object detection neural nets) when prompted
-- [ ] Run self-test: `/usr/local/zed/tools/ZED_Diagnostic`
-- [ ] Verify live feed: `/usr/local/zed/tools/ZED_Explorer`
+### ZED SDK ✅
+- [x] Installed ZED SDK 3.8.2 for JetPack 4.6 / CUDA 10.2
+- [x] Installed CUDA toolkit 10.2 and added to PATH (`nvcc --version` confirmed)
+- [x] AI models downloaded and optimized during install
+- [x] SDK libraries confirmed at `/usr/local/zed/lib/`
+- [ ] Fix Python API install (numpy pip build failed — non-critical for now)
+- [ ] Run ZED self-test once a display is available: `/usr/local/zed/tools/ZED_Diagnostic`
 
-### ROS2 Humble
-- [ ] Add ROS2 Humble apt repo and install `ros-humble-ros-base`
-- [ ] Install `python3-colcon-common-extensions` and `python3-rosdep`
-- [ ] `sudo rosdep init && rosdep update`
-- [ ] Add to `~/.bashrc`:
-  - `source /opt/ros/humble/setup.bash`
-  - `export ROS_DOMAIN_ID=42`
-  - `export RMW_IMPLEMENTATION=rmw_fastrtps_cpp`
+### ROS2 on Jetson
+- [ ] Install Docker (already installed — skip)
+- [ ] Pull `dustynv/ros:humble-ros-base-l4t-r32.7.1` — NVIDIA community image with
+  ROS2 Humble built for JetPack 4.6 arm64 (native Humble apt packages don't support Ubuntu 18.04)
+- [ ] Add `lucia` to docker group (done ✅)
+- [ ] Test: `docker run --rm dustynv/ros:humble-ros-base-l4t-r32.7.1 ros2 topic list`
 
-### ZED ROS2 Wrapper
-- [ ] Clone `zed-ros2-wrapper` into `~/ros2_ws/src`
-- [ ] `rosdep install --from-paths src --ignore-src -r -y`
-- [ ] `colcon build --symlink-install --cmake-args=-DCMAKE_BUILD_TYPE=Release`
-- [ ] Test launch: `ros2 launch zed_wrapper zed_camera.launch.py camera_model:=zed2i`
-- [ ] Confirm these topics publish:
-  - `/zed/zed_node/obj_det/objects`
-  - `/zed/zed_node/depth/depth_registered`
-  - `/zed/zed_node/odom`
-- [ ] Enable object detection in the ZED param YAML (`od_enabled: true`), relaunch, confirm `obj_det/objects` flows
+### ZED ROS2 Publisher (`lucia_vision`) ← NEXT
+- [ ] Create `src/ros2/lucia_vision/` ROS2 package
+- [ ] Write custom C++ node using ZED SDK directly (no wrapper)
+  - Opens ZED 2i at HD720 30fps
+  - Publishes `/zed/rgb/image` (`sensor_msgs/CompressedImage`)
+  - Publishes `/zed/objects` (`vision_msgs/Detection3DArray`)
+  - Publishes `/zed/odom` (`nav_msgs/Odometry`)
+- [ ] Build inside dustynv Docker container with CUDA + ZED SDK mounted
+- [ ] Confirm all three topics publish at correct rates
 
 ### Network
-- [ ] Set static IP `192.168.1.2` on Jetson `eth0`
-- [ ] Connect Ethernet cable to Pi
+- [ ] Set static IP `192.168.1.2` on Jetson `eth0` (for direct Pi link)
+- [ ] Connect Ethernet cable directly to Pi
 - [ ] `ping 192.168.1.1` from Jetson — confirm link is up
 
 ---
 
 ## Integration
 
-- [ ] From Pi Docker container: `ros2 topic list | grep zed` — confirm Jetson topics are visible
+- [ ] From Pi Docker container: `ros2 topic list | grep zed` — confirm Jetson topics visible
 - [ ] Echo ZED object detections from the Pi: `ros2 topic echo /zed/zed_node/obj_det/objects --once`
 - [ ] Configure Nav2 costmap on the Pi to ingest `/zed/zed_node/obj_det/objects` as dynamic obstacle layer
 - [ ] Calibrate TF transform between RPLidar frame and ZED 2i physical mount position
@@ -101,8 +108,8 @@
 ## Infrastructure
 
 - [ ] Update `README.md` with actual project description, setup steps, and tech stack table
+- [ ] Update `docs/setup/ros2-jetson.md` to reflect actual JetPack 4.6 / Docker approach
 - [ ] Update `docs/setup/ros2-pi.md` with Dockerfile instructions once written
-- [ ] Add Jetson setup to `docs/setup/ros2-jetson.md` once steps are validated on real hardware
 
 ---
 
@@ -111,4 +118,4 @@
 - Should `roomba_bridge` enforce a hard stop on bump/cliff regardless of Nav2 commands? **(Recommended: yes)**
 - Fuse ZED visual odometry into `slam_toolbox`, or rely on LiDAR odometry alone?
 - If Jetson goes offline mid-navigation, should Nav2 degrade gracefully (LiDAR-only) or stop and wait?
-- Cross-distro `zed_msgs` compatibility (Humble on Jetson → Jazzy on Pi) — confirm messages deserialize correctly before building Nav2 integration on top
+- ROS2 distro mismatch: Pi runs Jazzy, Jetson will run Humble via Docker — confirm `zed_msgs` deserializes correctly on Pi side before building Nav2 integration on top

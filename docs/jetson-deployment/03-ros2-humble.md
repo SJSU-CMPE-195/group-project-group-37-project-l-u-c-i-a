@@ -1,7 +1,18 @@
-# Phase 3 — ROS2 Humble Installation
+# Phase 3 — ROS2 Installation
 
-Install ROS2 Humble on the Jetson. Humble targets Ubuntu 22.04 (Jammy),
-which is what JetPack 5.x ships.
+> ⚠️ Original plan was ROS2 Humble (Ubuntu 22.04). The Jetson Nano runs
+> Ubuntu 18.04 (JetPack 4.x). Humble does NOT support 18.04.
+>
+> Options:
+> - **ROS2 in Docker** — run a `ros:humble-ros-base` arm64 container on the Jetson,
+>   same approach as the Pi. Cleanest option.
+> - **ROS Noetic (ROS 1)** — natively supports Ubuntu 20.04; still not 18.04.
+> - **Build ROS2 from source** — very time consuming on Jetson Nano hardware.
+>
+> **Decision: use Docker on the Jetson (same as Pi).** Document updated accordingly.
+
+Install ROS2 Humble on the Jetson via Docker. Ubuntu 18.04 (JetPack 4.x) does not
+have native ROS2 Humble apt packages — Docker is the solution, same as the Pi.
 
 ---
 
