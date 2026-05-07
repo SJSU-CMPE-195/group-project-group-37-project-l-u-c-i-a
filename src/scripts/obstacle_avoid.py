@@ -22,6 +22,7 @@ Note:
 """
 
 import argparse
+import csv
 import os
 import threading
 import time
@@ -110,11 +111,20 @@ def main():
                         help='Forward detection arc ±degrees (default: 30)')
     parser.add_argument('--min-quality',  type=int, default=5,
                         help='Minimum LiDAR point quality (default: 5)')
+    parser.add_argument('--log',          default=None,
+                        help='Path to write CSV sensor log (e.g. run.csv)')
     args = parser.parse_args()
 
     shared     = {'scan': []}
     lock       = threading.Lock()
     stop_event = threading.Event()
+
+    log_file   = None
+    log_writer = None
+    if args.log:
+        log_file   = open(args.log, 'w', newline='')
+        log_writer = csv.writer(log_file)
+        log_writer.writerow(['timestamp', 'scan_n', 'state', 'front_mm', 'left_mm', 'right_mm'])
 
     print(f"Connecting to LiDAR on  {args.lidar_port}...")
     print(f"Connecting to Roomba on {args.roomba_port}...")
@@ -185,6 +195,13 @@ def main():
                             state = BLOCKED   # still blocked — turn again
 
                 print_status(state, front_mm, left_mm, right_mm, scan_n, args.safe_dist)
+                if log_writer:
+                    log_writer.writerow([
+                        f'{time.time():.3f}', scan_n, state,
+                        f'{front_mm:.0f}' if front_mm is not None else '',
+                        f'{left_mm:.0f}'  if left_mm  is not None else '',
+                        f'{right_mm:.0f}' if right_mm is not None else '',
+                    ])
                 time.sleep(0.05)
 
         except KeyboardInterrupt:
@@ -192,6 +209,9 @@ def main():
         finally:
             stop_event.set()
             roomba.stop()
+            if log_file:
+                log_file.close()
+                print(f"Log saved to {args.log}")
 
 
 if __name__ == '__main__':
