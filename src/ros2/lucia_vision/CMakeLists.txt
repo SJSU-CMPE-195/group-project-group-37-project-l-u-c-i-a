@@ -33,6 +33,7 @@ target_include_directories(zed_publisher PUBLIC
 target_link_libraries(zed_publisher
   /usr/local/zed/lib/libsl_zed.so
   /usr/local/zed/lib/libsl_ai.so
+  /host_libs/libturbojpeg.so.0
   ${CUDA_LIBRARIES}
   ${OpenCV_LIBS}
 )
