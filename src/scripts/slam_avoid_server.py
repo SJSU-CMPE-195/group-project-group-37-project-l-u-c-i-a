@@ -216,6 +216,10 @@ class SharedState:
         self.map_size_m  = 10.0
         self.path_pixels = []
 
+        # Shared LiDAR data — written by lidar_manager, read by robot_main and lidar_only_main
+        self.lidar_shared = {'scan': []}
+        self.lidar_lock   = threading.Lock()
+
     def snapshot(self):
         with self._lock:
             return dict(self._snap)
@@ -243,6 +247,26 @@ class SharedState:
 
 
 # -----------------------------------------------------------------------
+# LiDAR manager — single thread that owns the port
+# -----------------------------------------------------------------------
+
+def lidar_manager(args, state: SharedState):
+    """Opens /dev/rplidar once and keeps it open. Reconnects on error.
+    robot_main and lidar_only_main both read from state.lidar_shared."""
+    while not state.quit_event.is_set():
+        try:
+            with LidarReader(args.lidar_port) as lidar:
+                for scan in lidar.iter_scans():
+                    if state.quit_event.is_set():
+                        return
+                    with state.lidar_lock:
+                        state.lidar_shared['scan'] = scan
+        except Exception as e:
+            state.update(error=f'LiDAR: {e}')
+            time.sleep(3)   # brief pause before reconnect attempt
+
+
+# -----------------------------------------------------------------------
 # Robot thread
 # -----------------------------------------------------------------------
 
@@ -264,24 +288,7 @@ def robot_main(args, state: SharedState):
         state.map_pixels = args.map_pixels
         state.map_size_m = args.map_size
 
-    odom         = Odometry()
-    lidar_shared = {'scan': []}
-    lidar_lock   = threading.Lock()
-    lidar_stop   = threading.Event()
-
-    def lidar_worker():
-        try:
-            with LidarReader(args.lidar_port) as lidar:
-                for scan in lidar.iter_scans():
-                    if lidar_stop.is_set():
-                        break
-                    with lidar_lock:
-                        lidar_shared['scan'] = scan
-        except Exception as e:
-            state.update(error=f'LiDAR: {e}')
-
-    lt = threading.Thread(target=lidar_worker, daemon=True)
-    lt.start()
+    odom = Odometry()
 
     try:
         with RoombaOI(args.roomba_port) as roomba:
@@ -304,8 +311,8 @@ def robot_main(args, state: SharedState):
 
             # Wait for first LiDAR scan (5 s timeout)
             for _ in range(50):
-                with lidar_lock:
-                    if lidar_shared['scan']:
+                with state.lidar_lock:
+                    if state.lidar_shared['scan']:
                         break
                 time.sleep(0.1)
             else:
@@ -337,8 +344,8 @@ def robot_main(args, state: SharedState):
                     loop_dt = max(t0 - prev_iter_t, 0.01)
                     prev_iter_t = t0
 
-                    with lidar_lock:
-                        raw  = lidar_shared['scan']
+                    with state.lidar_lock:
+                        raw  = state.lidar_shared['scan']
                         sid  = id(raw)
                         scan = list(raw)
 
@@ -445,7 +452,6 @@ def robot_main(args, state: SharedState):
     except Exception as e:
         state.update(status='error', error=f'Roomba: {e}')
     finally:
-        lidar_stop.set()
         if state.slam is not None and args.map_out:
             _save_maps(state.slam, args.map_out, args.map_pixels, state.path_pixels)
         if _HAS_UPS:
@@ -453,17 +459,19 @@ def robot_main(args, state: SharedState):
 
 
 def lidar_only_main(args, state: SharedState):
-    """Runs the LiDAR standalone — no Roomba required. Feeds scan data to the UI."""
-    state.update(status='connecting', mode='lidar_only', error='')
+    """Reads from the shared LiDAR data (no new serial connection) and streams it to the UI."""
+    state.update(status='running', mode='lidar_only', error='')
+    last_sid = None
     try:
-        with LidarReader(args.lidar_port) as lidar:
-            state.update(status='running')
-            last_scan_id = None
-            for scan in lidar.iter_scans():
-                if state.stop_event.is_set() or state.quit_event.is_set():
-                    break
-                sid = id(scan)
-                compact = [
+        while not state.stop_event.is_set() and not state.quit_event.is_set():
+            with state.lidar_lock:
+                raw  = state.lidar_shared['scan']
+                sid  = id(raw)
+                scan = list(raw)
+
+            if sid != last_sid and scan:
+                last_sid = sid
+                compact  = [
                     [int(ang), int(dist)]
                     for q, ang, dist in scan
                     if q >= args.min_quality and dist > 0
@@ -472,16 +480,13 @@ def lidar_only_main(args, state: SharedState):
                 left_mm, right_mm = get_sides(scan, args.min_quality)
                 with state._lock:
                     s = state._snap
-                    if sid != last_scan_id:
-                        s['scan_n'] += 1
-                        last_scan_id = sid
+                    s['scan_n']   += 1
                     s['scan']      = compact
                     s['front_mm']  = front_mm
                     s['left_mm']   = left_mm
                     s['right_mm']  = right_mm
-    except Exception as e:
-        state.update(status='error', error=f'LiDAR: {e}')
-        return
+
+            time.sleep(0.05)
     finally:
         state.stop_event.clear()
         state.update(status='waiting', mode='auto', scan=[], drive_state=IDLE,
@@ -1420,6 +1425,7 @@ def main():
     _state = SharedState()
 
     global _robot_thread
+    threading.Thread(target=lidar_manager, args=(_args, _state), daemon=True).start()
     _robot_thread = threading.Thread(target=robot_main, args=(_args, _state), daemon=True)
     _robot_thread.start()
 
