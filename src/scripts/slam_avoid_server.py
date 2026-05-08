@@ -263,6 +263,12 @@ def lidar_manager(args, state: SharedState):
     while not state.quit_event.is_set():
         try:
             with LidarReader(args.lidar_port) as lidar:
+                # Stop any in-progress scan and flush the serial buffer before
+                # starting fresh — prevents "Descriptor length mismatch" when
+                # the motor was already spinning from a previous session.
+                lidar._lidar.stop()
+                lidar._lidar.stop_motor()
+                time.sleep(1)
                 for scan in lidar.iter_scans():
                     if state.quit_event.is_set():
                         return

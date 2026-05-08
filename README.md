@@ -12,12 +12,44 @@
 **Advisor:** Professor Wencen Wu
 
 # Project Description
-This will be an autonomous indoor robotic platform that’s designed to create real time three-dimensional maps used for environment mapping and self navigation. It will utilize 3D LiDAR for spatial reconstruction and (planned) camera-based object recognition for dynamic obstacle identification. The system will continuously generate a point cloud representation of its surroundings while navigating around said point cloud. Onboard processing enables localization using SLAM.
+LUCIA is an autonomous indoor robotic platform built on a repurposed iRobot Roomba 650. It uses a Raspberry Pi 5 as its main compute node, an RPLidar A2M8 for 2D SLAM and obstacle avoidance, and a ZED 2i stereo camera on a Jetson Nano for 3D depth perception and object detection. The system builds a real-time occupancy grid map of its environment while navigating autonomously, and is controlled via a browser-based web interface served directly from the Pi.
 
-# Proof of Concept Scope
-The main objective that this PoC sought to validate was whether hijacking and controlling a repurposed Roomba was possible. In the situation that it wasn’t possible or feasible, other alternatives would have to be taken instead, such as finding another simpler robot to hijack or even creating one from scratch. The risk of this decision was not overly substantial, though if the original plan did not work out, the project would have been delayed indefinitely until a satisfactory starting point was reached. 
+## Current Status
+- **Roomba control** — fully operational via iRobot Open Interface serial commands
+- **LiDAR obstacle avoidance** — reactive avoidance running with bump sensor recovery
+- **SLAM** — 2D occupancy grid mapping via breezyslam, saves PNG map on exit
+- **Web control panel** — FastAPI server auto-starts on boot, accessible at `http://10.42.0.1:8000`
+- **ZED 2i on Jetson** — publishing RGB, odometry, and object detection over ROS2 Humble
+- **ROS2 full stack** — in progress (Nav2 + slam_toolbox + roomba_bridge not yet wired up)
 
-We also still need to learn and experiment with the LiDAR sensor and the camera for this project as we never configured these devices before. The LiDAR sensor and camera were given to us, as we still need to acknowledge how it truly works.
+---
+
+# Quick Start
+
+## 1. Connect to LUCIA
+Power on the Pi. The WiFi hotspot `lucia-control` (password: `lucia-143-tomato`) comes up automatically. Connect your laptop and open:
+```
+http://10.42.0.1:8000
+```
+
+## 2. Use the web panel
+| Button | What it does |
+|--------|-------------|
+| **GO** | Start the robot (autonomous or manual) |
+| **STOP** | Halt and return to waiting |
+| **LIDAR ONLY** | Spin up LiDAR and view scan data without Roomba |
+| **SYSTEM CHECK** | Check device connections and installed packages |
+| **↺ RECONNECT** | Re-attempt hardware connections without restarting the server |
+| **AUTO / MANUAL toggle** | Switch drive modes while running |
+
+In **AUTO** mode the robot drives forward, avoids LiDAR obstacles, and recovers from physical bumps automatically. In **MANUAL** mode use WASD / arrow keys.
+
+## 3. SSH access
+```bash
+ssh lucia@10.42.0.1   # password: lucia-143-tomato
+```
+
+---
 
 # Prerequisites
 - Linux Terminal
@@ -88,7 +120,7 @@ sudo nmcli connection modify pi-ap connection.autoconnect yes
 
 ## Start Access Point
 
-sudo nmcli connectio up pi-ap
+sudo nmcli connection up pi-ap
 
 ## Configure dnsmasq
 
@@ -421,6 +453,133 @@ python3 power_off.py --port /dev/ttyUSB0
 
 ---
 
+---
+
+## SLAM + Avoidance Scripts
+
+These scripts live in `src/scripts/` and run directly on the Pi (no ROS required).
+
+**Install dependencies:**
+```bash
+pip install rplidar-roboticia pyserial breezyslam Pillow fastapi "uvicorn[standard]"
+```
+
+---
+
+### `obstacle_avoid.py` — Reactive LiDAR Obstacle Avoidance
+
+Drives the Roomba forward autonomously and spins away from anything detected within `--safe-dist` in the forward arc. Runs in safe mode so cliff and wheel-drop sensors remain active.
+
+```bash
+python3 obstacle_avoid.py
+python3 obstacle_avoid.py --roomba-port /dev/roomba --lidar-port /dev/rplidar
+python3 obstacle_avoid.py --safe-dist 800 --speed 200 --log run.csv
+```
+
+| Argument | Default | Description |
+|----------|---------|-------------|
+| `--roomba-port` | `/dev/ttyUSB0` | Roomba serial port |
+| `--lidar-port` | `/dev/ttyUSB1` | LiDAR serial port |
+| `--speed` | `200` | Forward speed mm/s |
+| `--safe-dist` | `600` | Stop threshold mm |
+| `--fov` | `30` | Forward detection arc ±degrees |
+| `--log` | off | CSV log output path |
+
+---
+
+### `slam_avoid.py` — SLAM + Obstacle Avoidance
+
+Extends `obstacle_avoid.py` with real-time 2D occupancy grid mapping. Builds a map from LiDAR scans and dead-reckoning wheel encoder odometry. Saves a PNG map on Ctrl+C exit.
+
+```bash
+python3 slam_avoid.py
+python3 slam_avoid.py --map-out session1.png --map-size 10 --map-pixels 800
+```
+
+Saves two files on exit:
+- `map.png` — raw occupancy grid (white=free, black=obstacle, gray=unknown)
+- `map_path.png` — same map with robot path overlaid (green=start, cyan=trail, red=end)
+
+| Argument | Default | Description |
+|----------|---------|-------------|
+| `--map-out` | `map.png` | Output filename |
+| `--map-size` | `10.0` | Map coverage in meters |
+| `--map-pixels` | `500` | SLAM grid resolution |
+
+---
+
+### `slam_avoid_server.py` — Web Control Panel
+
+The primary interface for operating LUCIA. Runs a FastAPI web server on the Pi and streams live sensor data to any browser on the same network. Installed as a systemd service so it starts automatically on boot.
+
+**One-time install:**
+```bash
+cd src/scripts
+bash install-service.sh
+```
+
+**After code changes:**
+```bash
+git pull && sudo systemctl restart lucia
+```
+
+**Useful service commands:**
+```bash
+sudo systemctl status lucia      # check if running
+sudo systemctl restart lucia     # restart after code changes
+journalctl -u lucia -f           # live logs
+```
+
+**Web panel features:**
+- Live polar radar (LiDAR scan, colored by distance zone)
+- SLAM occupancy map refreshing every 3 seconds
+- AUTO mode: LiDAR obstacle avoidance + bump sensor recovery
+- MANUAL mode: WASD keyboard drive with speed slider
+- Left/Right bump indicators that light up on contact
+- System check panel (device files, Python packages, runtime status)
+- RECONNECT button to retry hardware without SSH
+
+| Argument | Default | Description |
+|----------|---------|-------------|
+| `--roomba-port` | `/dev/ttyUSB0` | Roomba serial port |
+| `--lidar-port` | `/dev/ttyUSB1` | LiDAR serial port |
+| `--host` | `0.0.0.0` | Bind address |
+| `--port` | `8000` | HTTP port |
+| `--speed` | `200` | Auto forward speed mm/s |
+| `--safe-dist` | `600` | LiDAR stop threshold mm |
+| `--map-pixels` | `800` | SLAM grid resolution |
+| `--map-size` | `10.0` | Map coverage in meters |
+
+---
+
+## udev Rules (Stable Device Names)
+
+The scripts use `/dev/roomba` and `/dev/rplidar` as stable symlinks. Set them up once:
+
+```bash
+# With only the RPLidar plugged in:
+udevadm info -a -n /dev/ttyUSB0 | grep -E 'serial|idVendor|idProduct' | head -10
+# Note the serial value (e.g. "0001")
+
+# With only the Roomba plugged in — repeat to get its serial
+```
+
+Edit `/etc/udev/rules.d/99-lucia.rules`:
+```
+SUBSYSTEM=="tty", ATTRS{idVendor}=="10c4", ATTRS{idProduct}=="ea60", ATTRS{serial}=="<rplidar_serial>", SYMLINK+="rplidar"
+SUBSYSTEM=="tty", ATTRS{idVendor}=="10c4", ATTRS{idProduct}=="ea60", ATTRS{serial}=="<roomba_serial>",  SYMLINK+="roomba"
+```
+
+```bash
+sudo udevadm control --reload
+sudo udevadm trigger
+ls -la /dev/roomba /dev/rplidar
+```
+
+Unplug and replug each device if the symlinks don't appear immediately.
+
+---
+
 ## OI Mode Reference
 
 All scripts use **Full Mode**.
@@ -509,18 +668,31 @@ Python, C, C++
 - You Only Look Once (YOLO)
 
 ## Hardware
-- Raspberry Pi 5
-- D500 LiDAR
-- Roomba 650
-- 256GB microSD card
-- 5A Raspberry Pi UPS 
-- ZED 2i Serial Camera
-- Jetson Nano
 
+| Component | Model | Role |
+|-----------|-------|------|
+| Compute (main) | Raspberry Pi 5 | Runs web server, SLAM, obstacle avoidance |
+| Compute (vision) | Jetson Nano 4GB (eMMC) | Runs ZED SDK + ROS2 vision pipeline |
+| Drive platform | iRobot Roomba 650 | Differential drive, bump/cliff sensors, encoders |
+| LiDAR | RPLidar A2M8 | 2D 360° scan, 12 m range, 10 Hz |
+| Stereo camera | ZED 2i | RGB + depth + IMU + object detection |
+| Power (Pi) | 5A Raspberry Pi UPS | Battery-backed 5V supply with I2C fuel gauge |
+| Storage | 256 GB microSD | Pi OS + repo |
 
-# What's Next (195B)
-- Full Implementation
-- Future system enhancements
-    - Full object detection: identify and classify obstacles
-    - Target tracking: robot locks on to selected object and stay at a distance
-    - AI implementation: assists robot with object(s)
+# What's Next
+
+## Immediate
+- Complete Roomba udev rule (need to plug in Roomba and capture serial number)
+- Full AUTO mode test with both Roomba and LiDAR connected
+- Direct Ethernet link between Pi and Jetson (static IPs `192.168.1.1` / `192.168.1.2`)
+- Confirm Pi can receive ZED topics from Jetson over ROS2
+
+## ROS2 Stack
+- Implement `roomba_bridge.py` — translate `/cmd_vel` to Roomba OI serial commands
+- Configure `slam_toolbox` and `nav2` launch files
+- Wire up ZED object detections as a Nav2 dynamic obstacle layer
+
+## Future
+- Full object detection and classification via YOLO on Jetson
+- Target tracking — robot maintains a set following distance from a selected object
+- Autonomous goal navigation using Nav2 global planner
