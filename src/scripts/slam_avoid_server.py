@@ -281,6 +281,7 @@ def lidar_manager(args, state: SharedState):
                     with state.lidar_lock:
                         state.lidar_shared['scan'] = scan
                         state.lidar_shared['seq'] += 1
+                    print(f'[lidar_manager] seq={state.lidar_shared["seq"]} pts={len(scan)}', flush=True)
         except Exception as e:
             print(f'[lidar_manager] error: {e}', flush=True)
             state.update(error=f'LiDAR: {e}')
@@ -527,6 +528,7 @@ def lidar_only_main(args, state: SharedState):
 
             if seq != last_seq and scan:
                 last_seq = seq
+                print(f'[lidar_only] seq={seq} pts={len(scan)}', flush=True)
                 compact  = [
                     [int(ang), int(dist)]
                     for q, ang, dist in scan
