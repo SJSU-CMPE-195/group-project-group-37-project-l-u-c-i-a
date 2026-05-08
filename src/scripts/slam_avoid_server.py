@@ -272,12 +272,16 @@ def lidar_manager(args, state: SharedState):
                 time.sleep(0.5)
                 lidar._lidar.reset()   # hardware chip reset, clears all state
                 time.sleep(2)          # wait for device to reinitialize
+                # Drain the reset-info response bytes so iter_scans() reads
+                # a clean scan descriptor instead of leftover init data.
+                lidar._lidar._serial_port.reset_input_buffer()
                 for scan in lidar.iter_scans():
                     if state.quit_event.is_set():
                         return
                     with state.lidar_lock:
                         state.lidar_shared['scan'] = scan
         except Exception as e:
+            print(f'[lidar_manager] error: {e}', flush=True)
             state.update(error=f'LiDAR: {e}')
             time.sleep(3)   # brief pause before reconnect attempt
 
