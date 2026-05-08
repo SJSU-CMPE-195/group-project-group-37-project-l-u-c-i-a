@@ -584,7 +584,7 @@ def run_check(args, state: SharedState) -> dict:
         },
         'runtime': {
             'roomba_connected': {
-                'ok':     running,
+                'ok':     snap['battery_pct'] is not None,
                 'detail': f"{snap['battery_pct']}%  {(snap['battery_mv'] or 0) / 1000:.2f} V"
                           if snap['battery_pct'] else 'not connected',
             },
