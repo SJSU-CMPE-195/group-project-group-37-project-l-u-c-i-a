@@ -756,6 +756,7 @@ _HTML = """<!DOCTYPE html>
     padding: 8px 16px;
     display: flex;
     align-items: center;
+    justify-content: center;
     gap: 14px;
     flex-shrink: 0;
     flex-wrap: wrap;
@@ -835,15 +836,15 @@ _HTML = """<!DOCTYPE html>
     min-height: 0;
   }
 
-  /* ---- radar panel ---- */
-  #radar-wrap {
-    flex: 0 0 340px;
+  /* ---- left panel: radar + stats ---- */
+  #left-panel {
+    flex: 0 0 220px;
     border-right: 1px solid #222244;
     display: flex;
     flex-direction: column;
     align-items: center;
-    padding: 12px;
-    gap: 10px;
+    padding: 10px 8px;
+    gap: 8px;
     overflow-y: auto;
   }
 
@@ -851,37 +852,37 @@ _HTML = """<!DOCTYPE html>
     border: 1px solid #222244;
     border-radius: 50%;
     display: block;
+    flex-shrink: 0;
   }
 
   /* ---- WASD indicator ---- */
-  #wasd-wrap { display: none; flex-direction: column; align-items: center; gap: 4px; }
+  #wasd-wrap { display: none; flex-direction: column; align-items: center; gap: 3px; }
   #wasd-wrap.show { display: flex; }
-  .krow { display: flex; gap: 4px; }
+  .krow { display: flex; gap: 3px; }
   .key {
-    width: 34px; height: 34px;
+    width: 28px; height: 28px;
     border: 1px solid #333;
     border-radius: 4px;
     background: #111128;
     display: flex; align-items: center; justify-content: center;
-    font-size: 14px; color: #555;
+    font-size: 12px; color: #555;
     transition: background 0.08s, color 0.08s, border-color 0.08s;
     user-select: none;
   }
   .key.lit { background: #1a3a5c; border-color: #4a90d9; color: #6ab0d4; }
 
-  #spd-wrap { display: none; align-items: center; gap: 8px; width: 100%; }
+  #spd-wrap { display: none; align-items: center; gap: 6px; width: 100%; }
   #spd-wrap.show { display: flex; }
   #spd-slider { flex: 1; accent-color: #4a90d9; }
-  #spd-val { color: #6ab0d4; min-width: 60px; }
+  #spd-val { color: #6ab0d4; min-width: 52px; font-size: 11px; }
 
   /* ---- manual control legend ---- */
   #ctrl-legend {
     display: none;
     flex-direction: column;
-    gap: 3px;
+    gap: 2px;
     width: 100%;
-    margin-top: 6px;
-    padding: 8px 10px;
+    padding: 6px 8px;
     border: 1px solid #1e2240;
     border-radius: 4px;
     background: #0b0b18;
@@ -889,57 +890,52 @@ _HTML = """<!DOCTYPE html>
   #ctrl-legend.show { display: flex; }
   .cl-row { display: flex; justify-content: space-between; align-items: center; }
   .cl-keys {
-    font-size: 11px;
+    font-size: 10px;
     color: #4a90d9;
     background: #111128;
     border: 1px solid #2a3060;
     border-radius: 3px;
-    padding: 1px 5px;
-    letter-spacing: 0.5px;
+    padding: 1px 4px;
   }
-  .cl-desc { font-size: 11px; color: #666; }
+  .cl-desc { font-size: 10px; color: #555; }
 
-  /* ---- status panel ---- */
-  #status-wrap {
-    flex: 1;
+  /* ---- stats (compact, inside left panel) ---- */
+  #stats {
+    width: 100%;
+    flex-shrink: 0;
     display: flex;
     flex-direction: column;
-    overflow: hidden;
-    min-width: 0;
+    gap: 0;
   }
 
-  #stats {
-    flex: 0 0 auto;
-    padding: 12px 16px;
-    border-bottom: 1px solid #222244;
-    display: grid;
-    grid-template-columns: repeat(2, 1fr);
-    gap: 2px 24px;
-  }
-
-  .sr { display: flex; justify-content: space-between; padding: 3px 0; border-bottom: 1px solid #111128; }
+  .sr { display: flex; justify-content: space-between; padding: 2px 0; border-bottom: 1px solid #0f0f20; font-size: 11px; }
   .sl { color: #555; }
-  .sv { color: #d0d0e0; font-weight: bold; }
+  .sv { color: #c0c0d8; font-weight: bold; }
   .sv.danger { color: #e74c3c; }
   .sv.warn   { color: #e8a020; }
   .sv.ok     { color: #27ae60; }
 
-  /* ---- map panel ---- */
-  #map-wrap {
+  /* ---- map panel (dominant right side) ---- */
+  #map-panel {
     flex: 1;
-    overflow-y: auto;
-    padding: 12px 16px;
+    display: flex;
+    flex-direction: column;
+    padding: 10px 12px;
+    overflow: hidden;
+    min-width: 0;
     min-height: 0;
   }
-  #map-hdr { color: #555; font-size: 11px; margin-bottom: 6px; }
+  #map-hdr { color: #555; font-size: 11px; margin-bottom: 6px; flex-shrink: 0; }
+  #map-none { color: #444; font-size: 12px; }
   #map-img {
+    flex: 1;
     width: 100%;
-    aspect-ratio: 1;
+    min-height: 0;
     border: 1px solid #222244;
     display: none;
     image-rendering: pixelated;
+    object-fit: contain;
   }
-  #map-none { color: #444; font-size: 12px; }
 </style>
 </head>
 <body>
@@ -997,9 +993,9 @@ _HTML = """<!DOCTYPE html>
 <!-- body -->
 <div id="body">
 
-  <!-- left: radar + wasd -->
-  <div id="radar-wrap">
-    <canvas id="radar" width="300" height="300"></canvas>
+  <!-- left: radar + stats -->
+  <div id="left-panel">
+    <canvas id="radar" width="200" height="200"></canvas>
 
     <div id="wasd-wrap">
       <div class="krow"><div class="key" id="kw">W</div></div>
@@ -1008,7 +1004,6 @@ _HTML = """<!DOCTYPE html>
         <div class="key" id="ks">S</div>
         <div class="key" id="kd">D</div>
       </div>
-
       <div id="ctrl-legend">
         <div class="cl-row"><span class="cl-keys">W / ↑</span>    <span class="cl-desc">Forward</span></div>
         <div class="cl-row"><span class="cl-keys">S / ↓</span>    <span class="cl-desc">Backward</span></div>
@@ -1020,36 +1015,34 @@ _HTML = """<!DOCTYPE html>
     </div>
 
     <div id="spd-wrap">
-      <span class="sl">Speed</span>
+      <span class="sl">Spd</span>
       <input type="range" id="spd-slider" min="50" max="400" value="__AUTO_SPEED__"
              oninput="onSpeed(this)">
-      <span id="spd-val">__AUTO_SPEED__ mm/s</span>
+      <span id="spd-val">__AUTO_SPEED__</span>
+    </div>
+
+    <div id="stats">
+      <div class="sr"><span class="sl">Status</span>  <span class="sv" id="s-status">—</span></div>
+      <div class="sr"><span class="sl">Mode</span>    <span class="sv" id="s-mode">—</span></div>
+      <div class="sr"><span class="sl">State</span>   <span class="sv" id="s-drive">—</span></div>
+      <div class="sr"><span class="sl">Scans</span>   <span class="sv" id="s-scans">—</span></div>
+      <div class="sr"><span class="sl">Front</span>   <span class="sv" id="s-front">—</span></div>
+      <div class="sr"><span class="sl">Left</span>    <span class="sv" id="s-left">—</span></div>
+      <div class="sr"><span class="sl">Right</span>   <span class="sv" id="s-right">—</span></div>
+      <div class="sr"><span class="sl">SLAM</span>    <span class="sv" id="s-slam">—</span></div>
+      <div class="sr"><span class="sl">X</span>       <span class="sv" id="s-px">—</span></div>
+      <div class="sr"><span class="sl">Y</span>       <span class="sv" id="s-py">—</span></div>
+      <div class="sr"><span class="sl">Hdg</span>     <span class="sv" id="s-hdg">—</span></div>
+      <div class="sr"><span class="sl">Batt</span>    <span class="sv" id="s-batt">—</span></div>
+      <div class="sr"><span class="sl">UPS</span>     <span class="sv" id="s-ups">—</span></div>
     </div>
   </div>
 
-  <!-- right: stats + map -->
-  <div id="status-wrap">
-    <div id="stats">
-      <div class="sr"><span class="sl">Status</span>   <span class="sv" id="s-status">—</span></div>
-      <div class="sr"><span class="sl">Mode</span>     <span class="sv" id="s-mode">—</span></div>
-      <div class="sr"><span class="sl">State</span>    <span class="sv" id="s-drive">—</span></div>
-      <div class="sr"><span class="sl">Scans</span>    <span class="sv" id="s-scans">—</span></div>
-      <div class="sr"><span class="sl">Front</span>    <span class="sv" id="s-front">—</span></div>
-      <div class="sr"><span class="sl">Left</span>     <span class="sv" id="s-left">—</span></div>
-      <div class="sr"><span class="sl">Right</span>    <span class="sv" id="s-right">—</span></div>
-      <div class="sr"><span class="sl">SLAM</span>     <span class="sv" id="s-slam">—</span></div>
-      <div class="sr"><span class="sl">Pose X</span>   <span class="sv" id="s-px">—</span></div>
-      <div class="sr"><span class="sl">Pose Y</span>   <span class="sv" id="s-py">—</span></div>
-      <div class="sr"><span class="sl">Heading</span>  <span class="sv" id="s-hdg">—</span></div>
-      <div class="sr"><span class="sl">Battery</span>  <span class="sv" id="s-batt">—</span></div>
-      <div class="sr"><span class="sl">UPS</span>      <span class="sv" id="s-ups">—</span></div>
-    </div>
-
-    <div id="map-wrap">
-      <div id="map-hdr">SLAM map &nbsp;·&nbsp; refreshes every 3 s</div>
-      <span id="map-none">No map yet — SLAM starts on GO</span>
-      <img id="map-img" alt="SLAM map">
-    </div>
+  <!-- right: large map -->
+  <div id="map-panel">
+    <div id="map-hdr">SLAM map &nbsp;·&nbsp; refreshes every 3 s</div>
+    <span id="map-none">No map yet — SLAM starts on GO</span>
+    <img id="map-img" alt="SLAM map">
   </div>
 
 </div><!-- /body -->
@@ -1415,8 +1408,8 @@ def main():
                         help='Map output path on shutdown (default: map.png)')
     parser.add_argument('--map-size',     type=float, default=10.0,
                         help='Map coverage in meters (default: 10)')
-    parser.add_argument('--map-pixels',   type=int,   default=500,
-                        help='Map resolution in pixels (default: 500)')
+    parser.add_argument('--map-pixels',   type=int,   default=800,
+                        help='Map resolution in pixels (default: 800)')
     parser.add_argument('--ups-warn',     type=int,   default=20,
                         help='UPS %% warning threshold (default: 20)')
     parser.add_argument('--ups-stop',     type=int,   default=10,
