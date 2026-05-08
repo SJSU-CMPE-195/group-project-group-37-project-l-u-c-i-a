@@ -17,7 +17,7 @@
 | 3/13/2026| 30 minutes | Remote | Christian, Ling, Ethan, Noel | Project Update and Future Meeting Planning | |
 | 3/22/2026 | 1 hour | In-person | Christian, Ling, Ethan, Noel | High School Robotics Meeting | |
 | 4/17/2026 | 30 minutes | Remote | Christian, Ling, Ethan, Noel | Project Update | |
-| | | In-person / Remote | | | |
+| 5/1/2026 |39 minutes | Remote |Christian, Ling, Ethan, Noel | Project Update and Session Planning | |
 | | | In-person / Remote | | | |
 | | | In-person / Remote | | | |
 | | | In-person / Remote | | | |
@@ -41,7 +41,7 @@
 | 4/10/26 | 4 hours | In-person | Christian, Ling, Ethan, Noel | LiDAR System research and Pi drawer CAD printing |
 | 4/17/26 | 4 hours | In-person | Christian, Ling, Ethan, Noel | Pi Drawer V2 and Jetson Nano Research |
 | 4/24/26 | 5 hours | In-person | Christian, Ling, Ethan, Noel | Jetson Nano and Raspberry Pi CAD |
-| | | In-person / Remote | | | |
+| 5/1/2026| 4 hours | In-person | Christian, Ling, Ethan, Noel | Pi Drawer and Jetson Housing Fitment Check | |
 | | | In-person / Remote | | | |
 | | | In-person / Remote | | | |
 | | | In-person / Remote | | | |
@@ -269,5 +269,18 @@ Christian, Ling, Ethan, Noel
 
 **Decisions:**
 - Combined Pi Drawer and Jetson Nano Drawer together as an STL file with additions of ventilation. Sent it to Makerspace to print.
+
+---
+### 5/1/2026 - Team Meeting
+
+**Attendees:**
+Christian, Ling, Ethan, Noel
+
+**Discussion:**
+- Acquired parts for mounting lidar sensor to Roomba.
+- New Jetson Nano Acquired and reflashed
+
+**Decisions:**
+- Use a a phone mount as a substitute for mounting Lidar sensor rather than designing and 3D printing a new one.
 
 ---
