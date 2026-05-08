@@ -452,6 +452,82 @@ def robot_main(args, state: SharedState):
             GPIO.cleanup()
 
 
+def lidar_only_main(args, state: SharedState):
+    """Runs the LiDAR standalone — no Roomba required. Feeds scan data to the UI."""
+    state.update(status='connecting', mode='lidar_only', error='')
+    try:
+        with LidarReader(args.lidar_port) as lidar:
+            state.update(status='running')
+            last_scan_id = None
+            for scan in lidar.iter_scans():
+                if state.stop_event.is_set() or state.quit_event.is_set():
+                    break
+                sid = id(scan)
+                compact = [
+                    [int(ang), int(dist)]
+                    for q, ang, dist in scan
+                    if q >= args.min_quality and dist > 0
+                ]
+                front_mm = get_front(scan, args.fov, args.min_quality)
+                left_mm, right_mm = get_sides(scan, args.min_quality)
+                with state._lock:
+                    s = state._snap
+                    if sid != last_scan_id:
+                        s['scan_n'] += 1
+                        last_scan_id = sid
+                    s['scan']      = compact
+                    s['front_mm']  = front_mm
+                    s['left_mm']   = left_mm
+                    s['right_mm']  = right_mm
+    except Exception as e:
+        state.update(status='error', error=f'LiDAR: {e}')
+        return
+    finally:
+        state.stop_event.clear()
+        state.update(status='waiting', mode='auto', scan=[], drive_state=IDLE,
+                     front_mm=None, left_mm=None, right_mm=None)
+
+
+def run_check(args, state: SharedState) -> dict:
+    """Non-blocking system check — inspects device files and installed packages."""
+    import importlib
+
+    def chk_mod(name):
+        try:
+            importlib.import_module(name)
+            return True
+        except ImportError:
+            return False
+
+    snap    = state.snapshot()
+    running = snap['status'] in ('waiting', 'running')
+
+    return {
+        'devices': {
+            'roomba':  {'ok': os.path.exists(args.roomba_port),  'path': args.roomba_port},
+            'rplidar': {'ok': os.path.exists(args.lidar_port),   'path': args.lidar_port},
+        },
+        'packages': {
+            'rplidar':    {'ok': chk_mod('rplidar')},
+            'pyserial':   {'ok': chk_mod('serial')},
+            'breezyslam': {'ok': chk_mod('breezyslam')},
+            'Pillow':     {'ok': chk_mod('PIL')},
+            'fastapi':    {'ok': chk_mod('fastapi')},
+            'uvicorn':    {'ok': chk_mod('uvicorn')},
+        },
+        'runtime': {
+            'roomba_connected': {
+                'ok':     running,
+                'detail': f"{snap['battery_pct']}%  {(snap['battery_mv'] or 0) / 1000:.2f} V"
+                          if snap['battery_pct'] else 'not connected',
+            },
+            'slam_active': {'ok': _HAS_SLAM},
+            'pillow':      {'ok': _HAS_PIL},
+            'server':      {'ok': True, 'detail': 'running'},
+        },
+    }
+
+
 def _save_maps(slam, map_out, pixels, path_pixels):
     if not _HAS_PIL:
         return
@@ -503,6 +579,11 @@ async def index():
                 .replace('__AUTO_SPEED__', str(auto_speed))
 
 
+@app.get("/check")
+async def system_check():
+    return run_check(_args, _state)
+
+
 @app.get("/map")
 async def get_map():
     if _state is None or _state.slam is None or not _HAS_PIL:
@@ -543,19 +624,41 @@ async def ws_handler(ws: WebSocket):
         send_task.cancel()
 
 
+_lidar_only_thread: threading.Thread = None
+
+
 def _handle(msg):
+    global _lidar_only_thread
     cmd = msg.get('cmd')
+
     if cmd == 'go':
+        # If lidar-only is running, stop it before starting full robot mode
+        if _state.get_mode() == 'lidar_only' and _state._snap.get('status') == 'running':
+            _state.stop_event.set()
+            if _lidar_only_thread:
+                _lidar_only_thread.join(timeout=2)
+        _state.set_mode('auto')
         _state.update(error='')
         _state.go_event.set()
+
     elif cmd == 'stop':
         _state.stop_event.set()
         _state.set_manual_vel(0, 0)
+
+    elif cmd == 'lidar_only':
+        if _state._snap.get('status') == 'running':
+            return   # already running something
+        _lidar_only_thread = threading.Thread(
+            target=lidar_only_main, args=(_args, _state), daemon=True
+        )
+        _lidar_only_thread.start()
+
     elif cmd == 'set_mode':
         mode = msg.get('mode', 'auto')
         _state.set_mode(mode)
         if mode == 'manual':
             _state.set_manual_vel(0, 0)
+
     elif cmd == 'drive':
         if _state.get_mode() == 'manual':
             _state.set_manual_vel(
@@ -664,6 +767,28 @@ _HTML = """<!DOCTYPE html>
   .sw input:checked ~ .sw-thumb { transform: translateX(22px); }
 
   #err-msg { font-size: 11px; color: #e74c3c; flex: 1; }
+
+  #btn-lidar  { background: #1a4a6b; color: #6ab0d4; border: 1px solid #2a6090; }
+  #btn-check  { background: #1e2a1e; color: #5a9a5a; border: 1px solid #2a4a2a; }
+
+  /* ---- system check panel ---- */
+  #check-panel {
+    display: none;
+    background: #080812;
+    border-bottom: 1px solid #222244;
+    padding: 10px 16px;
+    gap: 24px;
+    flex-wrap: wrap;
+  }
+  #check-panel.show { display: flex; }
+  .chk-group { display: flex; flex-direction: column; gap: 3px; }
+  .chk-title { font-size: 10px; color: #555; letter-spacing: 1px; margin-bottom: 2px; }
+  .chk-row   { display: flex; align-items: center; gap: 6px; font-size: 12px; }
+  .chk-dot   { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+  .chk-dot.ok  { background: #27ae60; }
+  .chk-dot.bad { background: #e74c3c; }
+  .chk-name  { color: #aaa; }
+  .chk-detail { color: #555; font-size: 11px; }
 
   /* ---- main layout ---- */
   #body {
@@ -791,8 +916,10 @@ _HTML = """<!DOCTYPE html>
 
 <!-- controls bar -->
 <div id="ctrl-bar">
-  <button id="btn-go"   onclick="cmd('go')"   disabled>▶&nbsp;GO</button>
-  <button id="btn-stop" onclick="cmd('stop')"  disabled>■&nbsp;STOP</button>
+  <button id="btn-go"    onclick="cmd('go')"        disabled>▶&nbsp;GO</button>
+  <button id="btn-stop"  onclick="cmd('stop')"       disabled>■&nbsp;STOP</button>
+  <button id="btn-lidar" onclick="cmd('lidar_only')" disabled>◎&nbsp;LIDAR ONLY</button>
+  <button id="btn-check" onclick="doCheck()">⬡&nbsp;SYSTEM CHECK</button>
 
   <div class="mode-wrap">
     <span class="mode-lbl on" id="lbl-auto">AUTO</span>
@@ -805,6 +932,28 @@ _HTML = """<!DOCTYPE html>
   </div>
 
   <span id="err-msg"></span>
+</div>
+
+<!-- system check panel (hidden until check runs) -->
+<div id="check-panel">
+  <div class="chk-group">
+    <div class="chk-title">DEVICES</div>
+    <div class="chk-row"><div class="chk-dot" id="ck-roomba-dev"></div><span class="chk-name">Roomba</span><span class="chk-detail" id="ck-roomba-dev-d"></span></div>
+    <div class="chk-row"><div class="chk-dot" id="ck-lidar-dev"></div> <span class="chk-name">RPLidar</span><span class="chk-detail" id="ck-lidar-dev-d"></span></div>
+  </div>
+  <div class="chk-group">
+    <div class="chk-title">PACKAGES</div>
+    <div class="chk-row"><div class="chk-dot" id="ck-rplidar"></div>   <span class="chk-name">rplidar</span></div>
+    <div class="chk-row"><div class="chk-dot" id="ck-pyserial"></div>  <span class="chk-name">pyserial</span></div>
+    <div class="chk-row"><div class="chk-dot" id="ck-breezyslam"></div><span class="chk-name">breezyslam</span></div>
+    <div class="chk-row"><div class="chk-dot" id="ck-pillow"></div>    <span class="chk-name">Pillow</span></div>
+  </div>
+  <div class="chk-group">
+    <div class="chk-title">RUNTIME</div>
+    <div class="chk-row"><div class="chk-dot" id="ck-roomba-conn"></div><span class="chk-name">Roomba connected</span><span class="chk-detail" id="ck-roomba-conn-d"></span></div>
+    <div class="chk-row"><div class="chk-dot" id="ck-slam"></div>      <span class="chk-name">SLAM (breezyslam)</span></div>
+    <div class="chk-row"><div class="chk-dot" id="ck-server"></div>    <span class="chk-name">Server</span></div>
+  </div>
 </div>
 
 <!-- body -->
@@ -920,14 +1069,17 @@ function render(d) {
   const labels = {
     connecting: 'Connecting…',
     waiting:    'Waiting — press GO',
-    running:    `Running  [ ${d.mode.toUpperCase()} ]`,
+    running:    `Running  [ ${d.mode === 'lidar_only' ? 'LIDAR ONLY' : d.mode.toUpperCase()} ]`,
     error:      `Error: ${d.error}`,
   };
   setConn(d.status, labels[d.status] || d.status);
 
   // buttons
-  el('btn-go').disabled   = (d.status === 'running' || d.status === 'connecting');
-  el('btn-stop').disabled = (d.status !== 'running');
+  const isRunning    = (d.status === 'running');
+  const isConnecting = (d.status === 'connecting');
+  el('btn-go').disabled    = isRunning || isConnecting;
+  el('btn-stop').disabled  = !isRunning;
+  el('btn-lidar').disabled = isRunning || isConnecting;
 
   // mode toggle
   el('mode-sw').checked     = (d.mode === 'manual');
@@ -1131,6 +1283,46 @@ function refreshMap() {
   tmp.src = `/map?t=${Date.now()}`;
 }
 setInterval(refreshMap, 3000);
+
+// ---- System check -----------------------------------------------------
+
+function dot(id, ok) {
+  const d = el(id);
+  if (d) d.className = 'chk-dot ' + (ok ? 'ok' : 'bad');
+}
+
+async function doCheck() {
+  const btn = el('btn-check');
+  btn.textContent = '⬡ CHECKING…';
+  btn.disabled = true;
+
+  try {
+    const r = await fetch('/check');
+    const d = await r.json();
+
+    dot('ck-roomba-dev',  d.devices.roomba.ok);
+    dot('ck-lidar-dev',   d.devices.rplidar.ok);
+    el('ck-roomba-dev-d').textContent = d.devices.roomba.path;
+    el('ck-lidar-dev-d').textContent  = d.devices.rplidar.path;
+
+    dot('ck-rplidar',    d.packages.rplidar.ok);
+    dot('ck-pyserial',   d.packages.pyserial.ok);
+    dot('ck-breezyslam', d.packages.breezyslam.ok);
+    dot('ck-pillow',     d.packages.Pillow.ok);
+
+    dot('ck-roomba-conn', d.runtime.roomba_connected.ok);
+    el('ck-roomba-conn-d').textContent = d.runtime.roomba_connected.detail;
+    dot('ck-slam',   d.runtime.slam_active.ok);
+    dot('ck-server', d.runtime.server.ok);
+
+    el('check-panel').className = 'show';
+  } catch (e) {
+    el('err-msg').textContent = 'Check failed: ' + e;
+  } finally {
+    btn.textContent = '⬡ SYSTEM CHECK';
+    btn.disabled = false;
+  }
+}
 
 // ---- Boot -------------------------------------------------------------
 connect();
