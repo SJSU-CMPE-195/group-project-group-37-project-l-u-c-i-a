@@ -499,6 +499,10 @@ opcode  +150   radius=1 (CCW spin)
 ## Pi Jetson Drawer V1 Drawing (April 24th)
 ![Pi and Jetson Drawer V1 Drawing](media/CAD_Drawings/PiJetson_V1_Drawing.png) 
 
+## Robot (May 8th)
+![Robot 05/08/26](media/0508_robot.png) 
+
+
 # Technical Stack
 ## Languages
 Python, C, C++
