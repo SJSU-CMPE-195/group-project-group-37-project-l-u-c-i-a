@@ -72,7 +72,12 @@ SPIN_TIME  = 0.8
 FORWARD = 'FORWARD'
 BLOCKED = 'BLOCKED'
 TURNING = 'TURNING'
+BUMPED  = 'BUMPED'
 IDLE    = 'IDLE'
+
+BUMP_BACKUP_SPEED = -150   # mm/s — reverse after a bump
+BUMP_BACKUP_TIME  = 0.5    # seconds to back up
+BUMP_TURN_TIME    = 0.7    # seconds to spin away from the hit side
 
 
 # -----------------------------------------------------------------------
@@ -202,6 +207,8 @@ class SharedState:
             'battery_mv':  None,
             'ups':         {},
             'scan':        [],
+            'bump_left':   False,
+            'bump_right':  False,
             'error':       '',
         }
         self._manual_l = 0
@@ -336,6 +343,8 @@ def robot_main(args, state: SharedState):
 
                 auto_state  = FORWARD
                 turn_start  = 0.0
+                bump_start  = 0.0
+                bump_dir    = 'none'   # 'left', 'right', 'both'
                 prev_iter_t = time.time()
 
                 # Inner loop — runs until Stop or quit
@@ -352,6 +361,12 @@ def robot_main(args, state: SharedState):
                     try:
                         enc = roomba.read_encoders()
                         odom.update(enc['left'], enc['right'])
+                    except Exception:
+                        pass
+
+                    bumps = {'bump_left': False, 'bump_right': False}
+                    try:
+                        bumps = roomba.read_bumps()
                     except Exception:
                         pass
 
@@ -390,6 +405,18 @@ def robot_main(args, state: SharedState):
                     mode = state.get_mode()
 
                     if mode == 'auto':
+                        # Bump is highest priority — interrupt any state except BUMPED
+                        if auto_state != BUMPED and (bumps['bump_left'] or bumps['bump_right']):
+                            roomba.stop()
+                            auto_state = BUMPED
+                            bump_start = time.time()
+                            if bumps['bump_left'] and bumps['bump_right']:
+                                bump_dir = 'both'
+                            elif bumps['bump_left']:
+                                bump_dir = 'left'
+                            else:
+                                bump_dir = 'right'
+
                         if auto_state == FORWARD:
                             if front_mm is not None and front_mm <= args.safe_dist:
                                 roomba.stop()
@@ -412,6 +439,21 @@ def robot_main(args, state: SharedState):
                                     auto_state = FORWARD
                                 else:
                                     auto_state = BLOCKED
+                        elif auto_state == BUMPED:
+                            elapsed = time.time() - bump_start
+                            if elapsed < BUMP_BACKUP_TIME:
+                                # Back straight up
+                                roomba.drive_direct(BUMP_BACKUP_SPEED, BUMP_BACKUP_SPEED)
+                            elif elapsed < BUMP_BACKUP_TIME + BUMP_TURN_TIME:
+                                # Spin away from the hit side
+                                if bump_dir == 'left':
+                                    roomba.drive_direct(SPIN_SPEED, -SPIN_SPEED)   # spin right
+                                else:
+                                    roomba.drive_direct(-SPIN_SPEED, SPIN_SPEED)   # spin left
+                            else:
+                                roomba.stop()
+                                auto_state = FORWARD
+
                         drive_label = auto_state
                     else:
                         ml, mr = state.get_manual_vel()
@@ -438,6 +480,8 @@ def robot_main(args, state: SharedState):
                         s['pose_hdg']    = round(odom.heading_deg(), 1)
                         s['ups']         = ups
                         s['scan']        = compact_scan
+                        s['bump_left']   = bumps['bump_left']
+                        s['bump_right']  = bumps['bump_right']
 
                     elapsed = time.time() - t0
                     rem = 0.05 - elapsed
@@ -899,6 +943,27 @@ _HTML = """<!DOCTYPE html>
   }
   .cl-desc { font-size: 10px; color: #555; }
 
+  /* ---- bump indicators ---- */
+  #bumpers { display: flex; gap: 6px; width: 100%; justify-content: center; }
+  .bump-ind {
+    flex: 1;
+    padding: 4px 0;
+    text-align: center;
+    border-radius: 3px;
+    border: 1px solid #2a2a3a;
+    font-size: 11px;
+    color: #444;
+    background: #0d0d1a;
+    transition: background 0.08s, color 0.08s, border-color 0.08s;
+    letter-spacing: 1px;
+  }
+  .bump-ind.hit {
+    background: #3a0a0a;
+    border-color: #e74c3c;
+    color: #e74c3c;
+    font-weight: bold;
+  }
+
   /* ---- stats (compact, inside left panel) ---- */
   #stats {
     width: 100%;
@@ -996,6 +1061,11 @@ _HTML = """<!DOCTYPE html>
   <!-- left: radar + stats -->
   <div id="left-panel">
     <canvas id="radar" width="200" height="200"></canvas>
+
+    <div id="bumpers">
+      <div class="bump-ind" id="bump-left">◀ LEFT</div>
+      <div class="bump-ind" id="bump-right">RIGHT ▶</div>
+    </div>
 
     <div id="wasd-wrap">
       <div class="krow"><div class="key" id="kw">W</div></div>
@@ -1161,6 +1231,10 @@ function render(d) {
     ue.textContent = `${ups.soc.toFixed(1)}%` + (ups.voltage ? `  ${ups.voltage.toFixed(3)} V` : '');
     ue.className   = 'sv' + (ups.soc < 15 ? ' danger' : ups.soc < 30 ? ' warn' : ' ok');
   }
+
+  // bump indicators
+  el('bump-left').className  = 'bump-ind' + (d.bump_left  ? ' hit' : '');
+  el('bump-right').className = 'bump-ind' + (d.bump_right ? ' hit' : '');
 
   // radar
   if (d.scan && d.scan.length) drawRadar(d.scan, d.front_mm, d.pose_hdg || 0);
