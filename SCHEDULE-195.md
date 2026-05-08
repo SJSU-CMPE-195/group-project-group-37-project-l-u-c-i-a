@@ -10,14 +10,14 @@
 
 ## Advisor Meetings
 
-| Date | Duration | Format | Attendees | Summary | Action Items |
-|------|----------|--------|-----------|---------|--------------|
-| 2/6/2026 | 30 minutes | Remote | Christian, Ling, Ethan, Noel | Introduction Project Discussion | 2 |
-| 2/27/2026| 30 minutes | Remote | Christian, Ling, Ethan, Noel | Project Updated Discussion | |
-| 3/13/2026| 30 minutes | Remote | Christian, Ling, Ethan, Noel | Project Update and Future Meeting Planning | |
-| 3/22/2026 | 1 hour | In-person | Christian, Ling, Ethan, Noel | High School Robotics Meeting | |
-| 4/17/2026 | 30 minutes | Remote | Christian, Ling, Ethan, Noel | Project Update | |
-| 5/1/2026 |39 minutes | Remote |Christian, Ling, Ethan, Noel | Project Update and Session Planning | |
+| Date | Duration | Format | Attendees | Summary |
+|------|----------|--------|-----------|---------|
+| 2/6/2026 | 30 minutes | Remote | Christian, Ling, Ethan, Noel | Introduction Project Discussion 
+| 2/27/2026| 30 minutes | Remote | Christian, Ling, Ethan, Noel | Project Updated Discussion
+| 3/13/2026| 30 minutes | Remote | Christian, Ling, Ethan, Noel | Project Update and Future Meeting Planning
+| 3/22/2026 | 1 hour | In-person | Christian, Ling, Ethan, Noel | High School Robotics Meeting
+| 4/17/2026 | 30 minutes | Remote | Christian, Ling, Ethan, Noel | Project Update
+| 5/1/2026 | 39 minutes | Remote |Christian, Ling, Ethan, Noel | Project Update and Session Planning
 | | | In-person / Remote | | | |
 | | | In-person / Remote | | | |
 | | | In-person / Remote | | | |
@@ -41,12 +41,12 @@
 | 4/10/26 | 4 hours | In-person | Christian, Ling, Ethan, Noel | LiDAR System research and Pi drawer CAD printing |
 | 4/17/26 | 4 hours | In-person | Christian, Ling, Ethan, Noel | Pi Drawer V2 and Jetson Nano Research |
 | 4/24/26 | 5 hours | In-person | Christian, Ling, Ethan, Noel | Jetson Nano and Raspberry Pi CAD |
-| 5/1/2026| 4 hours | In-person | Christian, Ling, Ethan, Noel | Pi Drawer and Jetson Housing Fitment Check | |
-| | | In-person / Remote | | | |
-| | | In-person / Remote | | | |
-| | | In-person / Remote | | | |
-| | | In-person / Remote | | | |
-| | | In-person / Remote | | | |
+| 5/1/26| 4 hours | In-person | Christian, Ling, Ethan, Noel | Pi Drawer and Jetson Housing Fitment Check |
+| 5/7/26 | 6 hours | In-person| Christian, Ling, Ethan, Noel | Inital Implementation of Independent Movement & LiDAR |
+| 5/8/26 | 7 hours | In-person | Christian, Ling, Ethan, Noel | Finilizing Prototype for Demo/Ppresentation | 
+| | | In-person / Remote | | | 
+| | | In-person / Remote | | | 
+| | | In-person / Remote | | | 
 
 ---
 ## Meeting Notes
@@ -271,6 +271,20 @@ Christian, Ling, Ethan, Noel
 - Combined Pi Drawer and Jetson Nano Drawer together as an STL file with additions of ventilation. Sent it to Makerspace to print.
 
 ---
+### 5/1/2026 - Advisor Meeting
+
+**Attendees:**
+Christian, Ling, Ethan, Noel
+
+**Discussion:**
+- Updated Advisor on current progress
+- Showed printed housing prototype
+
+**Decisions:**
+- Will continue t oassemble componentd together
+
+---
+
 ### 5/1/2026 - Team Meeting
 
 **Attendees:**
@@ -282,5 +296,35 @@ Christian, Ling, Ethan, Noel
 
 **Decisions:**
 - Use a a phone mount as a substitute for mounting Lidar sensor rather than designing and 3D printing a new one.
+
+---
+
+### 5/7/2026 - Team Meeting
+
+**Attendees:**
+Christian, Ling, Ethan, Noel
+
+**Discussion:**
+- Implemented initail systems for LiDAR scanning and object detection
+- Interfacing robot control with LiDAR sensor data
+- Starred work on presentation/demo
+
+**Decisions:**
+- Assemble parts into Roomba to prepare for final prototype
+
+---
+
+### 5/8/2026 - Team Meeting
+
+**Attendees:**
+Christian, Ling, Ethan, Noel
+
+**Discussion:**
+- Mounted housing and hardware onto Roomba
+- Further developed LiDAR mapping
+- Finalized material for demo and presentation
+
+**Decisions:**
+- Implement camera functionality for developement during CMPE195B
 
 ---
