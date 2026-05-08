@@ -269,10 +269,9 @@ def lidar_manager(args, state: SharedState):
                 # "Descriptor length mismatch" on the next scan command.
                 lidar._lidar.stop()
                 lidar._lidar.stop_motor()
+                time.sleep(1)
+                lidar._lidar.clean_input()
                 time.sleep(0.5)
-                lidar._lidar.reset()       # hardware chip reset, clears all state
-                time.sleep(2)              # wait for device to reinitialize
-                lidar._lidar.clean_input() # flush reset-response bytes from buffer
                 for scan in lidar.iter_scans():
                     if state.quit_event.is_set():
                         return
