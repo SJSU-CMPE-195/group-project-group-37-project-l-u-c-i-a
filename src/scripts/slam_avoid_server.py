@@ -217,7 +217,7 @@ class SharedState:
         self.path_pixels = []
 
         # Shared LiDAR data — written by lidar_manager, read by robot_main and lidar_only_main
-        self.lidar_shared = {'scan': []}
+        self.lidar_shared = {'scan': [], 'seq': 0}
         self.lidar_lock   = threading.Lock()
 
     def snapshot(self):
@@ -261,6 +261,7 @@ def lidar_manager(args, state: SharedState):
                         return
                     with state.lidar_lock:
                         state.lidar_shared['scan'] = scan
+                        state.lidar_shared['seq'] += 1
         except Exception as e:
             state.update(error=f'LiDAR: {e}')
             time.sleep(3)   # brief pause before reconnect attempt
@@ -319,7 +320,7 @@ def robot_main(args, state: SharedState):
                 state.update(status='error', error='LiDAR: no scan within 5 s')
                 return
 
-            last_scan_id = None
+            last_scan_id = -1
 
             # Outer loop — allows multiple Go / Stop cycles without restarting
             while not state.quit_event.is_set():
@@ -345,9 +346,8 @@ def robot_main(args, state: SharedState):
                     prev_iter_t = t0
 
                     with state.lidar_lock:
-                        raw  = state.lidar_shared['scan']
-                        sid  = id(raw)
-                        scan = list(raw)
+                        seq  = state.lidar_shared['seq']
+                        scan = list(state.lidar_shared['scan'])
 
                     try:
                         enc = roomba.read_encoders()
@@ -373,9 +373,9 @@ def robot_main(args, state: SharedState):
                     front_mm = left_mm = right_mm = None
                     scan_n_delta = 0
                     if scan:
-                        if sid != last_scan_id:
+                        if seq != last_scan_id:
                             scan_n_delta = 1
-                            last_scan_id = sid
+                            last_scan_id = seq
                         front_mm = get_front(scan, args.fov, args.min_quality)
                         left_mm, right_mm = get_sides(scan, args.min_quality)
 
@@ -461,16 +461,15 @@ def robot_main(args, state: SharedState):
 def lidar_only_main(args, state: SharedState):
     """Reads from the shared LiDAR data (no new serial connection) and streams it to the UI."""
     state.update(status='running', mode='lidar_only', error='')
-    last_sid = None
+    last_seq = -1
     try:
         while not state.stop_event.is_set() and not state.quit_event.is_set():
             with state.lidar_lock:
-                raw  = state.lidar_shared['scan']
-                sid  = id(raw)
-                scan = list(raw)
+                seq  = state.lidar_shared['seq']
+                scan = list(state.lidar_shared['scan'])
 
-            if sid != last_sid and scan:
-                last_sid = sid
+            if seq != last_seq and scan:
+                last_seq = seq
                 compact  = [
                     [int(ang), int(dist)]
                     for q, ang, dist in scan
