@@ -584,6 +584,13 @@ async def system_check():
     return run_check(_args, _state)
 
 
+@app.post("/reconnect")
+async def reconnect():
+    loop = asyncio.get_event_loop()
+    await loop.run_in_executor(None, _reconnect)
+    return {"ok": True}
+
+
 @app.get("/map")
 async def get_map():
     if _state is None or _state.slam is None or not _HAS_PIL:
@@ -625,6 +632,30 @@ async def ws_handler(ws: WebSocket):
 
 
 _lidar_only_thread: threading.Thread = None
+_robot_thread:      threading.Thread = None
+
+
+def _reconnect():
+    """Kill the current robot thread and start a fresh one. Runs in a thread executor."""
+    global _robot_thread
+    # Signal the running thread to quit
+    _state.quit_event.set()
+    _state.go_event.set()      # unblock if it's waiting on Go
+    _state.stop_event.set()    # unblock if it's in the inner loop
+    if _robot_thread and _robot_thread.is_alive():
+        _robot_thread.join(timeout=6)
+    # Re-arm all events and reset status
+    _state.quit_event.clear()
+    _state.go_event.clear()
+    _state.stop_event.clear()
+    _state.update(
+        status='connecting', error='',
+        battery_pct=None, battery_mv=None,
+        scan=[], front_mm=None, left_mm=None, right_mm=None,
+        drive_state=IDLE,
+    )
+    _robot_thread = threading.Thread(target=robot_main, args=(_args, _state), daemon=True)
+    _robot_thread.start()
 
 
 def _handle(msg):
@@ -768,8 +799,9 @@ _HTML = """<!DOCTYPE html>
 
   #err-msg { font-size: 11px; color: #e74c3c; flex: 1; }
 
-  #btn-lidar  { background: #1a4a6b; color: #6ab0d4; border: 1px solid #2a6090; }
-  #btn-check  { background: #1e2a1e; color: #5a9a5a; border: 1px solid #2a4a2a; }
+  #btn-lidar     { background: #1a4a6b; color: #6ab0d4; border: 1px solid #2a6090; }
+  #btn-check     { background: #1e2a1e; color: #5a9a5a; border: 1px solid #2a4a2a; }
+  #btn-reconnect { background: #2a1e10; color: #c8823a; border: 1px solid #5a3a10; }
 
   /* ---- system check panel ---- */
   #check-panel {
@@ -918,8 +950,9 @@ _HTML = """<!DOCTYPE html>
 <div id="ctrl-bar">
   <button id="btn-go"    onclick="cmd('go')"        disabled>▶&nbsp;GO</button>
   <button id="btn-stop"  onclick="cmd('stop')"       disabled>■&nbsp;STOP</button>
-  <button id="btn-lidar" onclick="cmd('lidar_only')" disabled>◎&nbsp;LIDAR ONLY</button>
-  <button id="btn-check" onclick="doCheck()">⬡&nbsp;SYSTEM CHECK</button>
+  <button id="btn-lidar"     onclick="cmd('lidar_only')" disabled>◎&nbsp;LIDAR ONLY</button>
+  <button id="btn-check"     onclick="doCheck()">⬡&nbsp;SYSTEM CHECK</button>
+  <button id="btn-reconnect" onclick="doReconnect()">↺&nbsp;RECONNECT</button>
 
   <div class="mode-wrap">
     <span class="mode-lbl on" id="lbl-auto">AUTO</span>
@@ -1077,9 +1110,10 @@ function render(d) {
   // buttons
   const isRunning    = (d.status === 'running');
   const isConnecting = (d.status === 'connecting');
-  el('btn-go').disabled    = isRunning || isConnecting;
-  el('btn-stop').disabled  = !isRunning;
-  el('btn-lidar').disabled = isRunning || isConnecting;
+  el('btn-go').disabled        = isRunning || isConnecting;
+  el('btn-stop').disabled      = !isRunning;
+  el('btn-lidar').disabled     = isRunning || isConnecting;
+  el('btn-reconnect').disabled = isRunning || isConnecting;
 
   // mode toggle
   el('mode-sw').checked     = (d.mode === 'manual');
@@ -1284,6 +1318,22 @@ function refreshMap() {
 }
 setInterval(refreshMap, 3000);
 
+// ---- Reconnect --------------------------------------------------------
+
+async function doReconnect() {
+  const btn = el('btn-reconnect');
+  btn.textContent = '↺ RECONNECTING…';
+  btn.disabled = true;
+  try {
+    await fetch('/reconnect', { method: 'POST' });
+  } catch (e) {
+    el('err-msg').textContent = 'Reconnect failed: ' + e;
+    btn.disabled = false;
+  } finally {
+    btn.textContent = '↺ RECONNECT';
+  }
+}
+
 // ---- System check -----------------------------------------------------
 
 function dot(id, ok) {
@@ -1369,8 +1419,9 @@ def main():
     _args = parser.parse_args()
     _state = SharedState()
 
-    t = threading.Thread(target=robot_main, args=(_args, _state), daemon=True)
-    t.start()
+    global _robot_thread
+    _robot_thread = threading.Thread(target=robot_main, args=(_args, _state), daemon=True)
+    _robot_thread.start()
 
     print(f"\n  LUCIA Control Panel")
     print(f"  Open → http://localhost:{_args.port}  (or http://<pi-ip>:{_args.port})\n")
