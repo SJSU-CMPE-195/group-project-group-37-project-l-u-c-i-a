@@ -367,10 +367,10 @@ def lidar_worker(lidar, shared, lock, stop_event):
 
 def main():
     parser = argparse.ArgumentParser(description='SLAM + obstacle avoidance demo')
-    parser.add_argument('--roomba-port', default='/dev/ttyUSB0',
-                        help='Roomba serial port (default: /dev/ttyUSB0)')
-    parser.add_argument('--lidar-port',  default='/dev/ttyUSB1',
-                        help='LiDAR serial port (default: /dev/ttyUSB1)')
+    parser.add_argument('--roomba-port', default='/dev/roomba',
+                        help='Roomba serial port (default: /dev/roomba)')
+    parser.add_argument('--lidar-port',  default='/dev/rplidar',
+                        help='LiDAR serial port (default: /dev/rplidar)')
     parser.add_argument('--speed',       type=int,   default=200,
                         help='Forward speed in mm/s (default: 200)')
     parser.add_argument('--safe-dist',   type=int,   default=600,
