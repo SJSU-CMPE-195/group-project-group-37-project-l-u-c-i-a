@@ -295,9 +295,8 @@ class RoombaOI:
         time.sleep(3)  # allow reboot to complete
 
     def close(self):
-        """Stop, reset, and close the serial port cleanly."""
+        """Stop and close the serial port cleanly."""
         self.stop()
-        self.reset()
         self.ser.close()
 
     def __enter__(self):
