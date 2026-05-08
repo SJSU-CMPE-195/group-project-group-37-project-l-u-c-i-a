@@ -72,12 +72,7 @@ SPIN_TIME  = 0.8
 FORWARD = 'FORWARD'
 BLOCKED = 'BLOCKED'
 TURNING = 'TURNING'
-BUMPED  = 'BUMPED'
 IDLE    = 'IDLE'
-
-BUMP_BACKUP_SPEED = -150   # mm/s — reverse after a bump
-BUMP_BACKUP_TIME  = 0.5    # seconds to back up
-BUMP_TURN_TIME    = 0.7    # seconds to spin away from the hit side
 
 
 # -----------------------------------------------------------------------
@@ -207,8 +202,6 @@ class SharedState:
             'battery_mv':  None,
             'ups':         {},
             'scan':        [],
-            'bump_left':   False,
-            'bump_right':  False,
             'error':       '',
         }
         self._manual_l = 0
@@ -224,9 +217,7 @@ class SharedState:
         self.path_pixels = []
 
         # Shared LiDAR data — written by lidar_manager, read by robot_main and lidar_only_main
-        # seq increments on every new scan so consumers can detect updates without
-        # relying on id(), which is unreliable due to CPython memory address reuse.
-        self.lidar_shared = {'scan': [], 'seq': 0}
+        self.lidar_shared = {'scan': []}
         self.lidar_lock   = threading.Lock()
 
     def snapshot(self):
@@ -265,25 +256,12 @@ def lidar_manager(args, state: SharedState):
     while not state.quit_event.is_set():
         try:
             with LidarReader(args.lidar_port) as lidar:
-                # Send STOP (clears any in-progress scan command) then flush
-                # the OS serial buffer to drop stale bytes from a previous
-                # session. Do NOT stop_motor — stopping and restarting the
-                # motor causes iter_scans to stall mid-spinup.
-                try:
-                    lidar._lidar.stop()
-                    lidar._lidar._serial_port.reset_input_buffer()
-                except Exception:
-                    pass
-                time.sleep(0.3)
                 for scan in lidar.iter_scans():
                     if state.quit_event.is_set():
                         return
                     with state.lidar_lock:
                         state.lidar_shared['scan'] = scan
-                        state.lidar_shared['seq'] += 1
-                    print(f'[lidar_manager] seq={state.lidar_shared["seq"]} pts={len(scan)}', flush=True)
         except Exception as e:
-            print(f'[lidar_manager] error: {e}', flush=True)
             state.update(error=f'LiDAR: {e}')
             time.sleep(3)   # brief pause before reconnect attempt
 
@@ -341,7 +319,7 @@ def robot_main(args, state: SharedState):
                 state.update(status='error', error='LiDAR: no scan within 5 s')
                 return
 
-            last_scan_id = -1
+            last_scan_id = None
 
             # Outer loop — allows multiple Go / Stop cycles without restarting
             while not state.quit_event.is_set():
@@ -358,8 +336,6 @@ def robot_main(args, state: SharedState):
 
                 auto_state  = FORWARD
                 turn_start  = 0.0
-                bump_start  = 0.0
-                bump_dir    = 'none'   # 'left', 'right', 'both'
                 prev_iter_t = time.time()
 
                 # Inner loop — runs until Stop or quit
@@ -369,18 +345,13 @@ def robot_main(args, state: SharedState):
                     prev_iter_t = t0
 
                     with state.lidar_lock:
-                        seq  = state.lidar_shared['seq']
-                        scan = list(state.lidar_shared['scan'])
+                        raw  = state.lidar_shared['scan']
+                        sid  = id(raw)
+                        scan = list(raw)
 
                     try:
                         enc = roomba.read_encoders()
                         odom.update(enc['left'], enc['right'])
-                    except Exception:
-                        pass
-
-                    bumps = {'bump_left': False, 'bump_right': False}
-                    try:
-                        bumps = roomba.read_bumps()
                     except Exception:
                         pass
 
@@ -402,9 +373,9 @@ def robot_main(args, state: SharedState):
                     front_mm = left_mm = right_mm = None
                     scan_n_delta = 0
                     if scan:
-                        if seq != last_scan_id:
+                        if sid != last_scan_id:
                             scan_n_delta = 1
-                            last_scan_id = seq
+                            last_scan_id = sid
                         front_mm = get_front(scan, args.fov, args.min_quality)
                         left_mm, right_mm = get_sides(scan, args.min_quality)
 
@@ -419,18 +390,6 @@ def robot_main(args, state: SharedState):
                     mode = state.get_mode()
 
                     if mode == 'auto':
-                        # Bump is highest priority — interrupt any state except BUMPED
-                        if auto_state != BUMPED and (bumps['bump_left'] or bumps['bump_right']):
-                            roomba.stop()
-                            auto_state = BUMPED
-                            bump_start = time.time()
-                            if bumps['bump_left'] and bumps['bump_right']:
-                                bump_dir = 'both'
-                            elif bumps['bump_left']:
-                                bump_dir = 'left'
-                            else:
-                                bump_dir = 'right'
-
                         if auto_state == FORWARD:
                             if front_mm is not None and front_mm <= args.safe_dist:
                                 roomba.stop()
@@ -453,21 +412,6 @@ def robot_main(args, state: SharedState):
                                     auto_state = FORWARD
                                 else:
                                     auto_state = BLOCKED
-                        elif auto_state == BUMPED:
-                            elapsed = time.time() - bump_start
-                            if elapsed < BUMP_BACKUP_TIME:
-                                # Back straight up
-                                roomba.drive_direct(BUMP_BACKUP_SPEED, BUMP_BACKUP_SPEED)
-                            elif elapsed < BUMP_BACKUP_TIME + BUMP_TURN_TIME:
-                                # Spin away from the hit side
-                                if bump_dir == 'left':
-                                    roomba.drive_direct(SPIN_SPEED, -SPIN_SPEED)   # spin right
-                                else:
-                                    roomba.drive_direct(-SPIN_SPEED, SPIN_SPEED)   # spin left
-                            else:
-                                roomba.stop()
-                                auto_state = FORWARD
-
                         drive_label = auto_state
                     else:
                         ml, mr = state.get_manual_vel()
@@ -494,8 +438,6 @@ def robot_main(args, state: SharedState):
                         s['pose_hdg']    = round(odom.heading_deg(), 1)
                         s['ups']         = ups
                         s['scan']        = compact_scan
-                        s['bump_left']   = bumps['bump_left']
-                        s['bump_right']  = bumps['bump_right']
 
                     elapsed = time.time() - t0
                     rem = 0.05 - elapsed
@@ -519,16 +461,16 @@ def robot_main(args, state: SharedState):
 def lidar_only_main(args, state: SharedState):
     """Reads from the shared LiDAR data (no new serial connection) and streams it to the UI."""
     state.update(status='running', mode='lidar_only', error='')
-    last_seq = -1
+    last_sid = None
     try:
         while not state.stop_event.is_set() and not state.quit_event.is_set():
             with state.lidar_lock:
-                seq  = state.lidar_shared['seq']
-                scan = list(state.lidar_shared['scan'])
+                raw  = state.lidar_shared['scan']
+                sid  = id(raw)
+                scan = list(raw)
 
-            if seq != last_seq and scan:
-                last_seq = seq
-                print(f'[lidar_only] seq={seq} pts={len(scan)}', flush=True)
+            if sid != last_sid and scan:
+                last_sid = sid
                 compact  = [
                     [int(ang), int(dist)]
                     for q, ang, dist in scan
@@ -580,7 +522,7 @@ def run_check(args, state: SharedState) -> dict:
         },
         'runtime': {
             'roomba_connected': {
-                'ok':     snap['battery_pct'] is not None,
+                'ok':     running,
                 'detail': f"{snap['battery_pct']}%  {(snap['battery_mv'] or 0) / 1000:.2f} V"
                           if snap['battery_pct'] else 'not connected',
             },
@@ -727,8 +669,7 @@ def _handle(msg):
 
     if cmd == 'go':
         # If lidar-only is running, stop it before starting full robot mode
-        snap = _state.snapshot()
-        if snap['mode'] == 'lidar_only' and snap['status'] == 'running':
+        if _state.get_mode() == 'lidar_only' and _state._snap.get('status') == 'running':
             _state.stop_event.set()
             if _lidar_only_thread:
                 _lidar_only_thread.join(timeout=2)
@@ -958,27 +899,6 @@ _HTML = """<!DOCTYPE html>
   }
   .cl-desc { font-size: 10px; color: #555; }
 
-  /* ---- bump indicators ---- */
-  #bumpers { display: flex; gap: 6px; width: 100%; justify-content: center; }
-  .bump-ind {
-    flex: 1;
-    padding: 4px 0;
-    text-align: center;
-    border-radius: 3px;
-    border: 1px solid #2a2a3a;
-    font-size: 11px;
-    color: #444;
-    background: #0d0d1a;
-    transition: background 0.08s, color 0.08s, border-color 0.08s;
-    letter-spacing: 1px;
-  }
-  .bump-ind.hit {
-    background: #3a0a0a;
-    border-color: #e74c3c;
-    color: #e74c3c;
-    font-weight: bold;
-  }
-
   /* ---- stats (compact, inside left panel) ---- */
   #stats {
     width: 100%;
@@ -1076,11 +996,6 @@ _HTML = """<!DOCTYPE html>
   <!-- left: radar + stats -->
   <div id="left-panel">
     <canvas id="radar" width="200" height="200"></canvas>
-
-    <div id="bumpers">
-      <div class="bump-ind" id="bump-left">◀ LEFT</div>
-      <div class="bump-ind" id="bump-right">RIGHT ▶</div>
-    </div>
 
     <div id="wasd-wrap">
       <div class="krow"><div class="key" id="kw">W</div></div>
@@ -1246,10 +1161,6 @@ function render(d) {
     ue.textContent = `${ups.soc.toFixed(1)}%` + (ups.voltage ? `  ${ups.voltage.toFixed(3)} V` : '');
     ue.className   = 'sv' + (ups.soc < 15 ? ' danger' : ups.soc < 30 ? ' warn' : ' ok');
   }
-
-  // bump indicators
-  el('bump-left').className  = 'bump-ind' + (d.bump_left  ? ' hit' : '');
-  el('bump-right').className = 'bump-ind' + (d.bump_right ? ' hit' : '');
 
   // radar
   if (d.scan && d.scan.length) drawRadar(d.scan, d.front_mm, d.pose_hdg || 0);
@@ -1477,10 +1388,10 @@ def main():
     global _state, _args
 
     parser = argparse.ArgumentParser(description='LUCIA web control panel')
-    parser.add_argument('--roomba-port',  default='/dev/roomba',
-                        help='Roomba serial port (default: /dev/roomba)')
-    parser.add_argument('--lidar-port',   default='/dev/rplidar',
-                        help='LiDAR serial port (default: /dev/rplidar)')
+    parser.add_argument('--roomba-port',  default='/dev/ttyUSB0',
+                        help='Roomba serial port (default: /dev/ttyUSB0)')
+    parser.add_argument('--lidar-port',   default='/dev/ttyUSB1',
+                        help='LiDAR serial port (default: /dev/ttyUSB1)')
     parser.add_argument('--host',         default='0.0.0.0',
                         help='Bind address (default: 0.0.0.0)')
     parser.add_argument('--port',         type=int, default=8000,
