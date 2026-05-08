@@ -712,6 +712,31 @@ _HTML = """<!DOCTYPE html>
   #spd-slider { flex: 1; accent-color: #4a90d9; }
   #spd-val { color: #6ab0d4; min-width: 60px; }
 
+  /* ---- manual control legend ---- */
+  #ctrl-legend {
+    display: none;
+    flex-direction: column;
+    gap: 3px;
+    width: 100%;
+    margin-top: 6px;
+    padding: 8px 10px;
+    border: 1px solid #1e2240;
+    border-radius: 4px;
+    background: #0b0b18;
+  }
+  #ctrl-legend.show { display: flex; }
+  .cl-row { display: flex; justify-content: space-between; align-items: center; }
+  .cl-keys {
+    font-size: 11px;
+    color: #4a90d9;
+    background: #111128;
+    border: 1px solid #2a3060;
+    border-radius: 3px;
+    padding: 1px 5px;
+    letter-spacing: 0.5px;
+  }
+  .cl-desc { font-size: 11px; color: #666; }
+
   /* ---- status panel ---- */
   #status-wrap {
     flex: 1;
@@ -746,7 +771,8 @@ _HTML = """<!DOCTYPE html>
   }
   #map-hdr { color: #555; font-size: 11px; margin-bottom: 6px; }
   #map-img {
-    max-width: 100%;
+    width: 100%;
+    aspect-ratio: 1;
     border: 1px solid #222244;
     display: none;
     image-rendering: pixelated;
@@ -794,6 +820,15 @@ _HTML = """<!DOCTYPE html>
         <div class="key" id="ka">A</div>
         <div class="key" id="ks">S</div>
         <div class="key" id="kd">D</div>
+      </div>
+
+      <div id="ctrl-legend">
+        <div class="cl-row"><span class="cl-keys">W / ↑</span>    <span class="cl-desc">Forward</span></div>
+        <div class="cl-row"><span class="cl-keys">S / ↓</span>    <span class="cl-desc">Backward</span></div>
+        <div class="cl-row"><span class="cl-keys">A / ←</span>    <span class="cl-desc">Spin left</span></div>
+        <div class="cl-row"><span class="cl-keys">D / →</span>    <span class="cl-desc">Spin right</span></div>
+        <div class="cl-row"><span class="cl-keys">W+A / W+D</span><span class="cl-desc">Arc turn</span></div>
+        <div class="cl-row"><span class="cl-keys">release</span>  <span class="cl-desc">Stop</span></div>
       </div>
     </div>
 
@@ -901,8 +936,9 @@ function render(d) {
 
   // manual controls
   const showManual = (d.mode === 'manual' && d.status === 'running');
-  el('wasd-wrap').className = showManual ? 'show' : '';
-  el('spd-wrap').className  = showManual ? 'show' : '';
+  el('wasd-wrap').className    = showManual ? 'show' : '';
+  el('ctrl-legend').className  = showManual ? 'show' : '';
+  el('spd-wrap').className     = showManual ? 'show' : '';
 
   // error message
   el('err-msg').textContent = d.error || '';

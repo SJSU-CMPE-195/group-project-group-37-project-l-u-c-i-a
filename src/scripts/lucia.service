@@ -1,0 +1,18 @@
+[Unit]
+Description=LUCIA Web Control Panel
+After=network.target
+
+[Service]
+Type=simple
+User=lucia
+WorkingDirectory=/home/lucia/repos/group-project-group-37-project-l-u-c-i-a/src/scripts
+ExecStart=/usr/bin/python3 slam_avoid_server.py \
+    --roomba-port /dev/roomba \
+    --lidar-port  /dev/rplidar
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
