@@ -270,11 +270,9 @@ def lidar_manager(args, state: SharedState):
                 lidar._lidar.stop()
                 lidar._lidar.stop_motor()
                 time.sleep(0.5)
-                lidar._lidar.reset()   # hardware chip reset, clears all state
-                time.sleep(2)          # wait for device to reinitialize
-                # Drain the reset-info response bytes so iter_scans() reads
-                # a clean scan descriptor instead of leftover init data.
-                lidar._lidar._serial_port.reset_input_buffer()
+                lidar._lidar.reset()       # hardware chip reset, clears all state
+                time.sleep(2)              # wait for device to reinitialize
+                lidar._lidar.clean_input() # flush reset-response bytes from buffer
                 for scan in lidar.iter_scans():
                     if state.quit_event.is_set():
                         return
