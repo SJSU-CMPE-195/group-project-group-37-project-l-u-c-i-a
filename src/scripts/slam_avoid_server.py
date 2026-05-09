@@ -27,7 +27,7 @@ from contextlib import asynccontextmanager
 
 try:
     import uvicorn
-    from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+    from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Query
     from fastapi.responses import HTMLResponse, Response
 except ImportError:
     raise SystemExit("Missing deps — run: pip install fastapi 'uvicorn[standard]'")
@@ -80,6 +80,13 @@ SWEEP_TURN2  = 'SWEEP_TURN2'
 
 # Time to spin 90° in place at SPIN_SPEED (one wheel fwd, one back)
 SWEEP_90_TIME = (math.pi / 2) * WHEEL_BASE_MM / (2 * SPIN_SPEED)  # ≈ 1.23 s
+SWEEP_90_RAD  = math.pi / 2 - math.radians(5)  # target: 90° minus 5° tolerance
+
+
+def _angle_diff(a, b):
+    """Signed angular difference (a-b) normalized to [-π, π]."""
+    d = (a - b) % (2 * math.pi)
+    return d - 2 * math.pi if d > math.pi else d
 
 
 # -----------------------------------------------------------------------
@@ -262,25 +269,28 @@ class OccupancyGrid:
             free_b = bytes(self._free)
         try:
             import numpy as np
+            from PIL import ImageFilter
             o = np.frombuffer(occ_b,  dtype=np.uint8).reshape(g, g).astype(np.int16)
             f = np.frombuffer(free_b, dtype=np.uint8).reshape(g, g).astype(np.int16)
             gray = np.full((g, g), 128, dtype=np.uint8)
-            occ_mask  = o > f + 3
-            free_mask = f > o + 3
-            gray[occ_mask]  = np.clip(128 - (o - f)[occ_mask]  * 4, 0,   128).astype(np.uint8)
-            gray[free_mask] = np.clip(128 + (f - o)[free_mask] * 3, 128, 255).astype(np.uint8)
+            occ_mask  = o > f
+            free_mask = f > o
+            gray[occ_mask]  = np.clip(128 - (o - f)[occ_mask]  * 8, 0,   128).astype(np.uint8)
+            gray[free_mask] = np.clip(128 + (f - o)[free_mask] * 5, 128, 255).astype(np.uint8)
             img = Image.fromarray(gray, 'L')
         except ImportError:
+            from PIL import ImageFilter
             raw = bytearray(g * g)
             for i in range(g * g):
                 o = occ_b[i]; f = free_b[i]
-                if o > f + 3:
-                    raw[i] = max(0,   128 - min((o - f) * 4, 128))
-                elif f > o + 3:
-                    raw[i] = min(255, 128 + min((f - o) * 3, 127))
+                if o > f:
+                    raw[i] = max(0,   128 - min((o - f) * 8, 128))
+                elif f > o:
+                    raw[i] = min(255, 128 + min((f - o) * 5, 127))
                 else:
                     raw[i] = 128
             img = Image.frombytes('L', (g, g), bytes(raw))
+        img = img.filter(ImageFilter.SHARPEN)
         return img.resize((out_pixels, out_pixels), Image.NEAREST) if out_pixels != g else img
 
 
@@ -442,13 +452,14 @@ def robot_main(args, state: SharedState):
                 enc = roomba.read_encoders()
                 odom.update(enc['left'], enc['right'])
 
-                auto_state        = FORWARD
-                turn_start        = 0.0
-                sweep_state       = SWEEP_FWD
-                sweep_turn_dir    = 1          # +1 = left, -1 = right; alternates each U-turn
-                sweep_fwd_start   = time.time()
-                sweep_phase_start = 0.0
-                prev_iter_t       = time.time()
+                auto_state           = FORWARD
+                turn_start           = 0.0
+                sweep_state          = SWEEP_FWD
+                sweep_turn_dir       = 1          # +1 = left, -1 = right; alternates each U-turn
+                sweep_fwd_start      = time.time()
+                sweep_phase_start    = 0.0
+                sweep_turn_start_hdg = 0.0
+                prev_iter_t          = time.time()
 
                 # Inner loop — runs until Stop or quit
                 while not state.stop_event.is_set() and not state.quit_event.is_set():
@@ -511,17 +522,20 @@ def robot_main(args, state: SharedState):
                     if mode == 'sweep':
                         now = time.time()
                         if sweep_state == SWEEP_FWD:
-                            blocked = front_mm is not None and front_mm <= args.safe_dist
+                            blocked   = front_mm is not None and front_mm <= args.safe_dist
                             timed_out = now - sweep_fwd_start >= args.sweep_time
                             if blocked or timed_out:
                                 roomba.stop()
-                                sweep_phase_start = now
+                                sweep_phase_start    = now
+                                sweep_turn_start_hdg = odom.heading_rad
                                 sweep_state = SWEEP_TURN1
                             else:
                                 roomba.drive_direct(args.speed, args.speed)
 
                         elif sweep_state == SWEEP_TURN1:
-                            if now - sweep_phase_start >= SWEEP_90_TIME:
+                            turned = abs(_angle_diff(odom.heading_rad, sweep_turn_start_hdg))
+                            done   = turned >= SWEEP_90_RAD or now - sweep_phase_start >= SWEEP_90_TIME * 1.5
+                            if done:
                                 roomba.stop()
                                 sweep_phase_start = now
                                 sweep_state = SWEEP_OFFSET
@@ -534,16 +548,19 @@ def robot_main(args, state: SharedState):
                         elif sweep_state == SWEEP_OFFSET:
                             if now - sweep_phase_start >= args.sweep_offset / args.speed:
                                 roomba.stop()
-                                sweep_phase_start = now
+                                sweep_phase_start    = now
+                                sweep_turn_start_hdg = odom.heading_rad
                                 sweep_state = SWEEP_TURN2
                             else:
                                 roomba.drive_direct(args.speed, args.speed)
 
                         elif sweep_state == SWEEP_TURN2:
-                            if now - sweep_phase_start >= SWEEP_90_TIME:
+                            turned = abs(_angle_diff(odom.heading_rad, sweep_turn_start_hdg))
+                            done   = turned >= SWEEP_90_RAD or now - sweep_phase_start >= SWEEP_90_TIME * 1.5
+                            if done:
                                 roomba.stop()
-                                sweep_turn_dir   *= -1   # flip for next U-turn
-                                sweep_fwd_start   = now
+                                sweep_turn_dir  *= -1
+                                sweep_fwd_start  = now
                                 sweep_state = SWEEP_FWD
                             else:
                                 if sweep_turn_dir > 0:
@@ -778,9 +795,12 @@ async def get_map():
 
 
 @app.post("/reset_map")
-async def reset_map():
-    if _state and _state.occ_grid:
-        _state.occ_grid.reset()
+async def reset_map(size: float = Query(default=0)):
+    if _state:
+        if size > 0 and size != (_state.occ_grid.size_mm / 1000 if _state.occ_grid else 0):
+            _state.occ_grid = OccupancyGrid(size)
+        elif _state.occ_grid:
+            _state.occ_grid.reset()
     return {'ok': True}
 
 
@@ -1207,7 +1227,16 @@ _HTML = """<!DOCTYPE html>
 
   <!-- right: large map -->
   <div id="map-panel">
-    <div id="map-hdr">Occupancy map &nbsp;·&nbsp; refreshes every 3 s &nbsp;<button id="btn-reset-map" onclick="doResetMap()" style="font-size:10px;padding:2px 8px;background:#1a2a1a;color:#5a9a5a;border:1px solid #2a4a2a;border-radius:3px;cursor:pointer;font-family:inherit;">↺ RESET MAP</button></div>
+    <div id="map-hdr">Occupancy map &nbsp;·&nbsp; refreshes every 3 s &nbsp;
+      <select id="map-size-sel" style="font-size:10px;background:#111128;color:#6ab0d4;border:1px solid #333355;border-radius:3px;padding:1px 4px;font-family:inherit;">
+        <option value="4">4 m</option>
+        <option value="6">6 m</option>
+        <option value="8">8 m</option>
+        <option value="10" selected>10 m</option>
+        <option value="15">15 m</option>
+      </select>
+      &nbsp;<button id="btn-reset-map" onclick="doResetMap()" style="font-size:10px;padding:2px 8px;background:#1a2a1a;color:#5a9a5a;border:1px solid #2a4a2a;border-radius:3px;cursor:pointer;font-family:inherit;">↺ RESET MAP</button>
+    </div>
     <span id="map-none">No map yet — press GO to start mapping</span>
     <img id="map-img" alt="Occupancy map">
   </div>
@@ -1542,8 +1571,9 @@ async function doCheck() {
 // ---- Reset map --------------------------------------------------------
 
 async function doResetMap() {
+  const size = el('map-size-sel')?.value || 10;
   try {
-    await fetch('/reset_map', { method: 'POST' });
+    await fetch(`/reset_map?size=${size}`, { method: 'POST' });
     el('map-img').style.display = 'none';
     el('map-none').style.display = '';
   } catch (e) {
