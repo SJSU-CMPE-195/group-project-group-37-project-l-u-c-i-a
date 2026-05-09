@@ -180,6 +180,104 @@ def read_ups():
 
 
 # -----------------------------------------------------------------------
+# Occupancy Grid
+# -----------------------------------------------------------------------
+
+class OccupancyGrid:
+    """
+    Vote-accumulation 2D occupancy grid built from raw LiDAR scans.
+    Each scan casts free-space votes along rays and occupied votes at
+    endpoints.  Walls reinforce across multiple scans; dynamic objects
+    fade as free votes cancel their occupied votes when they move away.
+    Uses dead-reckoning pose — drift causes blur, not the catastrophic
+    starburst failure seen in particle-filter SLAM.
+    """
+    _G = 400   # internal grid pixels (rendered larger for display)
+
+    def __init__(self, map_size_m=10.0):
+        g = self._G
+        self.size_mm = map_size_m * 1000.0
+        self.scale   = g / self.size_mm
+        self.cx = self.cy = g // 2
+        self._occ  = bytearray(g * g)   # obstacle votes per cell
+        self._free = bytearray(g * g)   # free-space votes per cell
+        self._lock = threading.Lock()
+
+    def reset(self):
+        g = self._G
+        with self._lock:
+            self._occ  = bytearray(g * g)
+            self._free = bytearray(g * g)
+
+    def _w2p(self, x_mm, y_mm):
+        return (int(self.cx + x_mm * self.scale),
+                int(self.cy - y_mm * self.scale))
+
+    def update(self, robot_x, robot_y, heading_rad, scan, min_quality):
+        g  = self._G
+        rx, ry = self._w2p(robot_x, robot_y)
+        with self._lock:
+            occ  = self._occ
+            free = self._free
+            for quality, ang_deg, dist_mm in scan:
+                if quality < min_quality or dist_mm <= 0:
+                    continue
+                wa  = heading_rad - math.radians(ang_deg)
+                ex, ey = self._w2p(
+                    robot_x + dist_mm * math.cos(wa),
+                    robot_y + dist_mm * math.sin(wa),
+                )
+                # Occupied vote at endpoint
+                if 0 <= ex < g and 0 <= ey < g:
+                    idx = ey * g + ex
+                    if occ[idx] < 252:
+                        occ[idx] += 3
+                # Free votes along ray, stepping every 2 px
+                dx = ex - rx; dy = ey - ry
+                n  = max(abs(dx), abs(dy), 1)
+                for step in range(0, n - 2, 2):
+                    t  = step / n
+                    px = int(rx + t * dx)
+                    py = int(ry + t * dy)
+                    if 0 <= px < g and 0 <= py < g:
+                        i2 = py * g + px
+                        if free[i2] < 254:
+                            free[i2] += 1
+                        if occ[i2] > 0:
+                            occ[i2] -= 1
+
+    def to_image(self, out_pixels=800):
+        if not _HAS_PIL:
+            return None
+        g = self._G
+        with self._lock:
+            occ_b  = bytes(self._occ)
+            free_b = bytes(self._free)
+        try:
+            import numpy as np
+            o = np.frombuffer(occ_b,  dtype=np.uint8).reshape(g, g).astype(np.int16)
+            f = np.frombuffer(free_b, dtype=np.uint8).reshape(g, g).astype(np.int16)
+            gray = np.full((g, g), 128, dtype=np.uint8)
+            occ_mask  = o > f + 3
+            free_mask = f > o + 3
+            gray[occ_mask]  = np.clip(128 - (o - f)[occ_mask]  * 4, 0,   128).astype(np.uint8)
+            gray[free_mask] = np.clip(128 + (f - o)[free_mask] * 3, 128, 255).astype(np.uint8)
+            img = Image.fromarray(gray, 'L')
+        except ImportError:
+            raw = bytearray(g * g)
+            for i in range(g * g):
+                o = occ_b[i]; f = free_b[i]
+                if o > f + 3:
+                    raw[i] = max(0,   128 - min((o - f) * 4, 128))
+                elif f > o + 3:
+                    raw[i] = min(255, 128 + min((f - o) * 3, 127))
+                else:
+                    raw[i] = 128
+            img = Image.frombytes('L', (g, g), bytes(raw))
+        return img.resize((out_pixels, out_pixels), Image.NEAREST) if out_pixels != g else img
+
+
+# -----------------------------------------------------------------------
 # Shared state
 # -----------------------------------------------------------------------
 
@@ -219,6 +317,7 @@ class SharedState:
         # Shared LiDAR data — written by lidar_manager, read by robot_main and lidar_only_main
         self.lidar_shared = {'scan': [], 'seq': 0}
         self.lidar_lock   = threading.Lock()
+        self.occ_grid: 'OccupancyGrid | None' = None
 
     def snapshot(self):
         with self._lock:
@@ -289,6 +388,7 @@ def robot_main(args, state: SharedState):
         state.map_pixels = args.map_pixels
         state.map_size_m = args.map_size
 
+    state.occ_grid = OccupancyGrid(args.map_size)
     odom = Odometry()
 
     try:
@@ -369,6 +469,13 @@ def robot_main(args, state: SharedState):
                         if 0 <= px < args.map_pixels and 0 <= py < args.map_pixels:
                             if not state.path_pixels or state.path_pixels[-1] != (px, py):
                                 state.path_pixels.append((px, py))
+
+                    # Occupancy grid update
+                    if state.occ_grid is not None and scan:
+                        state.occ_grid.update(
+                            odom.x, odom.y, odom.heading_rad,
+                            scan, args.min_quality,
+                        )
 
                     # Sensor extraction
                     front_mm = left_mm = right_mm = None
@@ -598,18 +705,25 @@ async def reconnect():
 
 @app.get("/map")
 async def get_map():
-    if _state is None or _state.slam is None or not _HAS_PIL:
+    if _state is None or _state.occ_grid is None or not _HAS_PIL:
         return Response(status_code=204)
     try:
-        pixels = _state.map_pixels
-        mb     = bytearray(pixels * pixels)
-        _state.slam.getmap(mb)
-        img = Image.frombytes('L', (pixels, pixels), bytes(mb))
+        loop = asyncio.get_event_loop()
+        img  = await loop.run_in_executor(None, _state.occ_grid.to_image, 800)
+        if img is None:
+            return Response(status_code=204)
         buf = io.BytesIO()
-        img.save(buf, format='JPEG', quality=75)
+        img.save(buf, format='JPEG', quality=80)
         return Response(content=buf.getvalue(), media_type='image/jpeg')
     except Exception:
         return Response(status_code=500)
+
+
+@app.post("/reset_map")
+async def reset_map():
+    if _state and _state.occ_grid:
+        _state.occ_grid.reset()
+    return {'ok': True}
 
 
 @app.websocket("/ws")
@@ -1040,9 +1154,9 @@ _HTML = """<!DOCTYPE html>
 
   <!-- right: large map -->
   <div id="map-panel">
-    <div id="map-hdr">SLAM map &nbsp;·&nbsp; refreshes every 3 s</div>
-    <span id="map-none">No map yet — SLAM starts on GO</span>
-    <img id="map-img" alt="SLAM map">
+    <div id="map-hdr">Occupancy map &nbsp;·&nbsp; refreshes every 3 s &nbsp;<button id="btn-reset-map" onclick="doResetMap()" style="font-size:10px;padding:2px 8px;background:#1a2a1a;color:#5a9a5a;border:1px solid #2a4a2a;border-radius:3px;cursor:pointer;font-family:inherit;">↺ RESET MAP</button></div>
+    <span id="map-none">No map yet — press GO to start mapping</span>
+    <img id="map-img" alt="Occupancy map">
   </div>
 
 </div><!-- /body -->
@@ -1369,6 +1483,18 @@ async function doCheck() {
   } finally {
     btn.textContent = '⬡ SYSTEM CHECK';
     btn.disabled = false;
+  }
+}
+
+// ---- Reset map --------------------------------------------------------
+
+async function doResetMap() {
+  try {
+    await fetch('/reset_map', { method: 'POST' });
+    el('map-img').style.display = 'none';
+    el('map-none').style.display = '';
+  } catch (e) {
+    el('err-msg').textContent = 'Reset failed: ' + e;
   }
 }
 
