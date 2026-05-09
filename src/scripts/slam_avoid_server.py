@@ -353,7 +353,8 @@ def robot_main(args, state: SharedState):
                         enc = roomba.read_encoders()
                         odom.update(enc['left'], enc['right'])
                     except Exception:
-                        pass
+                        odom.d_xy_mm = 0.0
+                        odom.d_theta_deg = 0.0
 
                     # SLAM update
                     if state.slam is not None and scan:
