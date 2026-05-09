@@ -845,7 +845,8 @@ def _handle(msg):
             _state.stop_event.set()
             if _lidar_only_thread:
                 _lidar_only_thread.join(timeout=2)
-        _state.set_mode('auto')
+        if _state.get_mode() == 'lidar_only':
+            _state.set_mode('sweep')
         _state.update(error='')
         _state.go_event.set()
 
