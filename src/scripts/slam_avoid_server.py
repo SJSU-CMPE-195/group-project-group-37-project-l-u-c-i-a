@@ -1387,10 +1387,10 @@ def main():
     global _state, _args
 
     parser = argparse.ArgumentParser(description='LUCIA web control panel')
-    parser.add_argument('--roomba-port',  default='/dev/ttyUSB0',
-                        help='Roomba serial port (default: /dev/ttyUSB0)')
-    parser.add_argument('--lidar-port',   default='/dev/ttyUSB1',
-                        help='LiDAR serial port (default: /dev/ttyUSB1)')
+    parser.add_argument('--roomba-port',  default='/dev/roomba',
+                        help='Roomba serial port (default: /dev/roomba)')
+    parser.add_argument('--lidar-port',   default='/dev/rplidar',
+                        help='LiDAR serial port (default: /dev/rplidar)')
     parser.add_argument('--host',         default='0.0.0.0',
                         help='Bind address (default: 0.0.0.0)')
     parser.add_argument('--port',         type=int, default=8000,
