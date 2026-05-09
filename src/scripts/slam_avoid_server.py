@@ -69,10 +69,17 @@ SCAN_SLOTS = 360
 SPIN_SPEED = 150
 SPIN_TIME  = 0.8
 
-FORWARD = 'FORWARD'
-BLOCKED = 'BLOCKED'
-TURNING = 'TURNING'
-IDLE    = 'IDLE'
+FORWARD      = 'FORWARD'
+BLOCKED      = 'BLOCKED'
+TURNING      = 'TURNING'
+IDLE         = 'IDLE'
+SWEEP_FWD    = 'SWEEP_FWD'
+SWEEP_TURN1  = 'SWEEP_TURN1'
+SWEEP_OFFSET = 'SWEEP_OFFSET'
+SWEEP_TURN2  = 'SWEEP_TURN2'
+
+# Time to spin 90° in place at SPIN_SPEED (one wheel fwd, one back)
+SWEEP_90_TIME = (math.pi / 2) * WHEEL_BASE_MM / (2 * SPIN_SPEED)  # ≈ 1.23 s
 
 
 # -----------------------------------------------------------------------
@@ -286,7 +293,7 @@ class SharedState:
         self._lock = threading.Lock()
         self._snap = {
             'status':      'connecting',   # connecting / waiting / running / error
-            'mode':        'auto',         # auto / manual
+            'mode':        'sweep',        # sweep / auto / manual
             'drive_state': IDLE,
             'front_mm':    None,
             'left_mm':     None,
@@ -435,9 +442,13 @@ def robot_main(args, state: SharedState):
                 enc = roomba.read_encoders()
                 odom.update(enc['left'], enc['right'])
 
-                auto_state  = FORWARD
-                turn_start  = 0.0
-                prev_iter_t = time.time()
+                auto_state        = FORWARD
+                turn_start        = 0.0
+                sweep_state       = SWEEP_FWD
+                sweep_turn_dir    = 1          # +1 = left, -1 = right; alternates each U-turn
+                sweep_fwd_start   = time.time()
+                sweep_phase_start = 0.0
+                prev_iter_t       = time.time()
 
                 # Inner loop — runs until Stop or quit
                 while not state.stop_event.is_set() and not state.quit_event.is_set():
@@ -497,7 +508,52 @@ def robot_main(args, state: SharedState):
 
                     mode = state.get_mode()
 
-                    if mode == 'auto':
+                    if mode == 'sweep':
+                        now = time.time()
+                        if sweep_state == SWEEP_FWD:
+                            blocked = front_mm is not None and front_mm <= args.safe_dist
+                            timed_out = now - sweep_fwd_start >= args.sweep_time
+                            if blocked or timed_out:
+                                roomba.stop()
+                                sweep_phase_start = now
+                                sweep_state = SWEEP_TURN1
+                            else:
+                                roomba.drive_direct(args.speed, args.speed)
+
+                        elif sweep_state == SWEEP_TURN1:
+                            if now - sweep_phase_start >= SWEEP_90_TIME:
+                                roomba.stop()
+                                sweep_phase_start = now
+                                sweep_state = SWEEP_OFFSET
+                            else:
+                                if sweep_turn_dir > 0:
+                                    roomba.drive_direct(-SPIN_SPEED, SPIN_SPEED)
+                                else:
+                                    roomba.drive_direct(SPIN_SPEED, -SPIN_SPEED)
+
+                        elif sweep_state == SWEEP_OFFSET:
+                            if now - sweep_phase_start >= args.sweep_offset / args.speed:
+                                roomba.stop()
+                                sweep_phase_start = now
+                                sweep_state = SWEEP_TURN2
+                            else:
+                                roomba.drive_direct(args.speed, args.speed)
+
+                        elif sweep_state == SWEEP_TURN2:
+                            if now - sweep_phase_start >= SWEEP_90_TIME:
+                                roomba.stop()
+                                sweep_turn_dir   *= -1   # flip for next U-turn
+                                sweep_fwd_start   = now
+                                sweep_state = SWEEP_FWD
+                            else:
+                                if sweep_turn_dir > 0:
+                                    roomba.drive_direct(-SPIN_SPEED, SPIN_SPEED)
+                                else:
+                                    roomba.drive_direct(SPIN_SPEED, -SPIN_SPEED)
+
+                        drive_label = sweep_state
+
+                    elif mode == 'auto':
                         if auto_state == FORWARD:
                             if front_mm is not None and front_mm <= args.safe_dist:
                                 roomba.stop()
@@ -521,10 +577,12 @@ def robot_main(args, state: SharedState):
                                 else:
                                     auto_state = BLOCKED
                         drive_label = auto_state
-                    else:
+
+                    else:  # manual
                         ml, mr = state.get_manual_vel()
                         roomba.drive_direct(ml, mr)
-                        auto_state  = FORWARD   # reset so auto resumes cleanly
+                        auto_state  = FORWARD
+                        sweep_state = SWEEP_FWD
                         drive_label = IDLE
 
                     compact_scan = [
@@ -804,7 +862,9 @@ def _handle(msg):
         _lidar_only_thread.start()
 
     elif cmd == 'set_mode':
-        mode = msg.get('mode', 'auto')
+        mode = msg.get('mode', 'sweep')
+        if mode not in ('sweep', 'auto', 'manual'):
+            mode = 'sweep'
         _state.set_mode(mode)
         if mode == 'manual':
             _state.set_manual_vel(0, 0)
@@ -891,31 +951,27 @@ _HTML = """<!DOCTYPE html>
   #btn-go   { background: #27ae60; color: #fff; }
   #btn-stop { background: #c0392b; color: #fff; }
 
-  /* ---- mode toggle ---- */
-  .mode-wrap { display: flex; align-items: center; gap: 8px; }
-  .mode-lbl  { font-size: 12px; color: #555; transition: color 0.2s; }
-  .mode-lbl.on { color: #6ab0d4; font-weight: bold; }
-
-  .sw { position: relative; width: 44px; height: 22px; }
-  .sw input { display: none; }
-  .sw-track {
-    position: absolute; inset: 0;
-    background: #27ae60;
-    border-radius: 22px;
+  /* ---- mode buttons ---- */
+  .mode-wrap { display: flex; align-items: center; gap: 4px; }
+  .mode-btn {
+    padding: 5px 11px;
+    border: 1px solid #333355;
+    border-radius: 3px;
     cursor: pointer;
-    transition: background 0.25s;
+    font-family: inherit;
+    font-size: 11px;
+    font-weight: bold;
+    letter-spacing: 1px;
+    background: #111128;
+    color: #555;
+    transition: background 0.15s, color 0.15s, border-color 0.15s;
   }
-  .sw input:checked ~ .sw-track { background: #4a90d9; }
-  .sw-thumb {
-    position: absolute;
-    width: 16px; height: 16px;
-    top: 3px; left: 3px;
-    background: #fff;
-    border-radius: 50%;
-    transition: transform 0.25s;
-    pointer-events: none;
+  .mode-btn.active {
+    background: #1a3a5c;
+    border-color: #4a90d9;
+    color: #6ab0d4;
   }
-  .sw input:checked ~ .sw-thumb { transform: translateX(22px); }
+  .mode-btn:disabled { opacity: 0.35; cursor: default; }
 
   #err-msg { font-size: 11px; color: #e74c3c; flex: 1; }
 
@@ -1070,13 +1126,9 @@ _HTML = """<!DOCTYPE html>
   <button id="btn-reconnect" onclick="doReconnect()">↺&nbsp;RECONNECT</button>
 
   <div class="mode-wrap">
-    <span class="mode-lbl on" id="lbl-auto">AUTO</span>
-    <label class="sw">
-      <input type="checkbox" id="mode-sw" onchange="onModeToggle(this)">
-      <div class="sw-track"></div>
-      <div class="sw-thumb"></div>
-    </label>
-    <span class="mode-lbl" id="lbl-manual">MANUAL</span>
+    <button class="mode-btn active" id="btn-sweep"  onclick="setMode('sweep')">SWEEP</button>
+    <button class="mode-btn"        id="btn-auto"   onclick="setMode('auto')">AUTO</button>
+    <button class="mode-btn"        id="btn-manual" onclick="setMode('manual')">MANUAL</button>
   </div>
 
   <span id="err-msg"></span>
@@ -1227,10 +1279,11 @@ function render(d) {
   el('btn-lidar').disabled     = isRunning || isConnecting;
   el('btn-reconnect').disabled = isRunning || isConnecting;
 
-  // mode toggle
-  el('mode-sw').checked     = (d.mode === 'manual');
-  el('lbl-auto').className   = 'mode-lbl' + (d.mode === 'auto'   ? ' on' : '');
-  el('lbl-manual').className = 'mode-lbl' + (d.mode === 'manual' ? ' on' : '');
+  // mode buttons
+  ['sweep', 'auto', 'manual'].forEach(m => {
+    const b = el(`btn-${m}`);
+    if (b) b.className = 'mode-btn' + (d.mode === m ? ' active' : '');
+  });
 
   // manual controls
   const showManual = (d.mode === 'manual' && d.status === 'running');
@@ -1366,8 +1419,7 @@ function drawRadar(scan, frontMm, hdgDeg) {
 
 // ---- Mode toggle ------------------------------------------------------
 
-function onModeToggle(el) {
-  const mode = el.checked ? 'manual' : 'auto';
+function setMode(mode) {
   cmd('set_mode', { mode });
   if (mode === 'manual') keysDown.clear();
 }
@@ -1524,6 +1576,10 @@ def main():
                         help='HTTP port (default: 8000)')
     parser.add_argument('--speed',        type=int, default=200,
                         help='Autonomous forward speed mm/s (default: 200)')
+    parser.add_argument('--sweep-time',   type=float, default=10.0,
+                        help='Sweep max forward time before U-turn in seconds (default: 10)')
+    parser.add_argument('--sweep-offset', type=int, default=300,
+                        help='Lateral offset between sweep strips in mm (default: 300)')
     parser.add_argument('--safe-dist',    type=int, default=600,
                         help='Obstacle stop threshold mm (default: 600)')
     parser.add_argument('--fov',          type=int, default=30,
