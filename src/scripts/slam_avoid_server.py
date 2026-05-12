@@ -406,66 +406,61 @@ def robot_main(args, state: SharedState):
     odom = Odometry()
 
     try:
-        while not state.quit_event.is_set():
-          try:
-            state.update(status='connecting', error='')
-            with RoombaOI(args.roomba_port) as roomba:
-                roomba.wake()
-                roomba.start()
+        with RoombaOI(args.roomba_port) as roomba:
+            roomba.wake()
+            roomba.start()
 
-                batt = roomba.read_battery()
-                if batt['voltage_mV'] < 10000:
-                    state.update(
-                        status='error',
-                        error=f"Roomba offline ({batt['voltage_mV']} mV) — retrying in 5 s",
-                    )
-                    time.sleep(5)
-                    continue
-
+            batt = roomba.read_battery()
+            if batt['voltage_mV'] < 10000:
                 state.update(
-                    status='waiting',
-                    battery_pct=batt['charge_pct'],
-                    battery_mv=batt['voltage_mV'],
+                    status='error',
+                    error=f"Roomba offline ({batt['voltage_mV']} mV)",
                 )
+                return
 
-                # Wait for first LiDAR scan (5 s timeout)
-                for _ in range(50):
-                    with state.lidar_lock:
-                        if state.lidar_shared['scan']:
-                            break
-                    time.sleep(0.1)
-                else:
-                    state.update(status='error', error='LiDAR: no scan within 5 s — retrying')
-                    time.sleep(3)
-                    continue
+            state.update(
+                status='waiting',
+                battery_pct=batt['charge_pct'],
+                battery_mv=batt['voltage_mV'],
+            )
 
-                last_scan_id = -1
-
-                # Outer loop — allows multiple Go / Stop cycles without restarting
-                while not state.quit_event.is_set():
-                    state.go_event.wait()
-                    state.go_event.clear()
-                    if state.quit_event.is_set():
+            # Wait for first LiDAR scan (5 s timeout)
+            for _ in range(50):
+                with state.lidar_lock:
+                    if state.lidar_shared['scan']:
                         break
+                time.sleep(0.1)
+            else:
+                state.update(status='error', error='LiDAR: no scan within 5 s')
+                return
 
-                    roomba.safe_mode()
-                    time.sleep(0.3)
+            last_scan_id = -1
 
-                    enc = roomba.read_encoders()
-                    odom.update(enc['left'], enc['right'])
+            # Outer loop — allows multiple Go / Stop cycles without restarting
+            while not state.quit_event.is_set():
+                state.go_event.wait()
+                state.go_event.clear()
+                if state.quit_event.is_set():
+                    break
 
-                    sweep_state          = SWEEP_FWD
-                    sweep_turn_dir       = 1          # +1 = left, -1 = right; alternates each U-turn
-                    sweep_fwd_start      = time.time()
-                    sweep_phase_start    = 0.0
-                    sweep_turn_start_hdg = 0.0
-                    prev_iter_t          = time.time()
-                    _in_scan_dwell       = False
-                    _dwell_start         = 0.0
-                    _last_scan_stop      = time.time()
+                roomba.safe_mode()
+                time.sleep(0.3)
+
+                enc = roomba.read_encoders()
+                odom.update(enc['left'], enc['right'])
+
+                sweep_state          = SWEEP_FWD
+                sweep_turn_dir       = 1          # +1 = left, -1 = right; alternates each U-turn
+                sweep_fwd_start      = time.time()
+                sweep_phase_start    = 0.0
+                sweep_turn_start_hdg = 0.0
+                prev_iter_t          = time.time()
+                _in_scan_dwell       = False
+                _dwell_start         = 0.0
+                _last_scan_stop      = time.time()
 
                 # Inner loop — runs until Stop or quit
-                while not state.stop_event.is_set() and not state.quit_event.is_set():
+                while not state.stop_event.is_set() and not state.quit_event.is_set():  # noqa
                     t0      = time.time()
                     loop_dt = max(t0 - prev_iter_t, 0.01)
                     prev_iter_t = t0
@@ -636,17 +631,13 @@ def robot_main(args, state: SharedState):
                     if rem > 0:
                         time.sleep(rem)
 
-                    # Inner loop exited — stop wheels and return to waiting
-                    roomba.stop()
-                    state.stop_event.clear()
-                    state.update(status='waiting', drive_state=IDLE)
+                # Inner loop exited — stop wheels and return to waiting
+                roomba.stop()
+                state.stop_event.clear()
+                state.update(status='waiting', drive_state=IDLE)
 
-          except Exception as e:
-            if state.quit_event.is_set():
-                break
-            state.update(status='error', error=f'Roomba: {e} — retrying in 5 s')
-            time.sleep(5)
-
+    except Exception as e:
+        state.update(status='error', error=f'Roomba: {e}')
     finally:
         if state.slam is not None and args.map_out:
             _save_maps(state.slam, args.map_out, args.map_pixels, state.path_pixels)
@@ -1654,6 +1645,17 @@ connect();
 # Args + entry point
 # -----------------------------------------------------------------------
 
+def _watchdog(state: SharedState):
+    """Auto-reconnects the Roomba thread if it exits with an error."""
+    while not state.quit_event.is_set():
+        time.sleep(8)
+        if state.quit_event.is_set():
+            break
+        snap = state.snapshot()
+        if snap.get('status') == 'error' and not state.quit_event.is_set():
+            _reconnect()
+
+
 def main():
     global _state, _args
 
@@ -1701,6 +1703,7 @@ def main():
     threading.Thread(target=lidar_manager, args=(_args, _state), daemon=True).start()
     _robot_thread = threading.Thread(target=robot_main, args=(_args, _state), daemon=True)
     _robot_thread.start()
+    threading.Thread(target=_watchdog, args=(_state,), daemon=True).start()
 
     print(f"\n  LUCIA Control Panel")
     print(f"  Open → http://localhost:{_args.port}  (or http://<pi-ip>:{_args.port})\n")
