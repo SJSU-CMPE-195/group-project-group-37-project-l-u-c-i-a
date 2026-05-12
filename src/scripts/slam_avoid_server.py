@@ -68,16 +68,9 @@ GPIO_CHARGE   = 16
 SCAN_SLOTS = 360
 SPIN_SPEED = 80
 
-IDLE         = 'IDLE'
-TOO_CLOSE    = 'TOO_CLOSE'
-SWEEP_FWD    = 'SWEEP_FWD'
-SWEEP_TURN1  = 'SWEEP_TURN1'
-SWEEP_OFFSET = 'SWEEP_OFFSET'
-SWEEP_TURN2  = 'SWEEP_TURN2'
-
-# Time to spin 90° in place at SPIN_SPEED (one wheel fwd, one back)
-SWEEP_90_TIME = (math.pi / 2) * WHEEL_BASE_MM / (2 * SPIN_SPEED)  # ≈ 1.23 s
-SWEEP_90_RAD  = math.pi / 2 - math.radians(5)  # target: 90° minus 5° tolerance
+IDLE      = 'IDLE'
+SWEEP_FWD   = 'SWEEP_FWD'
+SWEEP_TURN1 = 'SWEEP_TURN1'
 
 
 def _angle_diff(a, b):
@@ -450,14 +443,9 @@ def robot_main(args, state: SharedState):
                 odom.update(enc['left'], enc['right'])
 
                 sweep_state          = SWEEP_FWD
-                sweep_turn_dir       = 1          # +1 = left, -1 = right; alternates each U-turn
-                sweep_fwd_start      = time.time()
-                sweep_phase_start    = 0.0
+                sweep_turn_dir       = 1
                 sweep_turn_start_hdg = 0.0
                 prev_iter_t          = time.time()
-                _in_scan_dwell       = False
-                _dwell_start         = 0.0
-                _last_scan_stop      = time.time()
 
                 # Inner loop — runs until Stop or quit
                 while not state.stop_event.is_set() and not state.quit_event.is_set():  # noqa
@@ -509,88 +497,52 @@ def robot_main(args, state: SharedState):
                         break
 
                     mode = state.get_mode()
+                    now  = time.time()
+
+                    # Continuous occupancy grid update — runs every iteration
+                    if state.occ_grid is not None and scan:
+                        state.occ_grid.update(
+                            odom.x, odom.y, odom.heading_rad,
+                            scan, args.min_quality,
+                        )
 
                     # --- Universal too-close guard (all directions, all states) ---
-                    # Protects wires/body during spins as well as front collisions.
-                    now = time.time()
                     too_close = scan and any(
                         dist <= args.min_clearance
                         for q, ang, dist in scan
                         if q >= args.min_quality and dist > 0
                     )
-                    if too_close and not _in_scan_dwell:
-                        roomba.stop()
+                    if too_close and sweep_state == SWEEP_FWD:
+                        lc = left_mm  if left_mm  is not None else 9999
+                        rc = right_mm if right_mm is not None else 9999
+                        sweep_turn_dir       = 1 if lc >= rc else -1
+                        sweep_turn_start_hdg = odom.heading_rad
+                        sweep_state = SWEEP_TURN1
+
+                    drive_label = IDLE  # default; overwritten below
+
+                    if mode == 'sweep':
                         if sweep_state == SWEEP_FWD:
-                            sweep_phase_start    = now
-                            sweep_turn_start_hdg = odom.heading_rad
-                            sweep_state = SWEEP_TURN1
-
-                    # --- Stop-and-scan: only update the map while stationary ---
-                    if mode == 'sweep' and args.scan_interval > 0 and not too_close:
-                        if not _in_scan_dwell and now - _last_scan_stop >= args.scan_interval:
-                            roomba.stop()
-                            _in_scan_dwell = True
-                            _dwell_start   = now
-                        if _in_scan_dwell:
-                            if state.occ_grid is not None and scan:
-                                state.occ_grid.update(
-                                    odom.x, odom.y, odom.heading_rad,
-                                    scan, args.min_quality,
-                                )
-                            if now - _dwell_start >= args.scan_dwell:
-                                # Pre-move check: only resume if front is clear
-                                if front_mm is None or front_mm > args.safe_dist:
-                                    _in_scan_dwell  = False
-                                    _last_scan_stop = now
-
-                    drive_label = IDLE  # default; overwritten by every active branch below
-
-                    if too_close:
-                        drive_label = TOO_CLOSE
-                    elif _in_scan_dwell:
-                        drive_label = 'SCANNING'
-                    elif mode == 'sweep':
-                        if sweep_state == SWEEP_FWD:
-                            blocked   = front_mm is not None and front_mm <= args.safe_dist
-                            timed_out = now - sweep_fwd_start >= args.sweep_time
-                            if blocked or timed_out:
-                                roomba.stop()
-                                sweep_phase_start    = now
+                            blocked = front_mm is not None and front_mm <= args.safe_dist
+                            if blocked:
+                                # Choose the clearer side and spin immediately
+                                lc = left_mm  if left_mm  is not None else 9999
+                                rc = right_mm if right_mm is not None else 9999
+                                sweep_turn_dir       = 1 if lc >= rc else -1
                                 sweep_turn_start_hdg = odom.heading_rad
                                 sweep_state = SWEEP_TURN1
-                            else:
-                                roomba.drive_direct(args.speed, args.speed)
-
-                        elif sweep_state == SWEEP_TURN1:
-                            turned = abs(_angle_diff(odom.heading_rad, sweep_turn_start_hdg))
-                            done   = turned >= SWEEP_90_RAD or now - sweep_phase_start >= SWEEP_90_TIME * 1.5
-                            if done:
-                                roomba.stop()
-                                sweep_phase_start = now
-                                sweep_state = SWEEP_OFFSET
-                            else:
                                 if sweep_turn_dir > 0:
                                     roomba.drive_direct(-SPIN_SPEED, SPIN_SPEED)
                                 else:
                                     roomba.drive_direct(SPIN_SPEED, -SPIN_SPEED)
-
-                        elif sweep_state == SWEEP_OFFSET:
-                            if now - sweep_phase_start >= args.sweep_offset / args.speed:
-                                roomba.stop()
-                                sweep_phase_start    = now
-                                sweep_turn_start_hdg = odom.heading_rad
-                                sweep_state = SWEEP_TURN2
                             else:
                                 roomba.drive_direct(args.speed, args.speed)
 
-                        elif sweep_state == SWEEP_TURN2:
-                            turned = abs(_angle_diff(odom.heading_rad, sweep_turn_start_hdg))
-                            done   = turned >= SWEEP_90_RAD or now - sweep_phase_start >= SWEEP_90_TIME * 1.5
-                            if done:
-                                roomba.stop()
-                                sweep_turn_dir  *= -1
-                                sweep_fwd_start  = now
+                        elif sweep_state == SWEEP_TURN1:
+                            front_clear = front_mm is None or front_mm > args.safe_dist
+                            if front_clear and not too_close:
                                 sweep_state = SWEEP_FWD
+                                roomba.drive_direct(args.speed, args.speed)
                             else:
                                 if sweep_turn_dir > 0:
                                     roomba.drive_direct(-SPIN_SPEED, SPIN_SPEED)
@@ -602,9 +554,8 @@ def robot_main(args, state: SharedState):
                     else:  # manual
                         ml, mr = state.get_manual_vel()
                         roomba.drive_direct(ml, mr)
-                        sweep_state    = SWEEP_FWD
-                        _in_scan_dwell = False
-                        drive_label    = IDLE
+                        sweep_state = SWEEP_FWD
+                        drive_label = IDLE
 
                     compact_scan = [
                         [int(ang), int(dist)]
