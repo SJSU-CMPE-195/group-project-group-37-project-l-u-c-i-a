@@ -7,9 +7,11 @@ Type=simple
 User=lucia
 WorkingDirectory=/home/lucia/repos/group-project-group-37-project-l-u-c-i-a/src/scripts
 ExecStart=/usr/bin/python3 slam_avoid_server.py \
-    --roomba-port /dev/roomba \
-    --lidar-port  /dev/rplidar \
-    --speed       100
+    --roomba-port   /dev/roomba \
+    --lidar-port    /dev/rplidar \
+    --speed         100 \
+    --safe-dist     305 \
+    --min-clearance 200
 Restart=on-failure
 RestartSec=5
 StandardOutput=journal
