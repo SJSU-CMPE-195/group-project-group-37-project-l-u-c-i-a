@@ -67,12 +67,9 @@ GPIO_CHARGE   = 16
 
 SCAN_SLOTS = 360
 SPIN_SPEED = 150
-SPIN_TIME  = 0.8
 
-FORWARD      = 'FORWARD'
-BLOCKED      = 'BLOCKED'
-TURNING      = 'TURNING'
 IDLE         = 'IDLE'
+TOO_CLOSE    = 'TOO_CLOSE'
 SWEEP_FWD    = 'SWEEP_FWD'
 SWEEP_TURN1  = 'SWEEP_TURN1'
 SWEEP_OFFSET = 'SWEEP_OFFSET'
@@ -303,7 +300,7 @@ class SharedState:
         self._lock = threading.Lock()
         self._snap = {
             'status':      'connecting',   # connecting / waiting / running / error
-            'mode':        'sweep',        # sweep / auto / manual
+            'mode':        'sweep',        # sweep / manual
             'drive_state': IDLE,
             'front_mm':    None,
             'left_mm':     None,
@@ -452,14 +449,15 @@ def robot_main(args, state: SharedState):
                 enc = roomba.read_encoders()
                 odom.update(enc['left'], enc['right'])
 
-                auto_state           = FORWARD
-                turn_start           = 0.0
                 sweep_state          = SWEEP_FWD
                 sweep_turn_dir       = 1          # +1 = left, -1 = right; alternates each U-turn
                 sweep_fwd_start      = time.time()
                 sweep_phase_start    = 0.0
                 sweep_turn_start_hdg = 0.0
                 prev_iter_t          = time.time()
+                _in_scan_dwell       = False
+                _dwell_start         = 0.0
+                _last_scan_stop      = time.time()
 
                 # Inner loop — runs until Stop or quit
                 while not state.stop_event.is_set() and not state.quit_event.is_set():
@@ -492,13 +490,6 @@ def robot_main(args, state: SharedState):
                             if not state.path_pixels or state.path_pixels[-1] != (px, py):
                                 state.path_pixels.append((px, py))
 
-                    # Occupancy grid update
-                    if state.occ_grid is not None and scan:
-                        state.occ_grid.update(
-                            odom.x, odom.y, odom.heading_rad,
-                            scan, args.min_quality,
-                        )
-
                     # Sensor extraction
                     front_mm = left_mm = right_mm = None
                     scan_n_delta = 0
@@ -519,8 +510,46 @@ def robot_main(args, state: SharedState):
 
                     mode = state.get_mode()
 
-                    if mode == 'sweep':
-                        now = time.time()
+                    # --- Universal too-close guard (all directions, all states) ---
+                    # Protects wires/body during spins as well as front collisions.
+                    now = time.time()
+                    too_close = scan and any(
+                        dist <= args.min_clearance
+                        for q, ang, dist in scan
+                        if q >= args.min_quality and dist > 0
+                    )
+                    if too_close and not _in_scan_dwell:
+                        roomba.stop()
+                        if sweep_state == SWEEP_FWD:
+                            sweep_phase_start    = now
+                            sweep_turn_start_hdg = odom.heading_rad
+                            sweep_state = SWEEP_TURN1
+
+                    # --- Stop-and-scan: only update the map while stationary ---
+                    if mode == 'sweep' and args.scan_interval > 0 and not too_close:
+                        if not _in_scan_dwell and now - _last_scan_stop >= args.scan_interval:
+                            roomba.stop()
+                            _in_scan_dwell = True
+                            _dwell_start   = now
+                        if _in_scan_dwell:
+                            if state.occ_grid is not None and scan:
+                                state.occ_grid.update(
+                                    odom.x, odom.y, odom.heading_rad,
+                                    scan, args.min_quality,
+                                )
+                            if now - _dwell_start >= args.scan_dwell:
+                                # Pre-move check: only resume if front is clear
+                                if front_mm is None or front_mm > args.safe_dist:
+                                    _in_scan_dwell  = False
+                                    _last_scan_stop = now
+
+                    drive_label = IDLE  # default; overwritten by every active branch below
+
+                    if too_close:
+                        drive_label = TOO_CLOSE
+                    elif _in_scan_dwell:
+                        drive_label = 'SCANNING'
+                    elif mode == 'sweep':
                         if sweep_state == SWEEP_FWD:
                             blocked   = front_mm is not None and front_mm <= args.safe_dist
                             timed_out = now - sweep_fwd_start >= args.sweep_time
@@ -570,37 +599,12 @@ def robot_main(args, state: SharedState):
 
                         drive_label = sweep_state
 
-                    elif mode == 'auto':
-                        if auto_state == FORWARD:
-                            if front_mm is not None and front_mm <= args.safe_dist:
-                                roomba.stop()
-                                auto_state = BLOCKED
-                            else:
-                                roomba.drive_direct(args.speed, args.speed)
-                        elif auto_state == BLOCKED:
-                            lc = left_mm  if left_mm  is not None else 9999
-                            rc = right_mm if right_mm is not None else 9999
-                            if lc >= rc:
-                                roomba.drive_direct(-SPIN_SPEED, SPIN_SPEED)
-                            else:
-                                roomba.drive_direct(SPIN_SPEED, -SPIN_SPEED)
-                            auto_state = TURNING
-                            turn_start = time.time()
-                        elif auto_state == TURNING:
-                            if time.time() - turn_start >= SPIN_TIME:
-                                roomba.stop()
-                                if front_mm is None or front_mm > args.safe_dist:
-                                    auto_state = FORWARD
-                                else:
-                                    auto_state = BLOCKED
-                        drive_label = auto_state
-
                     else:  # manual
                         ml, mr = state.get_manual_vel()
                         roomba.drive_direct(ml, mr)
-                        auto_state  = FORWARD
-                        sweep_state = SWEEP_FWD
-                        drive_label = IDLE
+                        sweep_state    = SWEEP_FWD
+                        _in_scan_dwell = False
+                        drive_label    = IDLE
 
                     compact_scan = [
                         [int(ang), int(dist)]
@@ -671,7 +675,7 @@ def lidar_only_main(args, state: SharedState):
             time.sleep(0.05)
     finally:
         state.stop_event.clear()
-        state.update(status='waiting', mode='auto', scan=[], drive_state=IDLE,
+        state.update(status='waiting', mode='sweep', scan=[], drive_state=IDLE,
                      front_mm=None, left_mm=None, right_mm=None)
 
 
@@ -760,7 +764,7 @@ app = FastAPI(lifespan=lifespan)
 
 @app.get("/", response_class=HTMLResponse)
 async def index():
-    safe_dist  = _args.safe_dist  if _args else 600
+    safe_dist  = _args.safe_dist  if _args else 800
     auto_speed = _args.speed      if _args else 200
     return _HTML.replace('__SAFE_DIST__', str(safe_dist)) \
                 .replace('__AUTO_SPEED__', str(auto_speed))
@@ -773,7 +777,7 @@ async def system_check():
 
 @app.post("/reconnect")
 async def reconnect():
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     await loop.run_in_executor(None, _reconnect)
     return {"ok": True}
 
@@ -783,7 +787,7 @@ async def get_map():
     if _state is None or _state.occ_grid is None or not _HAS_PIL:
         return Response(status_code=204)
     try:
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         img  = await loop.run_in_executor(None, _state.occ_grid.to_image, 800)
         if img is None:
             return Response(status_code=204)
@@ -861,7 +865,8 @@ def _handle(msg):
 
     if cmd == 'go':
         # If lidar-only is running, stop it before starting full robot mode
-        if _state.get_mode() == 'lidar_only' and _state._snap.get('status') == 'running':
+        snap = _state.snapshot()
+        if snap.get('mode') == 'lidar_only' and snap.get('status') == 'running':
             _state.stop_event.set()
             if _lidar_only_thread:
                 _lidar_only_thread.join(timeout=2)
@@ -875,7 +880,7 @@ def _handle(msg):
         _state.set_manual_vel(0, 0)
 
     elif cmd == 'lidar_only':
-        if _state._snap.get('status') == 'running':
+        if _state.snapshot().get('status') == 'running':
             return   # already running something
         _lidar_only_thread = threading.Thread(
             target=lidar_only_main, args=(_args, _state), daemon=True
@@ -884,7 +889,7 @@ def _handle(msg):
 
     elif cmd == 'set_mode':
         mode = msg.get('mode', 'sweep')
-        if mode not in ('sweep', 'auto', 'manual'):
+        if mode not in ('sweep', 'manual'):
             mode = 'sweep'
         _state.set_mode(mode)
         if mode == 'manual':
@@ -912,8 +917,8 @@ _HTML = """<!DOCTYPE html>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
   body {
-    background: #0d0d1a;
-    color: #d0d0e0;
+    background: #040D0D;
+    color: #B0E0D8;
     font-family: 'Courier New', monospace;
     font-size: 13px;
     height: 100vh;
@@ -924,38 +929,45 @@ _HTML = """<!DOCTYPE html>
 
   /* ---- header ---- */
   #hdr {
-    background: #111128;
-    border-bottom: 1px solid #222244;
+    background: #071414;
+    border-bottom: 1px solid #0D3030;
     padding: 8px 16px;
     display: flex;
     align-items: center;
     gap: 12px;
     flex-shrink: 0;
   }
-  #hdr h1 { color: #6ab0d4; font-size: 15px; letter-spacing: 2px; flex: 1; }
+  #hdr h1 { color: #00C8A8; font-size: 15px; letter-spacing: 2px; flex: 1; }
   #conn-dot {
-    width: 9px; height: 9px; border-radius: 50%; background: #444;
+    width: 9px; height: 9px; border-radius: 50%; background: #1A3333;
     transition: background 0.3s;
   }
-  #conn-dot.connecting { background: #e8a020; }
-  #conn-dot.waiting    { background: #4a90d9; animation: pulse 1.5s infinite; }
-  #conn-dot.running    { background: #27ae60; }
-  #conn-dot.error      { background: #e74c3c; }
+  #conn-dot.connecting { background: #E8A020; }
+  #conn-dot.waiting    { background: #00C8A8; animation: pulse 1.5s infinite; }
+  #conn-dot.running    { background: #00A878; }
+  #conn-dot.error      { background: #E74C3C; }
   @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
-  #conn-text { font-size: 12px; color: #888; min-width: 160px; }
+  #conn-text { font-size: 12px; color: #3A7070; min-width: 160px; }
 
   /* ---- controls bar ---- */
   #ctrl-bar {
-    background: #0f0f22;
-    border-bottom: 1px solid #222244;
+    background: #060F0F;
+    border-bottom: 1px solid #0D3030;
     padding: 8px 16px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 5px;
+    flex-shrink: 0;
+  }
+  #btn-row {
     display: flex;
     align-items: center;
     justify-content: center;
     gap: 14px;
-    flex-shrink: 0;
     flex-wrap: wrap;
   }
+  #err-row { min-height: 15px; text-align: center; }
 
   button {
     padding: 6px 18px;
@@ -969,55 +981,55 @@ _HTML = """<!DOCTYPE html>
     transition: opacity 0.15s;
   }
   button:disabled { opacity: 0.35; cursor: default; }
-  #btn-go   { background: #27ae60; color: #fff; }
-  #btn-stop { background: #c0392b; color: #fff; }
+  #btn-go   { background: #00A878; color: #040D0D; }
+  #btn-stop { background: #C0392B; color: #fff; }
 
   /* ---- mode buttons ---- */
   .mode-wrap { display: flex; align-items: center; gap: 4px; }
   .mode-btn {
     padding: 5px 11px;
-    border: 1px solid #333355;
+    border: 1px solid #0D3030;
     border-radius: 3px;
     cursor: pointer;
     font-family: inherit;
     font-size: 11px;
     font-weight: bold;
     letter-spacing: 1px;
-    background: #111128;
-    color: #555;
+    background: #071414;
+    color: #2A5555;
     transition: background 0.15s, color 0.15s, border-color 0.15s;
   }
   .mode-btn.active {
-    background: #1a3a5c;
-    border-color: #4a90d9;
-    color: #6ab0d4;
+    background: #0D2828;
+    border-color: #00C8A8;
+    color: #5EE8D0;
   }
   .mode-btn:disabled { opacity: 0.35; cursor: default; }
 
-  #err-msg { font-size: 11px; color: #e74c3c; flex: 1; }
+  #err-msg { font-size: 11px; color: #E74C3C; }
 
-  #btn-lidar     { background: #1a4a6b; color: #6ab0d4; border: 1px solid #2a6090; }
-  #btn-check     { background: #1e2a1e; color: #5a9a5a; border: 1px solid #2a4a2a; }
-  #btn-reconnect { background: #2a1e10; color: #c8823a; border: 1px solid #5a3a10; }
+  #btn-lidar     { background: #0D2828; color: #5EE8D0; border: 1px solid #00C8A8; }
+  #btn-check     { background: #0D1F1F; color: #3AA090; border: 1px solid #1A4040; }
+  #btn-reconnect { background: #2A1E10; color: #C8823A; border: 1px solid #5A3A10; }
 
   /* ---- system check panel ---- */
   #check-panel {
     display: none;
-    background: #080812;
-    border-bottom: 1px solid #222244;
+    background: #040B0B;
+    border-bottom: 1px solid #0D3030;
     padding: 10px 16px;
     gap: 24px;
     flex-wrap: wrap;
   }
   #check-panel.show { display: flex; }
   .chk-group { display: flex; flex-direction: column; gap: 3px; }
-  .chk-title { font-size: 10px; color: #555; letter-spacing: 1px; margin-bottom: 2px; }
+  .chk-title { font-size: 10px; color: #2A5555; letter-spacing: 1px; margin-bottom: 2px; }
   .chk-row   { display: flex; align-items: center; gap: 6px; font-size: 12px; }
   .chk-dot   { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
-  .chk-dot.ok  { background: #27ae60; }
-  .chk-dot.bad { background: #e74c3c; }
-  .chk-name  { color: #aaa; }
-  .chk-detail { color: #555; font-size: 11px; }
+  .chk-dot.ok  { background: #00A878; }
+  .chk-dot.bad { background: #E74C3C; }
+  .chk-name  { color: #6AADA0; }
+  .chk-detail { color: #2A5555; font-size: 11px; }
 
   /* ---- main layout ---- */
   #body {
@@ -1030,7 +1042,9 @@ _HTML = """<!DOCTYPE html>
   /* ---- left panel: radar + stats ---- */
   #left-panel {
     flex: 0 0 220px;
-    border-right: 1px solid #222244;
+    width: 220px;
+    min-width: 160px;
+    max-width: 500px;
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -1039,8 +1053,19 @@ _HTML = """<!DOCTYPE html>
     overflow-y: auto;
   }
 
+  /* ---- drag resize handle ---- */
+  #resize-handle {
+    width: 5px;
+    background: #0D3030;
+    cursor: col-resize;
+    flex-shrink: 0;
+    transition: background 0.15s;
+  }
+  #resize-handle:hover,
+  #resize-handle.dragging { background: #00C8A8; }
+
   #radar {
-    border: 1px solid #222244;
+    border: 1px solid #0D3030;
     border-radius: 50%;
     display: block;
     flex-shrink: 0;
@@ -1052,20 +1077,20 @@ _HTML = """<!DOCTYPE html>
   .krow { display: flex; gap: 3px; }
   .key {
     width: 28px; height: 28px;
-    border: 1px solid #333;
+    border: 1px solid #0D3030;
     border-radius: 4px;
-    background: #111128;
+    background: #071414;
     display: flex; align-items: center; justify-content: center;
-    font-size: 12px; color: #555;
+    font-size: 12px; color: #2A5555;
     transition: background 0.08s, color 0.08s, border-color 0.08s;
     user-select: none;
   }
-  .key.lit { background: #1a3a5c; border-color: #4a90d9; color: #6ab0d4; }
+  .key.lit { background: #0D2828; border-color: #00C8A8; color: #5EE8D0; }
 
   #spd-wrap { display: none; align-items: center; gap: 6px; width: 100%; }
   #spd-wrap.show { display: flex; }
-  #spd-slider { flex: 1; accent-color: #4a90d9; }
-  #spd-val { color: #6ab0d4; min-width: 52px; font-size: 11px; }
+  #spd-slider { flex: 1; accent-color: #00C8A8; }
+  #spd-val { color: #5EE8D0; min-width: 52px; font-size: 11px; }
 
   /* ---- manual control legend ---- */
   #ctrl-legend {
@@ -1074,23 +1099,23 @@ _HTML = """<!DOCTYPE html>
     gap: 2px;
     width: 100%;
     padding: 6px 8px;
-    border: 1px solid #1e2240;
+    border: 1px solid #0D2828;
     border-radius: 4px;
-    background: #0b0b18;
+    background: #060F0F;
   }
   #ctrl-legend.show { display: flex; }
   .cl-row { display: flex; justify-content: space-between; align-items: center; }
   .cl-keys {
     font-size: 10px;
-    color: #4a90d9;
-    background: #111128;
-    border: 1px solid #2a3060;
+    color: #00C8A8;
+    background: #071414;
+    border: 1px solid #0D2828;
     border-radius: 3px;
     padding: 1px 4px;
   }
-  .cl-desc { font-size: 10px; color: #555; }
+  .cl-desc { font-size: 10px; color: #2A5555; }
 
-  /* ---- stats (compact, inside left panel) ---- */
+  /* ---- stats ---- */
   #stats {
     width: 100%;
     flex-shrink: 0;
@@ -1098,15 +1123,14 @@ _HTML = """<!DOCTYPE html>
     flex-direction: column;
     gap: 0;
   }
+  .sr { display: flex; justify-content: space-between; padding: 2px 0; border-bottom: 1px solid #0A1E1E; font-size: 11px; }
+  .sl { color: #2A5555; }
+  .sv { color: #9EDED4; font-weight: bold; }
+  .sv.danger { color: #E74C3C; }
+  .sv.warn   { color: #E8A020; }
+  .sv.ok     { color: #00A878; }
 
-  .sr { display: flex; justify-content: space-between; padding: 2px 0; border-bottom: 1px solid #0f0f20; font-size: 11px; }
-  .sl { color: #555; }
-  .sv { color: #c0c0d8; font-weight: bold; }
-  .sv.danger { color: #e74c3c; }
-  .sv.warn   { color: #e8a020; }
-  .sv.ok     { color: #27ae60; }
-
-  /* ---- map panel (dominant right side) ---- */
+  /* ---- map panel ---- */
   #map-panel {
     flex: 1;
     display: flex;
@@ -1116,13 +1140,13 @@ _HTML = """<!DOCTYPE html>
     min-width: 0;
     min-height: 0;
   }
-  #map-hdr { color: #555; font-size: 11px; margin-bottom: 6px; flex-shrink: 0; }
-  #map-none { color: #444; font-size: 12px; }
+  #map-hdr { color: #2A5555; font-size: 11px; margin-bottom: 6px; flex-shrink: 0; }
+  #map-none { color: #1A3333; font-size: 12px; }
   #map-img {
     flex: 1;
     width: 100%;
     min-height: 0;
-    border: 1px solid #222244;
+    border: 1px solid #0D3030;
     display: none;
     image-rendering: pixelated;
     object-fit: contain;
@@ -1138,24 +1162,23 @@ _HTML = """<!DOCTYPE html>
   <span id="conn-text">Connecting...</span>
 </div>
 
-<!-- controls bar -->
+<!-- controls bar — buttons row is its own centred flex child -->
 <div id="ctrl-bar">
-  <button id="btn-go"    onclick="cmd('go')"        disabled>▶&nbsp;GO</button>
-  <button id="btn-stop"  onclick="cmd('stop')"       disabled>■&nbsp;STOP</button>
-  <button id="btn-lidar"     onclick="cmd('lidar_only')" disabled>◎&nbsp;LIDAR ONLY</button>
-  <button id="btn-check"     onclick="doCheck()">⬡&nbsp;SYSTEM CHECK</button>
-  <button id="btn-reconnect" onclick="doReconnect()">↺&nbsp;RECONNECT</button>
-
-  <div class="mode-wrap">
-    <button class="mode-btn active" id="btn-sweep"  onclick="setMode('sweep')">SWEEP</button>
-    <button class="mode-btn"        id="btn-auto"   onclick="setMode('auto')">AUTO</button>
-    <button class="mode-btn"        id="btn-manual" onclick="setMode('manual')">MANUAL</button>
+  <div id="btn-row">
+    <button id="btn-go"        onclick="cmd('go')"        disabled>▶&nbsp;GO</button>
+    <button id="btn-stop"      onclick="cmd('stop')"       disabled>■&nbsp;STOP</button>
+    <button id="btn-lidar"     onclick="cmd('lidar_only')" disabled>◎&nbsp;LIDAR ONLY</button>
+    <button id="btn-check"     onclick="doCheck()">⬡&nbsp;SYSTEM CHECK</button>
+    <button id="btn-reconnect" onclick="doReconnect()">↺&nbsp;RECONNECT</button>
+    <div class="mode-wrap">
+      <button class="mode-btn active" id="btn-sweep"  onclick="setMode('sweep')">SWEEP</button>
+      <button class="mode-btn"        id="btn-manual" onclick="setMode('manual')">MANUAL</button>
+    </div>
   </div>
-
-  <span id="err-msg"></span>
+  <div id="err-row"><span id="err-msg"></span></div>
 </div>
 
-<!-- system check panel (hidden until check runs) -->
+<!-- system check panel -->
 <div id="check-panel">
   <div class="chk-group">
     <div class="chk-title">DEVICES</div>
@@ -1180,7 +1203,7 @@ _HTML = """<!DOCTYPE html>
 <!-- body -->
 <div id="body">
 
-  <!-- left: radar + stats -->
+  <!-- left: radar + stats (resizable) -->
   <div id="left-panel">
     <canvas id="radar" width="200" height="200"></canvas>
 
@@ -1225,17 +1248,20 @@ _HTML = """<!DOCTYPE html>
     </div>
   </div>
 
+  <!-- drag handle -->
+  <div id="resize-handle"></div>
+
   <!-- right: large map -->
   <div id="map-panel">
     <div id="map-hdr">Occupancy map &nbsp;·&nbsp; refreshes every 3 s &nbsp;
-      <select id="map-size-sel" style="font-size:10px;background:#111128;color:#6ab0d4;border:1px solid #333355;border-radius:3px;padding:1px 4px;font-family:inherit;">
+      <select id="map-size-sel" style="font-size:10px;background:#071414;color:#5EE8D0;border:1px solid #0D3030;border-radius:3px;padding:1px 4px;font-family:inherit;">
         <option value="4">4 m</option>
         <option value="6">6 m</option>
         <option value="8">8 m</option>
         <option value="10" selected>10 m</option>
         <option value="15">15 m</option>
       </select>
-      &nbsp;<button id="btn-reset-map" onclick="doResetMap()" style="font-size:10px;padding:2px 8px;background:#1a2a1a;color:#5a9a5a;border:1px solid #2a4a2a;border-radius:3px;cursor:pointer;font-family:inherit;">↺ RESET MAP</button>
+      &nbsp;<button id="btn-reset-map" onclick="doResetMap()" style="font-size:10px;padding:2px 8px;background:#0D1F1F;color:#3AA090;border:1px solid #1A4040;border-radius:3px;cursor:pointer;font-family:inherit;">↺ RESET MAP</button>
     </div>
     <span id="map-none">No map yet — press GO to start mapping</span>
     <img id="map-img" alt="Occupancy map">
@@ -1246,21 +1272,61 @@ _HTML = """<!DOCTYPE html>
 <script>
 'use strict';
 
-const SAFE_DIST  = __SAFE_DIST__;
-const MAX_RANGE  = 3000;
+const SAFE_DIST = __SAFE_DIST__;
+const MAX_RANGE = 3000;
 
-// canvas
+// canvas — let so resize can update them
 const cvs = document.getElementById('radar');
 const ctx = cvs.getContext('2d');
-const CX  = cvs.width  / 2;
-const CY  = cvs.height / 2;
-const CR  = CX - 6;   // usable radius in pixels
+let CX = cvs.width  / 2;
+let CY = cvs.height / 2;
+let CR = CX - 6;
 
 let ws          = null;
 let manualSpeed = parseInt(document.getElementById('spd-slider').value);
 let keysDown    = new Set();
-let curMode     = 'auto';
+let curMode     = 'sweep';
 let curStatus   = 'connecting';
+let lastScan    = [];
+let lastFrontMm = null;
+let lastHdgDeg  = 0;
+
+// ---- Resize handle ----------------------------------------------------
+
+(function () {
+  const handle    = document.getElementById('resize-handle');
+  const leftPanel = document.getElementById('left-panel');
+  let dragging = false, startX = 0, startW = 0;
+
+  handle.addEventListener('mousedown', e => {
+    dragging = true;
+    startX   = e.clientX;
+    startW   = leftPanel.offsetWidth;
+    handle.classList.add('dragging');
+    document.body.style.cursor     = 'col-resize';
+    document.body.style.userSelect = 'none';
+  });
+
+  document.addEventListener('mousemove', e => {
+    if (!dragging) return;
+    const w = Math.max(160, Math.min(500, startW + e.clientX - startX));
+    leftPanel.style.flex  = `0 0 ${w}px`;
+    leftPanel.style.width = `${w}px`;
+    const r = Math.min(w - 24, 400);
+    cvs.width  = r;
+    cvs.height = r;
+    CX = r / 2; CY = r / 2; CR = CX - 6;
+    drawRadar(lastScan, lastFrontMm, lastHdgDeg);
+  });
+
+  document.addEventListener('mouseup', () => {
+    if (!dragging) return;
+    dragging = false;
+    handle.classList.remove('dragging');
+    document.body.style.cursor     = '';
+    document.body.style.userSelect = '';
+  });
+})();
 
 // ---- WebSocket --------------------------------------------------------
 
@@ -1292,7 +1358,6 @@ function render(d) {
   curStatus = d.status;
   curMode   = d.mode;
 
-  // connection dot
   const labels = {
     connecting: 'Connecting…',
     waiting:    'Waiting — press GO',
@@ -1301,7 +1366,6 @@ function render(d) {
   };
   setConn(d.status, labels[d.status] || d.status);
 
-  // buttons
   const isRunning    = (d.status === 'running');
   const isConnecting = (d.status === 'connecting');
   el('btn-go').disabled        = isRunning || isConnecting;
@@ -1309,22 +1373,18 @@ function render(d) {
   el('btn-lidar').disabled     = isRunning || isConnecting;
   el('btn-reconnect').disabled = isRunning || isConnecting;
 
-  // mode buttons
-  ['sweep', 'auto', 'manual'].forEach(m => {
+  ['sweep', 'manual'].forEach(m => {
     const b = el(`btn-${m}`);
     if (b) b.className = 'mode-btn' + (d.mode === m ? ' active' : '');
   });
 
-  // manual controls
   const showManual = (d.mode === 'manual' && d.status === 'running');
-  el('wasd-wrap').className    = showManual ? 'show' : '';
-  el('ctrl-legend').className  = showManual ? 'show' : '';
-  el('spd-wrap').className     = showManual ? 'show' : '';
+  el('wasd-wrap').className   = showManual ? 'show' : '';
+  el('ctrl-legend').className = showManual ? 'show' : '';
+  el('spd-wrap').className    = showManual ? 'show' : '';
 
-  // error message
   el('err-msg').textContent = d.error || '';
 
-  // stats
   tv('s-status', d.status.toUpperCase());
   tv('s-mode',   d.mode.toUpperCase());
   tv('s-drive',  d.drive_state);
@@ -1340,8 +1400,8 @@ function render(d) {
 
   tv('s-left',  mm(d.left_mm));
   tv('s-right', mm(d.right_mm));
-  tv('s-px',    d.pose_x  != null ? `${d.pose_x.toFixed(0)} mm` : '—');
-  tv('s-py',    d.pose_y  != null ? `${d.pose_y.toFixed(0)} mm` : '—');
+  tv('s-px',    d.pose_x   != null ? `${d.pose_x.toFixed(0)} mm` : '—');
+  tv('s-py',    d.pose_y   != null ? `${d.pose_y.toFixed(0)} mm` : '—');
   tv('s-hdg',   d.pose_hdg != null ? `${d.pose_hdg.toFixed(1)}°` : '—');
   tv('s-slam',  d.slam_active ? 'ACTIVE' : 'inactive');
 
@@ -1359,8 +1419,10 @@ function render(d) {
     ue.className   = 'sv' + (ups.soc < 15 ? ' danger' : ups.soc < 30 ? ' warn' : ' ok');
   }
 
-  // radar
-  if (d.scan && d.scan.length) drawRadar(d.scan, d.front_mm, d.pose_hdg || 0);
+  lastScan    = d.scan || [];
+  lastFrontMm = d.front_mm;
+  lastHdgDeg  = d.pose_hdg || 0;
+  if (lastScan.length) drawRadar(lastScan, lastFrontMm, lastHdgDeg);
 }
 
 // ---- Radar canvas -----------------------------------------------------
@@ -1368,36 +1430,34 @@ function render(d) {
 function drawRadar(scan, frontMm, hdgDeg) {
   ctx.clearRect(0, 0, cvs.width, cvs.height);
 
-  // background
-  ctx.fillStyle = '#09090f';
+  ctx.fillStyle = '#020A0A';
   ctx.fillRect(0, 0, cvs.width, cvs.height);
 
-  // range rings + labels
-  const rings = [1000, 2000, 3000];
-  rings.forEach(rmm => {
+  // range rings
+  [1000, 2000, 3000].forEach(rmm => {
     const r = (rmm / MAX_RANGE) * CR;
     ctx.beginPath();
     ctx.arc(CX, CY, r, 0, 2 * Math.PI);
-    ctx.strokeStyle = '#1c2030';
+    ctx.strokeStyle = '#0A2020';
     ctx.lineWidth = 1;
     ctx.stroke();
-    ctx.fillStyle = '#2a3550';
+    ctx.fillStyle = '#1A5040';
     ctx.font = '9px monospace';
     ctx.fillText(`${rmm / 1000}m`, CX + r * 0.72, CY - r * 0.72);
   });
 
-  // cross-hairs
-  ctx.strokeStyle = '#161828';
+  // crosshairs
+  ctx.strokeStyle = '#0D1818';
   ctx.lineWidth = 1;
   ctx.beginPath(); ctx.moveTo(CX, CY - CR); ctx.lineTo(CX, CY + CR); ctx.stroke();
   ctx.beginPath(); ctx.moveTo(CX - CR, CY); ctx.lineTo(CX + CR, CY); ctx.stroke();
 
-  // safe-dist ring (orange dashed)
+  // safe-dist ring (teal dashed)
   if (SAFE_DIST <= MAX_RANGE) {
     const sr = (SAFE_DIST / MAX_RANGE) * CR;
     ctx.beginPath();
     ctx.arc(CX, CY, sr, 0, 2 * Math.PI);
-    ctx.strokeStyle = '#6b3300';
+    ctx.strokeStyle = '#2A5050';
     ctx.setLineDash([4, 4]);
     ctx.lineWidth = 1;
     ctx.stroke();
@@ -1408,13 +1468,13 @@ function drawRadar(scan, frontMm, hdgDeg) {
   for (const [ang, dist] of scan) {
     if (dist <= 0 || dist > MAX_RANGE) continue;
     const r   = (dist / MAX_RANGE) * CR;
-    const rad = (ang - 90) * Math.PI / 180;  // 0° = up (forward)
+    const rad = (ang - 90) * Math.PI / 180;
     const x   = CX + r * Math.cos(rad);
     const y   = CY + r * Math.sin(rad);
 
-    if (dist <= SAFE_DIST)            ctx.fillStyle = '#e74c3c';
-    else if (dist <= SAFE_DIST * 1.5) ctx.fillStyle = '#e8a020';
-    else                               ctx.fillStyle = '#2ecc71';
+    if (dist <= SAFE_DIST)            ctx.fillStyle = '#E74C3C';
+    else if (dist <= SAFE_DIST * 1.5) ctx.fillStyle = '#E8A020';
+    else                               ctx.fillStyle = '#00C8A8';
 
     ctx.beginPath();
     ctx.arc(x, y, 2, 0, 2 * Math.PI);
@@ -1423,22 +1483,21 @@ function drawRadar(scan, frontMm, hdgDeg) {
 
   // heading arrow
   const hRad = (hdgDeg - 90) * Math.PI / 180;
-  const aLen = 22;
-  ctx.strokeStyle = '#4a90d9';
+  ctx.strokeStyle = '#00C8A8';
   ctx.lineWidth = 2;
   ctx.beginPath();
   ctx.moveTo(CX, CY);
-  ctx.lineTo(CX + aLen * Math.cos(hRad), CY + aLen * Math.sin(hRad));
+  ctx.lineTo(CX + 22 * Math.cos(hRad), CY + 22 * Math.sin(hRad));
   ctx.stroke();
 
   // robot dot
-  ctx.fillStyle = '#6ab0d4';
+  ctx.fillStyle = '#5EE8D0';
   ctx.beginPath();
   ctx.arc(CX, CY, 5, 0, 2 * Math.PI);
   ctx.fill();
 
   // forward tick at top
-  ctx.fillStyle = '#4a90d9';
+  ctx.fillStyle = '#00C8A8';
   ctx.beginPath();
   ctx.moveTo(CX, CY - CR - 1);
   ctx.lineTo(CX - 4, CY - CR + 6);
@@ -1447,14 +1506,12 @@ function drawRadar(scan, frontMm, hdgDeg) {
   ctx.fill();
 }
 
-// ---- Mode toggle ------------------------------------------------------
+// ---- Mode + drive -----------------------------------------------------
 
 function setMode(mode) {
   cmd('set_mode', { mode });
   if (mode === 'manual') keysDown.clear();
 }
-
-// ---- Manual drive -----------------------------------------------------
 
 function onSpeed(el) {
   manualSpeed = parseInt(el.value);
@@ -1463,10 +1520,10 @@ function onSpeed(el) {
 }
 
 const KEY_MAP = {
-  ArrowUp:   'w', w: 'w', W: 'w',
+  ArrowUp: 'w', w: 'w', W: 'w',
   ArrowDown: 's', s: 's', S: 's',
   ArrowLeft: 'a', a: 'a', A: 'a',
-  ArrowRight:'d', d: 'd', D: 'd',
+  ArrowRight: 'd', d: 'd', D: 'd',
 };
 
 document.addEventListener('keydown', e => {
@@ -1539,26 +1596,21 @@ async function doCheck() {
   const btn = el('btn-check');
   btn.textContent = '⬡ CHECKING…';
   btn.disabled = true;
-
   try {
     const r = await fetch('/check');
     const d = await r.json();
-
     dot('ck-roomba-dev',  d.devices.roomba.ok);
     dot('ck-lidar-dev',   d.devices.rplidar.ok);
     el('ck-roomba-dev-d').textContent = d.devices.roomba.path;
     el('ck-lidar-dev-d').textContent  = d.devices.rplidar.path;
-
     dot('ck-rplidar',    d.packages.rplidar.ok);
     dot('ck-pyserial',   d.packages.pyserial.ok);
     dot('ck-breezyslam', d.packages.breezyslam.ok);
     dot('ck-pillow',     d.packages.Pillow.ok);
-
     dot('ck-roomba-conn', d.runtime.roomba_connected.ok);
     el('ck-roomba-conn-d').textContent = d.runtime.roomba_connected.detail;
     dot('ck-slam',   d.runtime.slam_active.ok);
     dot('ck-server', d.runtime.server.ok);
-
     el('check-panel').className = 'show';
   } catch (e) {
     el('err-msg').textContent = 'Check failed: ' + e;
@@ -1611,10 +1663,12 @@ def main():
                         help='Sweep max forward time before U-turn in seconds (default: 10)')
     parser.add_argument('--sweep-offset', type=int, default=300,
                         help='Lateral offset between sweep strips in mm (default: 300)')
-    parser.add_argument('--safe-dist',    type=int, default=600,
-                        help='Obstacle stop threshold mm (default: 600)')
-    parser.add_argument('--fov',          type=int, default=30,
-                        help='Forward detection arc ±degrees (default: 30)')
+    parser.add_argument('--safe-dist',    type=int, default=800,
+                        help='Obstacle stop threshold mm (default: 800)')
+    parser.add_argument('--min-clearance', type=int, default=300,
+                        help='Absolute minimum clearance mm in any direction — emergency stop (default: 300)')
+    parser.add_argument('--fov',          type=int, default=45,
+                        help='Forward detection arc ±degrees (default: 45)')
     parser.add_argument('--min-quality',  type=int, default=5,
                         help='Minimum LiDAR point quality (default: 5)')
     parser.add_argument('--map-out',      default='map.png',
@@ -1623,6 +1677,10 @@ def main():
                         help='Map coverage in meters (default: 10)')
     parser.add_argument('--map-pixels',   type=int,   default=800,
                         help='Map resolution in pixels (default: 800)')
+    parser.add_argument('--scan-interval', type=float, default=2.0,
+                        help='Seconds to drive between map-update stops (default: 2.0; 0 = continuous)')
+    parser.add_argument('--scan-dwell',   type=float, default=0.4,
+                        help='Seconds to sit still collecting scans per stop (default: 0.4)')
     parser.add_argument('--ups-warn',     type=int,   default=20,
                         help='UPS %% warning threshold (default: 20)')
     parser.add_argument('--ups-stop',     type=int,   default=10,
