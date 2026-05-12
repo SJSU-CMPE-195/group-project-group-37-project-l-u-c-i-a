@@ -11,7 +11,8 @@ ExecStart=/usr/bin/python3 slam_avoid_server.py \
     --lidar-port    /dev/rplidar \
     --speed         100 \
     --safe-dist     305 \
-    --min-clearance 200
+    --min-clearance 200 \
+    --fov           60
 Restart=on-failure
 RestartSec=5
 StandardOutput=journal
