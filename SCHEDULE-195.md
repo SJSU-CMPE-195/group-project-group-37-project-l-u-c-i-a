@@ -345,3 +345,39 @@ Christian, Ling, Ethan, Noel
 - Implement camera functionality for developement during CMPE195B
 
 ---
+
+### 8/28/2026 - Team Meeting
+
+**Attendees:**
+Christian, Ling, Ethan, Noel
+
+**Discussion:**
+- Considering adding more sensors and algorithms to be used on top of existing
+- Looked for potential hardware options to purchase and experiment with
+
+**Decisions:**
+- Decided on direction to work towards for the start of the semester
+
+### 9/2/2026 - Advisor Meeting
+
+**Attendees:**
+Christian, Ling, Ethan, Noel
+
+**Discussion:**
+- Updated advisor on current standing and progress
+- Discussed additions of TOF sensors and other peripherals
+
+**Decisions:**
+- Ordered motor repladcement and TOF sensors
+
+### 9/4/2026 - Team Meeting
+
+**Attendees:**
+Ling, Ethan
+
+**Discussion:**
+- Designed inital prototype for camera mount
+- Discussed design for mounting arm
+
+**Decisions:**
+- Sent prototype design for camera and LiDAR mount to Makerspace for printing
