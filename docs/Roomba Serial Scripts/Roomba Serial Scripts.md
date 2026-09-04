@@ -6,25 +6,31 @@ Python scripts for communicating with the Roomba 650 over serial using the iRobo
 
 ## Overview
 
-All scripts live in `src/scripts/` and communicate with the Roomba via USB-to-serial adapter at 115200 baud. They are built on a shared wrapper class (`roomba_oi.py`) so serial connection setup and opcode encoding is handled in one place.
+Scripts are organized under `src/scripts/` into three locations:
+
+| Location | Contents |
+|----------|----------|
+| `src/scripts/` | Shared libraries: `roomba_oi.py`, `song.py`, `drive_demos.py` |
+| `src/scripts/local/` | Scripts requiring a physical keyboard (`evdev`): control panel, keyboard drivers |
+| `src/scripts/ssh/` | Scripts that work over SSH or locally without a display: test, reset, power off, sensor monitor |
+
+All scripts communicate with the Roomba via USB-to-serial adapter at 115200 baud.
+
+**Run all scripts from `src/scripts/`:**
+```bash
+cd ~/repos/group-project-group-37-project-l-u-c-i-a/src/scripts
+```
 
 **Dependencies:**
-```
-pip install pyserial pynput evdev
+```bash
+pip install pyserial evdev pynput
 ```
 
-> `evdev` is Linux only and required for `drive_keyboard_linux.py` and `control_panel.py`.
+> `evdev` is Linux only and required for `local/drive_keyboard_linux.py` and `local/control_panel.py`.
 
 **Port values:**
 - Windows: `COM5` (check Device Manager if unsure)
 - Linux: `/dev/ttyUSB0` (run `ls /dev/tty*` before and after plugging in to confirm)
-
-**Virtual environment (Ubuntu/Linux):**
-```bash
-python3 -m venv ~/roomba-env
-source ~/roomba-env/bin/activate
-pip install pyserial evdev
-```
 
 **Permissions (Linux serial port):**
 ```bash
@@ -81,22 +87,19 @@ The `with` block automatically stops and resets the Roomba, then closes the seri
 
 ---
 
-### `control_panel.py` — All-in-One Terminal Control Panel
+### `local/control_panel.py` — All-in-One Terminal Control Panel
 
-The primary way to interact with the Roomba. Combines real-time drive control, live sensor monitoring, and hotkeys for all actions in a single terminal UI.
+The primary way to interact with the Roomba when physically at the machine. Combines real-time drive control, live sensor monitoring, and hotkeys for all actions in a single terminal UI. Requires `evdev` and a physical keyboard.
 
 **Requirements:** `pip install evdev`
 
 **Usage:**
 ```bash
 # List available keyboard input devices
-python3 control_panel.py --list-devices
+sudo python3 local/control_panel.py --list-devices
 
 # Run the control panel
-python3 control_panel.py --port /dev/ttyUSB0 --device /dev/input/event3
-
-# With sudo if not in input group
-sudo ~/roomba-env/bin/python3 control_panel.py --port /dev/ttyUSB0 --device /dev/input/event3
+sudo python3 local/control_panel.py --port /dev/ttyUSB0 --device /dev/input/event3
 ```
 
 **Arguments:**
@@ -134,13 +137,14 @@ sudo ~/roomba-env/bin/python3 control_panel.py --port /dev/ttyUSB0 --device /dev
 
 ---
 
-### `test_led.py` — LED Display Test
+### `ssh/test_led.py` — LED Display Test
 
 Verifies the serial connection by displaying "LUCI" on the Roomba's 7-segment LED display for 5 seconds.
 
 **Usage:**
-```
-python3 test_led.py --port /dev/ttyUSB0
+```bash
+PYTHONPATH=. python3 ssh/test_led.py
+PYTHONPATH=. python3 ssh/test_led.py --port /dev/ttyUSB0
 ```
 
 **Arguments:**
@@ -153,16 +157,16 @@ python3 test_led.py --port /dev/ttyUSB0
 
 ---
 
-### `drive_keyboard_linux.py` — Real-Time Keyboard Control (Linux)
+### `local/drive_keyboard_linux.py` — Real-Time Keyboard Control (Linux)
 
-Hold keys to drive the Roomba in real time. Uses `evdev` to read directly from the input device — no display server or special permissions required beyond input group access. Supports combined key inputs for smooth arced movement.
+Hold keys to drive the Roomba in real time. Uses `evdev` to read directly from the input device — no display server required. Supports combined key inputs for arced movement.
 
 **Requirements:** `pip install evdev`
 
 **Usage:**
 ```bash
-python3 drive_keyboard_linux.py --list-devices
-python3 drive_keyboard_linux.py --port /dev/ttyUSB0 --device /dev/input/event3
+sudo python3 local/drive_keyboard_linux.py --list-devices
+sudo python3 local/drive_keyboard_linux.py --port /dev/ttyUSB0 --device /dev/input/event3
 ```
 
 **Arguments:**
@@ -178,7 +182,7 @@ python3 drive_keyboard_linux.py --port /dev/ttyUSB0 --device /dev/input/event3
 
 ---
 
-### `drive_keyboard_windows.py` — Real-Time Keyboard Control (Windows)
+### `local/drive_keyboard_windows.py` — Real-Time Keyboard Control (Windows)
 
 Same as the Linux version but uses `pynput` for key detection instead of `evdev`.
 
@@ -186,8 +190,8 @@ Same as the Linux version but uses `pynput` for key detection instead of `evdev`
 
 **Usage:**
 ```
-python drive_keyboard_windows.py --port COM5
-python drive_keyboard_windows.py --port COM5 --speed 400
+python local/drive_keyboard_windows.py --port COM5
+python local/drive_keyboard_windows.py --port COM5 --speed 400
 ```
 
 **Arguments:**
@@ -204,9 +208,9 @@ python drive_keyboard_windows.py --port COM5 --speed 400
 Runs predefined autonomous movement patterns. Useful for validating drive commands and estimating odometry accuracy.
 
 **Usage:**
-```
-python3 drive_demos.py --port /dev/ttyUSB0 --demo square
-python3 drive_demos.py --port /dev/ttyUSB0 --demo figure_eight
+```bash
+PYTHONPATH=. python3 drive_demos.py --port /dev/ttyUSB0 --demo square
+PYTHONPATH=. python3 drive_demos.py --port /dev/ttyUSB0 --demo figure_eight
 ```
 
 **Arguments:**
@@ -227,14 +231,14 @@ python3 drive_demos.py --port /dev/ttyUSB0 --demo figure_eight
 
 ---
 
-### `sensor_monitor.py` — Live Sensor Dashboard
+### `ssh/sensor_monitor.py` — Live Sensor Dashboard
 
-Continuously polls and displays all major Roomba sensors in a refreshing terminal dashboard.
+Continuously polls and displays all major Roomba sensors in a refreshing terminal dashboard. Works both locally and over SSH.
 
 **Usage:**
-```
-python3 sensor_monitor.py --port /dev/ttyUSB0
-python3 sensor_monitor.py --port /dev/ttyUSB0 --interval 0.25
+```bash
+PYTHONPATH=. python3 ssh/sensor_monitor.py
+PYTHONPATH=. python3 ssh/sensor_monitor.py --port /dev/ttyUSB0 --interval 0.25
 ```
 
 **Arguments:**
@@ -263,9 +267,9 @@ Press `Ctrl+C` to exit.
 Plays songs through the Roomba's built-in piezo speaker. Songs are defined as lists of (MIDI note, duration) tuples and loaded into the Roomba's song slots (max 16 notes per slot, 4 slots total).
 
 **Usage:**
-```
-python3 song.py --port /dev/ttyUSB0 --song mass_destruction
-python3 song.py --port /dev/ttyUSB0 --song la_cucaracha
+```bash
+PYTHONPATH=. python3 song.py --port /dev/ttyUSB0 --song mass_destruction
+PYTHONPATH=. python3 song.py --port /dev/ttyUSB0 --song la_cucaracha
 ```
 
 **Arguments:**
@@ -277,13 +281,14 @@ python3 song.py --port /dev/ttyUSB0 --song la_cucaracha
 
 ---
 
-### `reset.py` — Soft Reset
+### `ssh/reset.py` — Soft Reset
 
 Sends opcode 7 to reboot the Roomba's OI. Equivalent to removing and reinserting the battery. The Roomba will return to passive mode after rebooting.
 
 **Usage:**
-```
-python3 reset.py --port /dev/ttyUSB0
+```bash
+PYTHONPATH=. python3 ssh/reset.py
+PYTHONPATH=. python3 ssh/reset.py --port /dev/ttyUSB0
 ```
 
 **Arguments:**
@@ -296,13 +301,14 @@ python3 reset.py --port /dev/ttyUSB0
 
 ---
 
-### `power_off.py` — Power Off
+### `ssh/power_off.py` — Power Off
 
 Powers down the Roomba using opcode 133. The Roomba will enter sleep mode and stop responding until the CLEAN button is pressed.
 
 **Usage:**
-```
-python3 power_off.py --port /dev/ttyUSB0
+```bash
+PYTHONPATH=. python3 ssh/power_off.py
+PYTHONPATH=. python3 ssh/power_off.py --port /dev/ttyUSB0
 ```
 
 **Arguments:**
@@ -364,7 +370,7 @@ opcode  +150   radius=1 (CCW spin)
 
 **Roomba does not move after connecting**
 - Must call `start()` then `full_mode()` before any drive commands.
-- Check battery level with `sensor_monitor.py`.
+- Check battery level with `ssh/sensor_monitor.py`.
 - Make sure the Roomba is not on its charging dock.
 
 **Commands seem delayed or dropped**
@@ -372,4 +378,4 @@ opcode  +150   radius=1 (CCW spin)
 
 **`evdev` import error**
 - Install it: `pip install evdev`
-- If VSCode shows a warning, select the correct Python interpreter: `Ctrl+Shift+P` → `Python: Select Interpreter` → pick `roomba-env`.
+- If VSCode shows a warning, select the correct Python interpreter: `Ctrl+Shift+P` → `Python: Select Interpreter` → pick the correct environment.

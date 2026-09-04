@@ -10,14 +10,14 @@
 
 ## Advisor Meetings
 
-| Date | Duration | Format | Attendees | Summary |
-|------|----------|--------|-----------|---------|
-| 2/6/2026 | 30 minutes | Remote | Christian, Ling, Ethan, Noel | Introduction Project Discussion 
-| 2/27/2026| 30 minutes | Remote | Christian, Ling, Ethan, Noel | Project Updated Discussion
-| 3/13/2026| 30 minutes | Remote | Christian, Ling, Ethan, Noel | Project Update and Future Meeting Planning
-| 3/22/2026 | 1 hour | In-person | Christian, Ling, Ethan, Noel | High School Robotics Meeting
-| 4/17/2026 | 30 minutes | Remote | Christian, Ling, Ethan, Noel | Project Update
-| 5/1/2026 | 39 minutes | Remote |Christian, Ling, Ethan, Noel | Project Update and Session Planning
+| Date | Duration | Format | Attendees | Summary | Action Items |
+|------|----------|--------|-----------|---------|--------------|
+| 2/6/2026 | 30 minutes | Remote | Christian, Ling, Ethan, Noel | Introduction Project Discussion | 2 |
+| 2/27/2026| 30 minutes | Remote | Christian, Ling, Ethan, Noel | Project Updated Discussion | |
+| 3/13/2026| 30 minutes | Remote | Christian, Ling, Ethan, Noel | Project Update and Future Meeting Planning | |
+| 3/22/2026 | 1 hour | In-person | Christian, Ling, Ethan, Noel | High School Robotics Meeting | |
+| 4/17/2026 | 30 minutes | Remote | Christian, Ling, Ethan, Noel | Project Update | |
+| 5/1/2026 | 39 minutes | Remote | Christian, Ling, Ethan, Noel | Project Update and Session Planning | |
 | | | In-person / Remote | | | |
 | | | In-person / Remote | | | |
 | | | In-person / Remote | | | |
@@ -38,6 +38,7 @@
 | 2/27/26 | 3.5 hours | In-person | Christian, Ling, Ethan, Noel | Raspberry Pi Setup |
 | 3/20/26 | 5 hours | In-person | Christian, Ling, Ethan, Noel | Reconfiguration and Measurements |
 | 3/22/26 | 4 hours | In-person | Christian, Ling, Ethan, Noel | Basic Controls plus more measurements |
+| 3/27/26 | 5 hours | In-person | Christian, Ling, Ethan, Noel, Morrison | Remote control functionality and CAD Prototype #1 |
 | 4/10/26 | 4 hours | In-person | Christian, Ling, Ethan, Noel | LiDAR System research and Pi drawer CAD printing |
 | 4/17/26 | 4 hours | In-person | Christian, Ling, Ethan, Noel | Pi Drawer V2 and Jetson Nano Research |
 | 4/24/26 | 5 hours | In-person | Christian, Ling, Ethan, Noel | Jetson Nano and Raspberry Pi CAD |
@@ -227,6 +228,22 @@ Christian, Ling, Ethan, Noel
 
 **Decisions:**
 - Will reach out to Maker Space to learn about status of 3D printed Raspberry Pi housing
+
+---
+
+### 3/27/2026 - Team Meeting
+
+**Attendees:**
+Christian, Ling, Ethan, Noel, Morrison
+
+**Discussion:**
+- Development session covering hardware bring-up, automated deployment tooling, SSH control panel improvements, and documentation cleanup for Project L.U.C.I.A.
+- Implemeted remote controls for the Roomba
+- Finished CAD'ing inital internal protoype of  Pi + Hat holder
+
+**Decisions:**
+- Will use the LiDAR sensor that our advisor provided for us
+- We will use Makerspace to 3d Print first CAD prototype
 
 ---
 
