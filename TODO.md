@@ -8,8 +8,9 @@
 
 ## Right now
 
-Phase 1, Step A (wheels move) is written and tested on a laptop, but **has not been tried on the real robot yet.**
-Next: set up the Pi (bottom of this file), then try it.
+Phase 1, Step A (wheels move) **works on the real robot**: it drives from the keyboard tool over SSH.
+The pickup test passes too: it stops when lifted and drives again when set down, with no restart.
+Step A is done. Next: Step B (position tracking and battery).
 
 ---
 
@@ -30,11 +31,12 @@ Folder: `src/ros2/lucia_control/`
 - [x] Copy the Roomba driver (`roomba_oi.py`) into the package
 - [x] Wheel-speed math (`motion.py`) + tests
 - [x] Control program (`roomba_bridge.py`): enters Safe mode, listens for drive commands, keeps Safe mode alive, stops the wheels if commands go quiet
-- [ ] Try it on the Pi, on the floor with clear space. Drive it over SSH with the keyboard tool (`ros2 run teleop_twist_keyboard teleop_twist_keyboard`) in a second terminal.
-- [ ] Pick the robot up and put it back down. It should carry on with no restart.
+- [x] Try it on the Pi, on the floor with clear space. Drive it over SSH with the keyboard tool (`ros2 run teleop_twist_keyboard teleop_twist_keyboard`) in a second terminal. Hold the keys down, since a single tap is too brief to see.
+- [x] Pick the robot up and put it back down. It should carry on with no restart.
 
 **Step B — Position tracking and battery**
-- [ ] Run `sensor_monitor.py`: do the wheel sensor numbers change when the wheels turn? (Earlier, the Roomba's cable couldn't send readings back.)
+- [x] Checked 2026-09-18: **the Roomba's replies don't reach the Pi.** Battery voltage reads 0, encoders read 0. Driving still works, so the Pi-to-Roomba direction is fine.
+- [ ] Fix the reply path (Roomba TX to the adapter's RX): check the wiring at both ends, test the adapter alone with a loopback, or try another adapter. Recheck with the battery voltage read.
 - [ ] Measure wheel size and encoder counts per turn (drive a known distance, read the raw counts)
 - [ ] Add position tracking (`/odom`) and battery to the control program
 
@@ -62,11 +64,14 @@ Folder: `src/ros2/lucia_bringup/`
 
 ## Setup on the Pi (needed along the way)
 
+- [x] The old web control panel no longer starts at boot. `lucia.service` ran `slam_avoid_server.py` on the same serial port and GPIO pins, which fought the ROS2 control program. Disabled on the Pi on 2026-09-18 with `sudo systemctl disable --now lucia`. To use the old panel again: `sudo systemctl start lucia`, and stop it before any ROS2 test. Tell the team.
+- [x] The Pi's own WiFi (`lucia-control`) comes up after a reboot. Confirmed 2026-09-18. `pi-ap` was given priority 100 so it wins over saved networks like LiveLaughLove.
 - [ ] udev rules, so the Roomba and lidar always show up as `/dev/roomba` and `/dev/rplidar`
+  - They may already exist (the old service uses those names). Check: `ls -la /dev/roomba /dev/rplidar`
   - Until then, run control with `port:=/dev/ttyUSB0`
 - [x] Write a Dockerfile so the container can be rebuilt (`docker/Dockerfile`)
   - Includes the serial library control needs, the lidar and mapping packages, and the keyboard driving tool (`teleop_twist_keyboard`)
-- [ ] Build it on the Pi: `docker build -t lucia/ros2:latest docker/` (not built yet, no Docker on the laptop to test it). Needs internet, so do it on the ethernet network, not the robot's own WiFi.
+- [x] Build it on the Pi: `docker build -t lucia/ros2:latest docker/` (built fine, about 8 minutes). Needs internet, so do it on a network with internet, not the robot's own WiFi.
 - [ ] `update.sh` is hardcoded to pull the `testing` branch, not `195B-Christian`. Fix before using it for this work.
 - [ ] Update `docs/setup/ros2-pi.md` to use the new image once it builds
 
