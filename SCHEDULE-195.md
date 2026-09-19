@@ -381,3 +381,29 @@ Ling, Ethan
 
 **Decisions:**
 - Sent prototype design for camera and LiDAR mount to Makerspace for printing
+
+### 9/18/2026 - Advisor Meeting
+
+**Attendees:**
+Christian, Ling, Ethan, Noel
+
+**Discussion:**
+- Showed advisor presentation for current standing and future goals/timeline
+
+**Decisions:**
+- Discussed about meeting up in person with advisor
+
+### 9/18/2026 - Team Meeting
+
+**Attendees:**
+Christian, Ling, Ethan, Noel
+
+**Discussion:**
+- Detatched old mounts from the Roomba for redesign
+- Refined designs of LiDAR mount and Pi/Jetson shelf, while prototyping arm
+- Further developed TOF sensor compatibility
+
+**Decisions:**
+- Finish up arm designs and continue to make progress on the software side
+- Assemble everything together to continue testing
+
