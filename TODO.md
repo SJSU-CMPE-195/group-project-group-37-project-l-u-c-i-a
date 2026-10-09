@@ -37,16 +37,17 @@ Folder: `src/ros2/lucia_control/`
 **Step B — Position tracking and battery**
 - [x] Checked 2026-09-18: **the Roomba's replies don't reach the Pi.** Battery voltage reads 0, encoders read 0. Driving still works, so the Pi-to-Roomba direction is fine.
 - [ ] Fix the reply path (Roomba TX to the adapter's RX): check the wiring at both ends, test the adapter alone with a loopback, or try another adapter. Recheck with the battery voltage read.
-- [ ] Measure wheel size and encoder counts per turn (drive a known distance, read the raw counts)
-- [ ] Add position tracking (`/odom`) and battery to the control program
+- [x] Added position tracking (`/odom` + the `odom`→`base_link` transform) to the control program (2026-10-09) — **open-loop**, estimated from commanded wheel speed, not a sensor reading, since the cable above isn't fixed yet. Will drift more than real encoder feedback. See `odometry.py` and `docs/changelogs/2026-10-09.md`. Not yet tried on the real robot.
+- [ ] Once the cable is fixed: measure wheel size and encoder counts per turn (drive a known distance, read the raw counts), then switch `/odom` to use real encoder readings instead of commanded speed. `odometry.py`'s math doesn't change either way — only what feeds it does.
+- [ ] Add battery to the control program (needs the cable fixed too)
 
 ---
 
 ## Phase 2 — Lidar (builds the map)
 
 Folder: `src/ros2/lucia_lidar/`
-- [ ] Lidar settings file (port, speed, frame name)
-- [ ] Map-building settings file (`slam_toolbox`)
+- [x] Lidar settings file (`config/rplidar.yaml`) - port, speed, from how it actually ran last semester
+- [x] Map-building settings file (`config/slam_toolbox.yaml`) - package defaults plus this lidar's real range limits; **not tried on the real lidar yet**
 - [ ] Lidar scans show up on `/scan`
 - [ ] A map builds while you drive the robot around a room
 
