@@ -50,8 +50,10 @@ Folder: `src/ros2/lucia_lidar/`
 - [x] Lidar settings file (`config/rplidar.yaml`) - port, speed, from how it actually ran last semester
 - [x] Map-building settings file (`config/slam_toolbox.yaml`) - package defaults plus this lidar's real range limits
 - [x] Tried on the real lidar (2026-10-09): the executable name is `rplidar_composition`, not `rplidar_node` (though the *node* it creates is still named `rplidar_node`, which is what the config file's settings apply to - that part was already right). Hit "Cannot start scan" at first - fixed by explicitly setting `scan_mode: Standard`, already in the config file; the ROS2 driver's own default scan mode isn't compatible with this lidar's firmware (Hardware Rev 5, Firmware 1.25). `/scan` now publishes at ~11.7 Hz.
-- [ ] Lidar scans show up on `/scan`
-- [ ] A map builds while you drive the robot around a room
+- [x] Lidar scans show up on `/scan`
+- [x] Launch file (`launch/lidar_and_map.launch.py`) starts the lidar + `slam_toolbox` together - written, syntax-checked, **not yet run** (no ROS2 on the laptop that wrote it)
+  - Before trusting it: check `ros2 pkg executables slam_toolbox` - the executable name in the file (`async_slam_toolbox_node`) is the package's usual name, not yet confirmed for what's actually installed (the `rplidar_ros` executable name turned out to be different than assumed - same risk here)
+- [ ] A map builds while you drive the robot around a room - verify by saving it as a PNG (`map_saver_cli`), not a live viewer (see `docs/changelogs/2026-10-09.md`)
 
 Works best after Phase 1, Step B.
 
