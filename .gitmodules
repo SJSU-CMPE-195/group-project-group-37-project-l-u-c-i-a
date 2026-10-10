@@ -1,0 +1,3 @@
+[submodule "vl53l5cx"]
+	path = vl53l5cx
+	url = https://github.com/mp-extras/vl53l5cx
