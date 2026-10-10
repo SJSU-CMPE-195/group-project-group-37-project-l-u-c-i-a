@@ -37,7 +37,8 @@ Folder: `src/ros2/lucia_control/`
 **Step B — Position tracking and battery**
 - [x] Checked 2026-09-18: **the Roomba's replies don't reach the Pi.** Battery voltage reads 0, encoders read 0. Driving still works, so the Pi-to-Roomba direction is fine.
 - [ ] Fix the reply path (Roomba TX to the adapter's RX): check the wiring at both ends, test the adapter alone with a loopback, or try another adapter. Recheck with the battery voltage read.
-- [x] Added position tracking (`/odom` + the `odom`→`base_link` transform) to the control program (2026-10-09) — **open-loop**, estimated from commanded wheel speed, not a sensor reading, since the cable above isn't fixed yet. Will drift more than real encoder feedback. See `odometry.py` and `docs/changelogs/2026-10-09.md`. Not yet tried on the real robot.
+- [x] Added position tracking (`/odom` + the `odom`→`base_link` transform) to the control program (2026-10-09) — **open-loop**, estimated from commanded wheel speed, not a sensor reading, since the cable above isn't fixed yet. Will drift more than real encoder feedback. See `odometry.py` and `docs/changelogs/2026-10-09.md`.
+- [x] Tried `/odom` on the real robot: position and heading both tracked driving + turning correctly.
 - [ ] Once the cable is fixed: measure wheel size and encoder counts per turn (drive a known distance, read the raw counts), then switch `/odom` to use real encoder readings instead of commanded speed. `odometry.py`'s math doesn't change either way — only what feeds it does.
 - [ ] Add battery to the control program (needs the cable fixed too)
 
@@ -47,7 +48,8 @@ Folder: `src/ros2/lucia_control/`
 
 Folder: `src/ros2/lucia_lidar/`
 - [x] Lidar settings file (`config/rplidar.yaml`) - port, speed, from how it actually ran last semester
-- [x] Map-building settings file (`config/slam_toolbox.yaml`) - package defaults plus this lidar's real range limits; **not tried on the real lidar yet**
+- [x] Map-building settings file (`config/slam_toolbox.yaml`) - package defaults plus this lidar's real range limits
+- [x] Tried on the real lidar (2026-10-09): the executable name is `rplidar_composition`, not `rplidar_node` (though the *node* it creates is still named `rplidar_node`, which is what the config file's settings apply to - that part was already right). Hit "Cannot start scan" at first - fixed by explicitly setting `scan_mode: Standard`, already in the config file; the ROS2 driver's own default scan mode isn't compatible with this lidar's firmware (Hardware Rev 5, Firmware 1.25). `/scan` now publishes at ~11.7 Hz.
 - [ ] Lidar scans show up on `/scan`
 - [ ] A map builds while you drive the robot around a room
 

@@ -2,10 +2,19 @@
 # rplidar_node. Values below come from how the lidar was actually run last
 # semester (src/scripts/lidar_reader.py, lucia.service) - not guesses.
 #
+# Confirmed working on the real lidar 2026-10-09 (see docs/changelogs). Two notes
+# from that test:
+# - The executable in this installed version is `rplidar_composition`, not
+#   `rplidar_node` - but it still creates a node actually NAMED rplidar_node,
+#   which is what the "rplidar_node:" key below applies to either way.
+# - scan_mode: Standard is not just a style choice - without it, this lidar's
+#   firmware (Hardware Rev 5, Firmware 1.25) fails to start scanning at all
+#   ("Cannot start scan"). Don't remove it.
+#
 # Usage once a launch file exists:
 #   ros2 launch rplidar_ros rplidar_a2m8_launch.py --ros-args --params-file config/rplidar.yaml
 # Or test directly:
-#   ros2 run rplidar_ros rplidar_node --ros-args --params-file config/rplidar.yaml
+#   ros2 run rplidar_ros rplidar_composition --ros-args --params-file config/rplidar.yaml
 
 rplidar_node:
   ros__parameters:
@@ -14,4 +23,4 @@ rplidar_node:
     frame_id: laser                 # matters once the TF tree is set up; not yet
     inverted: false
     angle_compensate: true
-    scan_mode: Standard
+    scan_mode: Standard              # required - see note above
