@@ -90,6 +90,13 @@ Folder: `src/ros2/lucia_bringup/`
 ## Later (not started)
 
 - Autonomous navigation (Nav2), once the map and position tracking work
+- Autonomous "drive itself around the room" behavior (last semester's SWEEP
+  mode) - not ported yet. Deliberately not scheduled yet (2026-10-09): comes
+  after the safety-stop layer is built and tested on its own, not alongside it.
+- A way to actually view the map - live (RViz2, needs ROS2/Docker on a machine
+  with a screen) or a revived web control panel. The web panel specifically was
+  deferred on purpose, reaffirmed 2026-10-09 - treat reviving it as its own
+  decision, not something to bundle into another task.
 - IMU (motion sensor) blended with wheel data, once that hardware is ready
 - ToF distance sensors as an emergency stop, once that hardware arrives
 - Camera and Jetson: start from scratch when the time comes
