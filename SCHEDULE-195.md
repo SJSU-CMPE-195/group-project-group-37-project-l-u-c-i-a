@@ -49,6 +49,7 @@
 | 9/4/2026 | 3 hours | In-person | Ling, Ethan | CAD Planning | 
 | 9/18/2026 | 6 hours | In-person | Christian, Ling, Ethan, Noel | CAD Continuation and TOF Sensor Compatibility | 
 | 10/9/2026 | 5 hours | In-person | Christian, Ling, Ethan, Noel | Hardware Testing | 
+| 10/9/2026 | 3 hours | In-person | Ling, Ethan | IMU and Nano Setup |
 
 ---
 ## Meeting Notes
@@ -440,3 +441,17 @@ Christian, Ling, Ethan, Noel
 - Assemble everything together to continue testing
 - Wait for the arm part to finish from Makerspace
 
+### 10/13/2026 - Team Meeting
+
+**Attendees:**
+Ling, Ethan
+
+**Discussion:**
+- Worked on setting up the Jetson Nano ddependencies and framework to start Python development
+- Set up Zed 2 camera compatibility with the Jetson Nano
+- Set up the GY-BMO08 IMU compatibility with the Pico 2
+
+
+**Decisions:**
+- Will work on creating Python code to have the Nano deliver data to Pi
+- Need to look into solving compatibility issues of Nano with personal hardware
