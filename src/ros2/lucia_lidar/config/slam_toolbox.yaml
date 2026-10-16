@@ -1,0 +1,41 @@
+# slam_toolbox settings for building a map from /scan.
+#
+# These are mostly slam_toolbox's own published defaults, not tuned for this
+# robot yet - a starting point to get a map building, not a final answer.
+# Two values ARE grounded in this robot's actual hardware (not guessed):
+# max_laser_range and minimum_range, taken from lidar_reader.py's own reported
+# RPLidar A2M8 limits (12.0 m max, 0.15 m min).
+#
+# Known limitation: wheel-based odometry (/odom) isn't available yet - see
+# TODO.md "Phase 1 Step B" - so scan matching has no motion prediction to
+# correct yet. The map will likely be rougher until that's fixed. Revisit
+# these settings once /odom exists.
+#
+# Usage once a launch file exists:
+#   ros2 launch slam_toolbox online_async_launch.py --ros-args --params-file config/slam_toolbox.yaml
+
+slam_toolbox:
+  ros__parameters:
+    # Mode
+    solver_plugin: solver_plugins::CeresSolver
+    mode: mapping
+
+    # Frames and topics
+    odom_frame: odom
+    map_frame: map
+    base_frame: base_link
+    scan_topic: /scan
+
+    # Sensor limits - from this robot's actual RPLidar A2M8 (lidar_reader.py)
+    max_laser_range: 12.0
+    minimum_range: 0.15
+
+    # Map building (slam_toolbox defaults)
+    resolution: 0.05
+    map_update_interval: 2.0
+    minimum_travel_distance: 0.2
+    minimum_travel_heading: 0.17
+    transform_publish_period: 0.02
+    transform_timeout: 0.2
+    tf_buffer_duration: 30.0
+    stack_size_to_use: 40000000
