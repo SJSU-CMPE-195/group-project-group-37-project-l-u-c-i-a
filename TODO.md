@@ -43,7 +43,8 @@ Folder: `src/ros2/lucia_control/`
 
 **Step B — Position tracking and battery**
 - [x] Checked 2026-09-18: **the Roomba's replies don't reach the Pi.** Battery voltage reads 0, encoders read 0. Driving still works, so the Pi-to-Roomba direction is fine.
-- [ ] Fix the reply path (Roomba TX to the adapter's RX): check the wiring at both ends, test the adapter alone with a loopback, or try another adapter. Recheck with the battery voltage read.
+- [x] Rechecked 2026-10-16, counting bytes instead of decoding them: **zero bytes** come back for battery voltage (packet 22) or either encoder (43/44), even while turning a wheel by hand. The old "reads 0" was really "no reply at all" (the driver turns an empty read into 0). The encoders themselves are untested. A beep command played in the same session, so the Roomba was awake and receiving: only the Roomba-to-Pi direction is broken
+- [ ] Fix the reply path (Roomba TX to the adapter's RX, FTDI FT232R). Loopback test: unplug from the Roomba, jumper pins 3 and 4 on the cable's mini-DIN plug, send bytes, see if they echo. Echo → the fault is at the Roomba end (reseat); no echo → the adapter/cable (replace, e.g. a ready-made Create 2 serial cable)
 - [x] Added position tracking (`/odom` + the `odom`→`base_link` transform) to the control program (2026-10-09) — **open-loop**, estimated from commanded wheel speed, not a sensor reading, since the cable above isn't fixed yet. Will drift more than real encoder feedback. See `odometry.py` and `docs/changelogs/2026-10-09.md`.
 - [x] Tried `/odom` on the real robot: position and heading both tracked driving + turning correctly.
 - [ ] Once the cable is fixed: measure wheel size and encoder counts per turn (drive a known distance, read the raw counts), then switch `/odom` to use real encoder readings instead of commanded speed. `odometry.py`'s math doesn't change either way — only what feeds it does.
@@ -68,6 +69,19 @@ Folder: `src/ros2/lucia_lidar/`
 - [x] A map builds while you drive the robot around a room (2026-10-16, `room1.png`): about a 2.6 × 2.9 m room with straight walls and clear corners, plus an opening on one side. One wall shows up doubled (about 20-30 cm apart), most likely heading drift from the open-loop `/odom`; it should improve once real encoders feed `/odom`
 
 Works best after Phase 1, Step B.
+
+**IMU: better heading for mapping** (Ling's BNO08X on a Pico 2, USB to the Pi)
+
+The first map's doubled wall is heading drift from the open-loop `/odom`. The IMU fixes heading
+without waiting on the Roomba cable.
+- [x] Pico streaming code `src/imu/stream_main.py` (upload as `main.py`): game rotation vector + gyro, one `I,qw,qx,qy,qz,gx,gy,gz` line per reading at about 50 Hz. Ling to review against her setup
+- [x] `lucia_imu` package: `imu_bridge` node reads the Pico and publishes `/imu/data` (parser has pure-Python tests). Not yet run on the Pi
+- [ ] Pico streams `I,` lines when plugged into the Pi (`/dev/ttyACM0`)
+- [ ] udev rule `/dev/imu` (match the Pico's serial number; the ToF Pico has the same vendor/product ID), and `--device=/dev/imu` in the `docker run` command
+- [ ] `imu_bridge` on the Pi: heading follows turning the robot by hand
+- [ ] Mount the IMU flat and fixed on the robot; note which way its axes point (needs a `base_link`→`imu_link` transform, like the lidar's)
+- [ ] Fuse it: `robot_localization` EKF combines `/odom` + `/imu/data` and publishes `odom`→`base_link` (`roomba_bridge` stops publishing that transform). Add `ros-jazzy-robot-localization` to the Dockerfile
+- [ ] Map the same room again and compare against `room1.png`
 
 ---
 
@@ -131,6 +145,5 @@ Folder: `src/ros2/lucia_bringup/`
   with a screen) or a revived web control panel. The web panel specifically was
   deferred on purpose, reaffirmed 2026-10-09 - treat reviving it as its own
   decision, not something to bundle into another task.
-- IMU (motion sensor) blended with wheel data, once that hardware is ready
 - ToF distance sensors as an emergency stop, once that hardware arrives
 - Camera and Jetson: start from scratch when the time comes
