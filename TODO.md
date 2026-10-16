@@ -14,8 +14,9 @@ a test tool for checking one piece at a time; it is not how the robot is meant t
 
 ## Right now
 
-Control (wheels, open-loop `/odom`) and the lidar (`/scan`) both work on the real robot.
-Next: confirm a map builds (Phase 2), then the safety stop, then SWEEP mode.
+Control (wheels, open-loop `/odom`), the lidar (`/scan`) and mapping all work on the real robot:
+the first map of a real room was built by driving with the keyboard on 2026-10-16.
+Next: the safety stop (Phase 3), then SWEEP mode.
 Decided 2026-10-16: SWEEP mode first; frontier exploration is a later feature.
 
 ---
@@ -47,6 +48,7 @@ Folder: `src/ros2/lucia_control/`
 - [x] Tried `/odom` on the real robot: position and heading both tracked driving + turning correctly.
 - [ ] Once the cable is fixed: measure wheel size and encoder counts per turn (drive a known distance, read the raw counts), then switch `/odom` to use real encoder readings instead of commanded speed. `odometry.py`'s math doesn't change either way — only what feeds it does.
 - [ ] Add battery to the control program (needs the cable fixed too)
+- [ ] Recover after the Roomba is power-cycled. The heartbeat only re-sends Safe (131), which a freshly powered-on Roomba ignores until it gets Start (128), so for now `roomba_bridge` has to be restarted. Fix carefully: sending Start while already in Safe mode drops the Roomba to Passive for a moment, so don't just send Start every second
 
 ---
 
@@ -59,8 +61,11 @@ Folder: `src/ros2/lucia_lidar/`
 - [x] Lidar scans show up on `/scan`
 - [x] Launch file (`launch/lidar_and_map.launch.py`) starts the lidar + `slam_toolbox` together - written, syntax-checked, **not yet run** (no ROS2 on the laptop that wrote it)
   - Fixed 2026-10-16 before the first run: it now starts `slam_toolbox` through the package's own launch file (Jazzy's slam_toolbox needs a lifecycle activate step, so the executable-name guess is gone), and adds the missing `base_link`→`laser` transform, without which every scan is dropped
-- [ ] Check which way the lidar faces: `ros2 run lucia_lidar scan_check` with a box in front of the robot (sets `laser_yaw`)
-- [ ] A map builds while you drive the robot around a room - verify by saving it as a PNG (`map_saver_cli`), not a live viewer (see `docs/changelogs/2026-10-09.md`)
+- [x] `scan_check` works on the Pi (2026-10-16): readings follow a hand moved around the lidar
+- [x] Bench test, robot stationary (2026-10-16): launch file + `roomba_bridge` → slam_toolbox configured, activated, built and saved a map (`map_saver_cli`, 68×121 cells @ 5 cm). Only a small starburst is filled in: a stationary robot gives slam_toolbox a single scan, and it leaves cells unknown until a ray has crossed them at least twice. Driving fills it in
+- [x] Settled which way the lidar faces (2026-10-16, `scan_check`): a hand in front of the robot read about -170°, a hand on its left about -92°. That's a plain 180° turn, not mirrored, so the default `laser_yaw` (pi) is right
+- Known quirk: the lidar driver sometimes freezes after `Start` on the first run (motor spins, no `/scan`, Ctrl+C ignored). Ctrl+\ and rerun fixes it
+- [x] A map builds while you drive the robot around a room (2026-10-16, `room1.png`): about a 2.6 × 2.9 m room with straight walls and clear corners, plus an opening on one side. One wall shows up doubled (about 20-30 cm apart), most likely heading drift from the open-loop `/odom`; it should improve once real encoders feed `/odom`
 
 Works best after Phase 1, Step B.
 
@@ -100,14 +105,13 @@ Folder: `src/ros2/lucia_bringup/`
 
 - [x] The old web control panel no longer starts at boot. `lucia.service` ran `slam_avoid_server.py` on the same serial port and GPIO pins, which fought the ROS2 control program. Disabled on the Pi on 2026-09-18 with `sudo systemctl disable --now lucia`. To use the old panel again: `sudo systemctl start lucia`, and stop it before any ROS2 test. Tell the team.
 - [x] The Pi's own WiFi (`lucia-control`) comes up after a reboot. Confirmed 2026-09-18. `pi-ap` was given priority 100 so it wins over saved networks like LiveLaughLove.
-- [ ] udev rules, so the Roomba and lidar always show up as `/dev/roomba` and `/dev/rplidar`
-  - They may already exist (the old service uses those names). Check: `ls -la /dev/roomba /dev/rplidar`
-  - Until then, run control with `port:=/dev/ttyUSB0`
+- [x] udev rules, so the Roomba and lidar always show up as `/dev/roomba` and `/dev/rplidar`. Already existed: confirmed 2026-10-16 (`/dev/rplidar` → `ttyUSB0`, `/dev/roomba` → `ttyUSB1`), so no `port:=` override is needed
 - [x] Write a Dockerfile so the container can be rebuilt (`docker/Dockerfile`)
   - Includes the serial library control needs, the lidar and mapping packages, and the keyboard driving tool (`teleop_twist_keyboard`)
 - [x] Build it on the Pi: `docker build -t lucia/ros2:latest docker/` (built fine, about 8 minutes). Needs internet, so do it on a network with internet, not the robot's own WiFi.
 - [x] `update.sh` was hardcoded to pull the `testing` branch. Fixed 2026-10-16 to pull `dev`, the team's new shared integration branch.
 - [ ] Update `docs/setup/ros2-pi.md` to use the new image once it builds
+- [ ] `colcon build` on the Pi fails on `lucia_vision` (Jetson/ZED package, needs CUDA) and then skips the remaining packages. For now build with `--packages-skip lucia_vision`; bake that skip into the Pi image (colcon defaults file in `docker/Dockerfile`) so it's automatic
 
 ---
 
