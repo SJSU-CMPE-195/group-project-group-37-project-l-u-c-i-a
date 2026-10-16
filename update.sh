@@ -7,7 +7,7 @@
 #   ./update.sh
 
 REPO="/home/lucia/repos/group-project-group-37-project-l-u-c-i-a"
-BRANCH="testing"
+BRANCH="dev"
 SSID="lucia"
 PASSWORD="lucia-143-tomato"
 AP_CON="pi-ap"

@@ -2,7 +2,7 @@
 
 > Rebuilding the robot software as small pieces (ROS2), one piece at a time.
 > Order: **Control → Lidar → Bringup.** Check items off as they're done.
-> Working branch: `195B-Christian`
+> Working branch: `dev`
 
 ---
 
@@ -77,7 +77,7 @@ Folder: `src/ros2/lucia_bringup/`
 - [x] Write a Dockerfile so the container can be rebuilt (`docker/Dockerfile`)
   - Includes the serial library control needs, the lidar and mapping packages, and the keyboard driving tool (`teleop_twist_keyboard`)
 - [x] Build it on the Pi: `docker build -t lucia/ros2:latest docker/` (built fine, about 8 minutes). Needs internet, so do it on a network with internet, not the robot's own WiFi.
-- [ ] `update.sh` is hardcoded to pull the `testing` branch, not `195B-Christian`. Fix before using it for this work.
+- [x] `update.sh` was hardcoded to pull the `testing` branch. Fixed 2026-10-16 to pull `dev`, the team's new shared integration branch.
 - [ ] Update `docs/setup/ros2-pi.md` to use the new image once it builds
 
 ---
