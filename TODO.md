@@ -1,8 +1,8 @@
 # Project L.U.C.I.A — TODO
 
 > Rebuilding the robot software as small pieces (ROS2), one piece at a time.
-> Order: **Control → Lidar → Bringup.** Check items off as they're done.
-> Working branch: `dev`
+> Order: **Control → Lidar → Map → Safety stop → SWEEP → one-command bringup.** Check items off as they're done.
+> Work on `195B-Christian`, merge into `dev` and push both. The Pi pulls `dev`.
 
 ---
 
