@@ -27,7 +27,7 @@ Decided 2026-10-16: SWEEP mode first; frontier exploration is a later feature.
 - **One program per device.** Only the control program talks to the Roomba, and only the lidar program talks to the lidar. Nothing else opens those USB ports.
 - **Safe mode.** The Roomba stops on its own if it's lifted or drives off a ledge. The control program turns it back on automatically, so no restart is needed after a pickup.
 - **No bump sensor** (it was removed). "Stop, something's too close" will use the ToF distance sensors (decided 2026-10-16) and lives in Bringup, not Control.
-- **Not now:** the web control panel.
+- **Web control page** (`lucia_web`): revived on request 2026-10-16. Runs from Docker Compose at boot; on the Pi's hotspot it's at http://10.42.0.1:8080.
 
 ---
 
@@ -115,10 +115,19 @@ Folder: `src/ros2/lucia_bringup/`
 
 ## Phase 5 — One command starts everything
 
-Folder: `src/ros2/lucia_bringup/`
-- [ ] One launch file: control + lidar + mapping + safety stop + SWEEP
-- [ ] Docker Compose file so the container runs in the background and survives SSH drops
-- [ ] Optionally start it all at boot
+Folder: `src/ros2/lucia_bringup/`, `src/ros2/lucia_web/`, `docker/compose.yml`
+- [x] `mapping.launch.py`: control + IMU + EKF + lidar + slam_toolbox (2026-10-16). Safety stop and SWEEP get added once they exist
+- [x] Web control page `lucia_web` (written 2026-10-16, not yet run on the Pi): status lights for lidar/IMU/wheels,
+  Start/Stop mapping (runs `mapping.launch.py`, IMU on/off), live map with the robot's position, hold-to-drive pad
+  and arrow keys (test tool; the page stops sending when released and `roomba_bridge` times out as a second layer),
+  save map + download PNG. Plain `http.server`, no new packages. Parsing/validation and process control have
+  pure-Python tests; the HTTP endpoints were smoke-tested with ROS stubbed out
+- [x] `docker/compose.yml` (written, not yet run): container in the background, `restart: unless-stopped` so it starts
+  at boot, runs `colcon build` then `web_ui`. Shares `/dev` with device-type rules, so an unplugged Pico or lidar at
+  boot doesn't stop the container from starting
+- [ ] On the Pi: `docker compose -f docker/compose.yml up -d`, open the page, map a room from it
+- [ ] Reboot test: Pi comes up on its hotspot, laptop joins `lucia-control`, page loads at http://10.42.0.1:8080
+- [ ] Later: a "Start SWEEP" button replaces the drive pad as the main control
 
 ---
 
@@ -148,8 +157,4 @@ Folder: `src/ros2/lucia_bringup/`
 - Frontier exploration (feature, after SWEEP works): Nav2 + `m-explore-ros2` steers
   the robot toward unmapped areas instead of bouncing around. Needs real encoder
   odometry first (the cable fix in Phase 1, Step B).
-- A way to actually view the map - live (RViz2, needs ROS2/Docker on a machine
-  with a screen) or a revived web control panel. The web panel specifically was
-  deferred on purpose, reaffirmed 2026-10-09 - treat reviving it as its own
-  decision, not something to bundle into another task.
 - Camera and Jetson: start from scratch when the time comes

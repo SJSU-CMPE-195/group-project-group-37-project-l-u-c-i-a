@@ -1,0 +1,301 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LUCIA Control</title>
+<style>
+  :root {
+    --bg: #f4f5f7; --card: #ffffff; --text: #1d2330; --muted: #667085; --line: #dde1e7;
+    --accent: #2f6fde; --ok: #1f9d55; --warn: #d98e04; --bad: #d64545; --pad: #eef1f6;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #12151b; --card: #1b2029; --text: #e6e9ef; --muted: #98a2b3; --line: #2c3340;
+      --accent: #5b8ff0; --ok: #34c274; --warn: #f0b429; --bad: #f06363; --pad: #242a35;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 15px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  header { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px;
+           padding: 12px 16px; background: var(--card); border-bottom: 1px solid var(--line); }
+  h1 { font-size: 18px; margin: 0 8px 0 0; letter-spacing: .04em; }
+  .pills { display: flex; flex-wrap: wrap; gap: 8px; }
+  .pill { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px;
+          border: 1px solid var(--line); border-radius: 999px; font-size: 13px; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--muted); }
+  .ok .dot { background: var(--ok); } .stale .dot { background: var(--warn); } .missing .dot { background: var(--bad); }
+  main { display: grid; grid-template-columns: minmax(0, 2fr) minmax(280px, 1fr); gap: 16px;
+         padding: 16px; max-width: 1200px; margin: 0 auto; }
+  @media (max-width: 800px) { main { grid-template-columns: minmax(0, 1fr); } }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 14px; }
+  .card h2 { font-size: 14px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted);
+             margin: 0 0 10px; }
+  .col { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+  #mapWrap { position: relative; width: 100%; aspect-ratio: 4 / 3; background: var(--pad);
+             border-radius: 8px; overflow: hidden; }
+  #map { width: 100%; height: 100%; display: block; image-rendering: pixelated; }
+  #mapEmpty { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+              color: var(--muted); text-align: center; padding: 16px; }
+  .row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+  button { font: inherit; padding: 9px 14px; border-radius: 8px; border: 1px solid var(--line);
+           background: var(--pad); color: var(--text); cursor: pointer; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button.danger { background: var(--bad); border-color: var(--bad); color: #fff; }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  input[type=text] { font: inherit; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--line);
+                     background: var(--bg); color: var(--text); flex: 1; min-width: 0; }
+  .pad { display: grid; grid-template-columns: repeat(3, 64px); grid-template-rows: repeat(3, 64px);
+         gap: 8px; justify-content: center; margin: 4px 0 8px; touch-action: none; user-select: none; }
+  .pad button { font-size: 22px; padding: 0; }
+  .pad button.held { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .hint { color: var(--muted); font-size: 13px; margin: 0; }
+  #message { min-height: 1.4em; font-size: 13px; }
+  #message.err { color: var(--bad); } #message.okmsg { color: var(--ok); }
+  ul.maps { list-style: none; padding: 0; margin: 10px 0 0; max-height: 180px; overflow: auto; }
+  ul.maps li { display: flex; justify-content: space-between; gap: 8px; padding: 5px 0;
+               border-top: 1px solid var(--line); font-size: 14px; }
+  a { color: var(--accent); }
+  pre { margin: 8px 0 0; max-height: 260px; overflow: auto; font-size: 12px; background: var(--bg);
+        padding: 8px; border-radius: 6px; white-space: pre-wrap; word-break: break-all; }
+  summary { cursor: pointer; color: var(--muted); }
+</style>
+</head>
+<body>
+<header>
+  <h1>LUCIA</h1>
+  <div class="pills">
+    <span class="pill" id="p-mapping"><span class="dot"></span>Mapping</span>
+    <span class="pill" id="p-lidar"><span class="dot"></span>Lidar</span>
+    <span class="pill" id="p-imu"><span class="dot"></span>IMU</span>
+    <span class="pill" id="p-wheels"><span class="dot"></span>Wheels</span>
+    <span class="pill" id="p-link"><span class="dot"></span>Connection</span>
+  </div>
+</header>
+
+<main>
+  <div class="col">
+    <section class="card">
+      <h2>Map</h2>
+      <div id="mapWrap">
+        <canvas id="map"></canvas>
+        <div id="mapEmpty">No map yet. Press Start mapping, then drive around.</div>
+      </div>
+    </section>
+    <section class="card">
+      <details>
+        <summary>Mapping output (last lines)</summary>
+        <pre id="log">(not started)</pre>
+      </details>
+    </section>
+  </div>
+
+  <div class="col">
+    <section class="card">
+      <h2>Mapping</h2>
+      <div class="row">
+        <button class="primary" id="start">Start mapping</button>
+        <button class="danger" id="stop">Stop</button>
+        <label><input type="checkbox" id="useImu" checked> Use IMU</label>
+      </div>
+      <p id="message"></p>
+    </section>
+
+    <section class="card">
+      <h2>Drive (test tool)</h2>
+      <div class="pad" id="pad">
+        <span></span><button data-l="1" data-a="0" title="Forward">▲</button><span></span>
+        <button data-l="0" data-a="1" title="Turn left">◀</button>
+        <button data-l="0" data-a="0" title="Stop">■</button>
+        <button data-l="0" data-a="-1" title="Turn right">▶</button>
+        <span></span><button data-l="-1" data-a="0" title="Back">▼</button><span></span>
+      </div>
+      <p class="hint">Hold to move; it stops when you let go. Arrow keys or WASD work too.
+        Only works while mapping is running.</p>
+    </section>
+
+    <section class="card">
+      <h2>Save map</h2>
+      <div class="row">
+        <input type="text" id="mapName" placeholder="room3" maxlength="40">
+        <button id="save">Save</button>
+      </div>
+      <ul class="maps" id="maps"></ul>
+    </section>
+  </div>
+</main>
+
+<script>
+const $ = id => document.getElementById(id);
+let status = null, mapVersion = null, mapData = null, connected = false;
+
+// ---- API ---------------------------------------------------------------
+async function post(path, body) {
+  const r = await fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify(body || {}) });
+  return r.json();
+}
+function say(text, ok) { const m = $('message'); m.textContent = text; m.className = ok ? 'okmsg' : 'err'; }
+
+// ---- Status ------------------------------------------------------------
+function setPill(id, state) { $(id).className = 'pill ' + state; }
+
+async function pollStatus() {
+  try {
+    const r = await fetch('/api/status');
+    status = await r.json();
+    connected = true;
+  } catch (e) {
+    connected = false;
+  }
+  setPill('p-link', connected ? 'ok' : 'missing');
+  if (!connected || !status) return;
+  setPill('p-mapping', status.mapping ? 'ok' : 'missing');
+  for (const k of ['lidar', 'imu', 'wheels']) setPill('p-' + k, status.sensors[k]);
+  $('start').disabled = status.mapping;
+  $('stop').disabled = !status.mapping;
+  $('useImu').disabled = status.mapping;
+  $('pad').querySelectorAll('button').forEach(b => b.disabled = !status.mapping);
+  $('log').textContent = status.log.length ? status.log.join('\n') : '(not started)';
+  if (status.map_version !== mapVersion) pollMap();
+  drawMap();
+}
+
+$('start').onclick = async () => {
+  const r = await post('/api/mapping/start', { use_imu: $('useImu').checked });
+  say(r.message, r.ok);
+  pollStatus();
+};
+$('stop').onclick = async () => {
+  say('Stopping... (takes a few seconds)', true);
+  const r = await post('/api/mapping/stop');
+  say(r.message, r.ok);
+  pollStatus();
+};
+
+// ---- Map ---------------------------------------------------------------
+const mapCanvas = document.createElement('canvas');
+
+async function pollMap() {
+  try {
+    const r = await fetch('/api/map?version=' + (mapVersion ?? ''));
+    if (r.status === 204) return;
+    const m = await r.json();
+    const bytes = Uint8Array.from(atob(m.data), c => c.charCodeAt(0));
+    mapCanvas.width = m.width; mapCanvas.height = m.height;
+    const ctx = mapCanvas.getContext('2d');
+    const img = ctx.createImageData(m.width, m.height);
+    for (let y = 0; y < m.height; y++) {
+      for (let x = 0; x < m.width; x++) {
+        const v = bytes[y * m.width + x];
+        const shade = v === 255 ? 205 : v >= 65 ? 0 : v <= 25 ? 254 : 160;
+        const i = ((m.height - 1 - y) * m.width + x) * 4;   // grid row 0 is the bottom
+        img.data[i] = img.data[i + 1] = img.data[i + 2] = shade;
+        img.data[i + 3] = 255;
+      }
+    }
+    ctx.putImageData(img, 0, 0);
+    mapVersion = m.version; mapData = m;
+    $('mapEmpty').style.display = 'none';
+    drawMap();
+  } catch (e) { /* next poll retries */ }
+}
+
+function drawMap() {
+  const c = $('map'), wrap = $('mapWrap');
+  const W = wrap.clientWidth, H = wrap.clientHeight, dpr = window.devicePixelRatio || 1;
+  if (c.width !== W * dpr) { c.width = W * dpr; c.height = H * dpr; }
+  const ctx = c.getContext('2d');
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, W, H);
+  if (!mapData) return;
+  const scale = Math.min(W / mapData.width, H / mapData.height);
+  const ox = (W - mapData.width * scale) / 2, oy = (H - mapData.height * scale) / 2;
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(mapCanvas, ox, oy, mapData.width * scale, mapData.height * scale);
+
+  const p = status && status.pose;
+  if (!p) return;
+  const px = ox + (p.x - mapData.origin_x) / mapData.resolution * scale;
+  const py = oy + (mapData.height - (p.y - mapData.origin_y) / mapData.resolution) * scale;
+  const r = Math.max(6, 0.17 / mapData.resolution * scale);   // Roomba is ~34 cm across
+  ctx.save();
+  ctx.translate(px, py); ctx.rotate(-p.yaw);
+  ctx.fillStyle = 'rgba(47,111,222,.85)';
+  ctx.beginPath(); ctx.arc(0, 0, r, 0, 2 * Math.PI); ctx.fill();
+  ctx.strokeStyle = '#fff'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(r, 0); ctx.stroke();
+  ctx.restore();
+}
+window.addEventListener('resize', drawMap);
+
+// ---- Drive (hold to move) ----------------------------------------------
+let held = null, driveTimer = null;
+function sendDrive(l, a) { post('/api/drive', { linear: l, angular: a }).catch(() => {}); }
+function startDrive(l, a) {
+  held = { l, a };
+  sendDrive(l, a);
+  clearInterval(driveTimer);
+  driveTimer = setInterval(() => held && sendDrive(held.l, held.a), 100);
+}
+function stopDrive() {
+  if (!held && !driveTimer) return;
+  held = null; clearInterval(driveTimer); driveTimer = null;
+  sendDrive(0, 0);
+  $('pad').querySelectorAll('button').forEach(b => b.classList.remove('held'));
+}
+$('pad').querySelectorAll('button').forEach(b => {
+  b.addEventListener('pointerdown', e => {
+    if (b.disabled) return;
+    e.preventDefault(); b.setPointerCapture(e.pointerId); b.classList.add('held');
+    startDrive(+b.dataset.l, +b.dataset.a);
+  });
+  for (const ev of ['pointerup', 'pointercancel', 'lostpointercapture']) b.addEventListener(ev, stopDrive);
+});
+
+const keys = new Set();
+const KEYMAP = { ArrowUp: 'f', w: 'f', ArrowDown: 'b', s: 'b', ArrowLeft: 'l', a: 'l', ArrowRight: 'r', d: 'r' };
+function keyDrive() {
+  if (!status || !status.mapping) return;
+  const l = (keys.has('f') ? 1 : 0) - (keys.has('b') ? 1 : 0);
+  const a = (keys.has('l') ? 1 : 0) - (keys.has('r') ? 1 : 0);
+  if (l === 0 && a === 0) stopDrive(); else startDrive(l, a);
+}
+window.addEventListener('keydown', e => {
+  if (e.target.tagName === 'INPUT') return;
+  const k = KEYMAP[e.key]; if (!k) return;
+  e.preventDefault(); if (!keys.has(k)) { keys.add(k); keyDrive(); }
+});
+window.addEventListener('keyup', e => { const k = KEYMAP[e.key]; if (k) { keys.delete(k); keyDrive(); } });
+window.addEventListener('blur', () => { keys.clear(); stopDrive(); });
+
+// ---- Save / list maps ----------------------------------------------------
+async function loadMaps() {
+  try {
+    const r = await (await fetch('/api/maps')).json();
+    $('maps').innerHTML = '';
+    for (const f of r.maps) {
+      const li = document.createElement('li');
+      const name = f.replace(/\.png$/, '');
+      li.innerHTML = `<a href="/maps/${f}" target="_blank"></a><a href="/maps/${f}" download>download</a>`;
+      li.firstChild.textContent = name;
+      $('maps').appendChild(li);
+    }
+  } catch (e) { /* ignore */ }
+}
+$('save').onclick = async () => {
+  const name = $('mapName').value.trim();
+  say('Saving...', true);
+  const r = await post('/api/save', { name });
+  say(r.message, r.ok);
+  if (r.ok) { $('mapName').value = ''; loadMaps(); }
+};
+
+pollStatus(); loadMaps();
+setInterval(pollStatus, 1000);
+setInterval(pollMap, 2000);
+setInterval(loadMaps, 10000);
+</script>
+</body>
+</html>

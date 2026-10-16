@@ -1,0 +1,37 @@
+# Runs the LUCIA container in the background and starts the web control page
+# (lucia_web) in it. With restart: unless-stopped, it comes back up by itself
+# whenever the Pi boots.
+#
+# On the Pi, from the repo root:
+#   docker compose -f docker/compose.yml up -d      # start (and at every boot from then on)
+#   docker compose -f docker/compose.yml logs -f    # watch output
+#   docker compose -f docker/compose.yml restart    # after a git pull (rebuilds the code)
+#   docker compose -f docker/compose.yml down       # stop, and don't start at boot
+# Then open http://10.42.0.1:8080 on the Pi's hotspot (lucia-control).
+#
+# Devices: all of /dev is shared, and access is allowed by device type instead of
+# listing /dev/roomba, /dev/rplidar and /dev/imu one by one. A container started
+# with --device fails to start at all if one of them is unplugged at boot, and
+# doesn't see it when it's plugged back in; this way it does.
+#
+# Uses the lucia/ros2:latest image built from docker/Dockerfile.
+
+services:
+  lucia:
+    image: lucia/ros2:latest
+    container_name: lucia_ros2        # so `docker exec -it lucia_ros2 bash` still works
+    network_mode: host                # ROS2 discovery + the web page on port 8080
+    restart: unless-stopped
+    stop_grace_period: 30s            # time for web_ui to stop mapping cleanly (Roomba stop, etc.)
+    volumes:
+      - ../src/ros2:/ros2_ws/src
+      - ${HOME}/maps:/maps
+      - /dev:/dev
+    device_cgroup_rules:
+      - 'c 188:* rmw'                 # ttyUSB*: lidar (CP2102), Roomba (FT232R)
+      - 'c 166:* rmw'                 # ttyACM*: IMU Pico
+    command: >
+      bash -c "source /opt/ros/jazzy/setup.bash
+      && cd /ros2_ws && colcon build
+      && source install/setup.bash
+      && exec ros2 run lucia_web web_ui"
