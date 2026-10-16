@@ -65,9 +65,10 @@ Use 3.3 V power only.
 |---|---|---|
 | VCC | Physical pin 36, 3V3(OUT) | Sensor power |
 | GND | Physical pin 38, GND | Ground |
-| SCL | GPIO3 | I²C clock |
-| SDA | GPIO2 | I²C data |
-| INT | GPIO16 | Sensor interrupt |
+| ADD | Physical pin 3, GND | Ground |
+| SCL | Physical pin 5, GPIO3 | I²C clock |
+| SDA | Physical pin 4, GPIO2 | I²C data |
+| INT | Physical pin 21, GPIO16 | Sensor interrupt |
 | RST | Optional | Hardware reset |
 | PS0 | GND | I²C interface mode |
 | PS1 | GND | I²C interface mode |
