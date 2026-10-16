@@ -166,6 +166,81 @@ SUCCESS
 
 This confirms that the ZED 2 can be accessed from a Python program, not just from ZED Explorer.
 
+## Power and hardware stability
+
+Connecting the ZED 2 initially caused the Nano to power off. This was consistent with the Nano's power supply being unable to handle the camera and the other connected USB devices together.
+
+After switching to a stronger regulated power adapter, the Nano remained stable while the ZED 2 was connected and the detection program was running.
+
+Recommended arrangement:
+
+- Connect the ZED 2 directly to a USB 3.0 port.
+- Avoid putting the ZED 2 behind a USB hub.
+- Use the stronger power adapter whenever the camera is connected.
+
+## cuDNN, TensorRT, and AI model setup
+
+Object detection initially failed because the Nano was missing required AI acceleration components. The following TensorRT packages were installed for the JetPack 4.6/L4T R32.7 environment:
+
+```bash
+sudo apt install libnvinfer8 libnvinfer-plugin8 libnvonnxparsers8
+sudo apt install libnvparsers8 libnvinfer-bin
+sudo apt install libnvinfer-dev libnvinfer-plugin-dev \
+libnvparsers-dev libnvonnxparsers-dev
+```
+
+The TensorRT command-line tool was verified successfully:
+
+```bash
+/usr/src/tensorrt/bin/trtexec --help
+```
+
+Successful output identified:
+
+```text
+TensorRT v8.2.1
+```
+
+The ZED AI library dependencies were also checked. TensorRT, its plugin and ONNX parser libraries, and cuDNN all resolved successfully through `ldd` on:
+
+```text
+/usr/local/zed/lib/libsl_ai.so
+```
+
+The ZED object-detection model was then downloaded and optimized with:
+
+```bash
+sudo /usr/local/zed/tools/ZED_Diagnostic -c -ais 0
+```
+
+The output reached:
+
+```text
+Optimizing: MULTI CLASS DETECTION...
+Optimized model not found, trying to download it...
+```
+
+This completed the required first-time model preparation for the fast multi-class detection model.
+
+## ZED SDK 3.8.2 object-detection API compatibility
+
+The first detection script used API names from a newer ZED SDK and required several compatibility changes for SDK 3.8.2:
+
+- `enable_segmentation` was not available in `ObjectDetectionParameters`; it was removed.
+- `OBJECT_DETECTION_MODEL.MULTI_CLASS_BOX_FAST` was not available; the SDK 3.8-compatible detection model enum was used instead:
+
+```python
+sl.DETECTION_MODEL.MULTI_CLASS_BOX
+```
+
+- `Camera.set_object_detection_runtime_parameters()` was not available in this Python API version. Runtime parameters must be passed directly when retrieving objects:
+
+```python
+zed.retrieve_objects(objects, object_runtime)
+```
+
+After these changes, the object-detection script ran successfully.
+
 ## Camera compatibility
 
 The current combination is compatible for the planned project:
@@ -175,8 +250,8 @@ The current combination is compatible for the planned project:
 | Live video from ZED 2 | Confirmed working in ZED Explorer |
 | USB connection | Confirmed; camera appears as `/dev/video0` |
 | ZED Python API | Confirmed working with SDK 3.8.2 |
-| Python/OpenCV display | Dependencies confirmed; detection display program not yet run |
-| ZED 2 object detection | Supported by the ZED SDK |
+| Python/OpenCV display | Confirmed working with the detection program |
+| ZED 2 object detection | Confirmed working after TensorRT/cuDNN setup and model optimization |
 | Depth and 3D position | Supported by the ZED 2 and SDK |
 | Raspberry Pi communication | Not started; Pi is not currently available |
 
@@ -196,19 +271,25 @@ Completed:
 - NumPy 1.19.4 works on the Nano.
 - OpenCV 3.2.0 is installed.
 - Python can open and close the ZED 2 successfully.
+- The stronger power adapter prevents shutdown when the ZED 2 is connected.
+- TensorRT 8.2.1 and the required cuDNN/TensorRT libraries are available.
+- The ZED multi-class object-detection model has been downloaded and optimized.
+- The Python object-detection script runs successfully with the SDK 3.8.2-compatible API.
 
 Paused:
 
-- The Python object-detection/display program has not yet been created.
+- Sending object-detection data to the Raspberry Pi has not yet been configured.
+- Optional video streaming to the Raspberry Pi has not yet been configured.
 - Nano-to-Raspberry-Pi networking has not yet been configured.
 - The Windows dual-boot and partition work is paused.
 
 ## Next planned steps
 
-1. Run a low-resolution ZED 2 object-detection program using the fast detection model and display the annotated video locally on the Nano.
-2. Send lightweight detection messages—label, confidence, distance, and position—from the Nano to the Raspberry Pi.
-3. Add an optional compressed video stream for reference.
-4. Return to the Windows installation USB and repair the Windows NTFS partition before attempting to resize it for dual boot.
+1. Add or verify on-screen labels, confidence values, and 3D positions for each detected object.
+2. Save and document the working object-detection script.
+3. Send lightweight detection messages—label, confidence, distance, and position—from the Nano to the Raspberry Pi.
+4. Add an optional compressed video stream for reference.
+5. Return to the Windows installation USB and repair the Windows NTFS partition before attempting to resize it for dual boot.
 
 ## Useful references
 
@@ -217,7 +298,12 @@ Paused:
 - [Jetson Nano NumPy 1.19.4 wheel](https://github.com/jetson-nano-wheels/python3.6-numpy-1.19.4)
 
 
-## Notes
+## Personal notes
 Updated Password from `lucia-143-tomato` -> `lucia-tomato`
     This was due to issues of password not working at home setup, but working within school computers
         May be due to compatibility issues?
+        Issue was resolved: Password was fine but testing keyboard was incorrect
+
+## Space for more notes
+
+Add future project notes below this heading.
