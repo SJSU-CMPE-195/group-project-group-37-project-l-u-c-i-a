@@ -1,0 +1,11 @@
+tof_node:
+  ros__parameters:
+    port: /dev/lucia_tof        # see udev/99-lucia-tof.rules
+    baud: 115200                # ignored over USB serial
+    sensor_names: [left, middle, right]   # pico_stream.py SENSORS order
+    frame_id_prefix: tof_       # frames are tof_<name>_link
+    flip_h: false               # mirror each image left/right
+    flip_v: false               # mirror each image top/bottom
+    max_range: 4.0              # m, Range.max_range
+    stale_timeout: 0.5          # s without a frame before tof/near goes true
+    near_rate: 10.0             # Hz, tof/near is also sent on every frame

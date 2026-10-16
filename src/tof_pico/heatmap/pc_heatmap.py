@@ -2,7 +2,8 @@
 
 Reads frames streamed by pico_stream.py over USB serial and draws one 8x8
 heat map per sensor, left to right. Closer objects are darker. The measured
-frame rate of each sensor is shown in the window title.
+frame rate and dropped frame count of each sensor are shown in the window
+title.
 
 Requires: pip install pyserial numpy matplotlib
 
@@ -13,6 +14,8 @@ Usage:
     python pc_heatmap.py --smooth 0.5 --interp
 """
 import argparse
+import binascii
+import struct
 import sys
 import threading
 import time
@@ -27,8 +30,14 @@ PICO_VID = 0x2E8A
 ZONES = 64
 SIDE = 8
 
+# Packet layout is documented in pico_stream.py.
 SYNC = b"\xAA\x55"
-PACKET_LEN = 2 + 1 + ZONES * 2 + 1  # sync, sensor index, data, checksum
+PROTO_VERSION = 1
+HEADER_FMT = "<BBBBBHIh"  # sync, version, index, flags, seq, ticks_ms, nearest mm
+HEADER_LEN = 13
+PACKET_LEN = HEADER_LEN + ZONES * 2 + 2
+# A sequence jump bigger than this is taken as a Pico restart, not drops.
+MAX_SEQ_GAP = 1000
 
 
 def find_pico_port():
@@ -50,6 +59,8 @@ class FrameReader(threading.Thread):
         self.lock = threading.Lock()
         self.frames = [None] * n
         self.counts = [0] * n
+        self.drops = [0] * n
+        self.seqs = [None] * n
         self.text = bytearray()
 
     def run(self):
@@ -74,9 +85,12 @@ class FrameReader(threading.Thread):
                 if len(buf) < PACKET_LEN:
                     break
 
-                idx = buf[2]
-                data = bytes(buf[3:3 + ZONES * 2])
-                if idx >= self.n or (sum(data) & 0xFF) != buf[PACKET_LEN - 1]:
+                pkt = bytes(buf[:PACKET_LEN])
+                _, _, version, idx, _flags, seq, _ticks, _nearest = struct.unpack_from(
+                    HEADER_FMT, pkt)
+                crc, = struct.unpack_from("<H", pkt, PACKET_LEN - 2)
+                if (version != PROTO_VERSION or idx >= self.n
+                        or binascii.crc_hqx(pkt[2:PACKET_LEN - 2], 0xFFFF) != crc):
                     # Not a real packet; skip this sync and resync.
                     del buf[:1]
                     discarding = True
@@ -85,9 +99,16 @@ class FrameReader(threading.Thread):
                 discarding = False
                 self.text.clear()
 
-                grid = np.frombuffer(data, dtype="<i2").astype(float).reshape(SIDE, SIDE)
+                grid = np.frombuffer(pkt, dtype="<i2", count=ZONES, offset=HEADER_LEN)
+                grid = grid.astype(float).reshape(SIDE, SIDE)
                 grid[grid < 0] = np.nan
                 with self.lock:
+                    last = self.seqs[idx]
+                    if last is not None:
+                        gap = (seq - last - 1) & 0xFFFF
+                        if gap <= MAX_SEQ_GAP:
+                            self.drops[idx] += gap
+                    self.seqs[idx] = seq
                     self.frames[idx] = grid
                     self.counts[idx] += 1
 
@@ -103,7 +124,7 @@ class FrameReader(threading.Thread):
 
     def latest(self):
         with self.lock:
-            return list(self.frames), list(self.counts)
+            return list(self.frames), list(self.counts), list(self.drops)
 
 
 def main():
@@ -172,7 +193,7 @@ def main():
     artists = images + [t for ts in texts for t in ts]
 
     def update(_):
-        frames, counts = reader.latest()
+        frames, counts, drops = reader.latest()
         for i in range(n):
             if frames[i] is None or counts[i] == last_counts[i]:
                 continue
@@ -207,7 +228,8 @@ def main():
             fps_time[0] = now
             fig.canvas.manager.set_window_title(
                 "ToF heat map  |  " + "  ".join(
-                    "{} {:.1f} fps".format(name, r) for name, r in zip(names, rates)))
+                    "{} {:.1f} fps, {} dropped".format(name, r, d)
+                    for name, r, d in zip(names, rates, drops)))
         return artists
 
     # blit=True redraws only the heat maps, not the whole figure.
