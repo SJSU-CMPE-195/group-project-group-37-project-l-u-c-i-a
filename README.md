@@ -19,6 +19,24 @@ The main objective that this PoC sought to validate was whether hijacking and co
 
 We also still need to learn and experiment with the LiDAR sensor and the camera for this project as we never configured these devices before. The LiDAR sensor and camera were given to us, as we still need to acknowledge how it truly works.
 
+# Running the Robot (195B, ROS2)
+
+The software is being rebuilt as ROS2 packages in `src/ros2/`, running in Docker on
+the Raspberry Pi. As of 2026-10-16 the robot builds a 2D map of a room with the
+lidar, using Ling's IMU for heading, and is controlled from a web page:
+
+1. Turn on the Roomba and the Pi.
+2. Connect to the WiFi `lucia-control` (password below).
+3. Open **http://10.42.0.1:8080**, press **Start mapping**, drive with the pad, and **Save** the map.
+
+![First maps: wheels only vs. wheels + IMU](media/maps/2026-10-16_room1_vs_room2.png)
+
+- How it works, updating, debugging: [`docs/setup/ros2-pi.md`](docs/setup/ros2-pi.md)
+- Task list: [`TODO.md`](TODO.md)
+- What changed when: [`docs/changelogs/`](docs/changelogs/)
+
+The sections below document last semester's proof of concept (Python scripts in `src/scripts/`).
+
 # Prerequisites
 - Linux Terminal
 

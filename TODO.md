@@ -15,8 +15,9 @@ a test tool for checking one piece at a time; it is not how the robot is meant t
 ## Right now
 
 Control (wheels, open-loop `/odom`), the lidar (`/scan`), mapping and the IMU all work on the real robot.
-2026-10-16: first room map by keyboard driving, then a much cleaner one with Ling's IMU fused in
-(`ros2 launch lucia_bringup mapping.launch.py`).
+2026-10-16: first room map by keyboard driving, then a much cleaner one with Ling's IMU fused in,
+then the web control page: power on, join `lucia-control`, open http://10.42.0.1:8080
+(how-to: `docs/setup/ros2-pi.md`; maps in `media/maps/`).
 Next: the safety stop (Phase 3) waits on the team's ToF sensors; then SWEEP mode.
 Decided 2026-10-16: SWEEP mode first; frontier exploration is a later feature.
 
@@ -125,8 +126,9 @@ Folder: `src/ros2/lucia_bringup/`, `src/ros2/lucia_web/`, `docker/compose.yml`
 - [x] `docker/compose.yml` (written, not yet run): container in the background, `restart: unless-stopped` so it starts
   at boot, runs `colcon build` then `web_ui`. Shares `/dev` with device-type rules, so an unplugged Pico or lidar at
   boot doesn't stop the container from starting
-- [ ] On the Pi: `docker compose -f docker/compose.yml up -d`, open the page, map a room from it
-- [ ] Reboot test: Pi comes up on its hotspot, laptop joins `lucia-control`, page loads at http://10.42.0.1:8080
+- [x] On the Pi (2026-10-16): `docker compose -f docker/compose.yml up -d`, page opened from the laptop, mapping started, driven and saved from the browser. Working
+- [ ] Reboot test on the hotspot alone: Pi comes up on `lucia-control`, the container starts by itself, page loads at http://10.42.0.1:8080 (not separately confirmed yet)
+- [ ] Christian's changes to the web page (next session)
 - [ ] Later: a "Start SWEEP" button replaces the drive pad as the main control
 
 ---
@@ -140,7 +142,7 @@ Folder: `src/ros2/lucia_bringup/`, `src/ros2/lucia_web/`, `docker/compose.yml`
   - Includes the serial library control needs, the lidar and mapping packages, and the keyboard driving tool (`teleop_twist_keyboard`)
 - [x] Build it on the Pi: `docker build -t lucia/ros2:latest docker/` (built fine, about 8 minutes). Needs internet, so do it on a network with internet, not the robot's own WiFi.
 - [x] `update.sh` was hardcoded to pull the `testing` branch. Fixed 2026-10-16 to pull `dev`, the team's new shared integration branch.
-- [ ] Update `docs/setup/ros2-pi.md` to use the new image once it builds
+- [x] `docs/setup/ros2-pi.md` rewritten (2026-10-16): running from the web page, what runs where, updating, network modes, udev rules, compose, IMU Pico, diagnostics, known issues
 - [x] `colcon build` on the Pi fails on `lucia_vision` (Jetson/ZED package, needs CUDA) and then skips the rest. The Dockerfile now writes a colcon defaults file (skip `lucia_vision`, symlink-install), so plain `colcon build` works once the image is rebuilt
 
 ---
