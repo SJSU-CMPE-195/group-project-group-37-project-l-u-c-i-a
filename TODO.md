@@ -6,11 +6,17 @@
 
 ---
 
+## The goal
+
+**The robot maps a room on its own.** Turn it on, it drives itself around (SWEEP mode),
+builds the map as it goes, and you save the map at the end. Driving by keyboard is only
+a test tool for checking one piece at a time; it is not how the robot is meant to run.
+
 ## Right now
 
-Phase 1, Step A (wheels move) **works on the real robot**: it drives from the keyboard tool over SSH.
-The pickup test passes too: it stops when lifted and drives again when set down, with no restart.
-Step A is done. Next: Step B (position tracking and battery).
+Control (wheels, open-loop `/odom`) and the lidar (`/scan`) both work on the real robot.
+Next: confirm a map builds (Phase 2), then the safety stop, then SWEEP mode.
+Decided 2026-10-16: SWEEP mode first; frontier exploration is a later feature.
 
 ---
 
@@ -52,18 +58,41 @@ Folder: `src/ros2/lucia_lidar/`
 - [x] Tried on the real lidar (2026-10-09): the executable name is `rplidar_composition`, not `rplidar_node` (though the *node* it creates is still named `rplidar_node`, which is what the config file's settings apply to - that part was already right). Hit "Cannot start scan" at first - fixed by explicitly setting `scan_mode: Standard`, already in the config file; the ROS2 driver's own default scan mode isn't compatible with this lidar's firmware (Hardware Rev 5, Firmware 1.25). `/scan` now publishes at ~11.7 Hz.
 - [x] Lidar scans show up on `/scan`
 - [x] Launch file (`launch/lidar_and_map.launch.py`) starts the lidar + `slam_toolbox` together - written, syntax-checked, **not yet run** (no ROS2 on the laptop that wrote it)
-  - Before trusting it: check `ros2 pkg executables slam_toolbox` - the executable name in the file (`async_slam_toolbox_node`) is the package's usual name, not yet confirmed for what's actually installed (the `rplidar_ros` executable name turned out to be different than assumed - same risk here)
+  - Fixed 2026-10-16 before the first run: it now starts `slam_toolbox` through the package's own launch file (Jazzy's slam_toolbox needs a lifecycle activate step, so the executable-name guess is gone), and adds the missing `base_link`→`laser` transform, without which every scan is dropped
+- [ ] Check which way the lidar faces: `ros2 run lucia_lidar scan_check` with a box in front of the robot (sets `laser_yaw`)
 - [ ] A map builds while you drive the robot around a room - verify by saving it as a PNG (`map_saver_cli`), not a live viewer (see `docs/changelogs/2026-10-09.md`)
 
 Works best after Phase 1, Step B.
 
 ---
 
-## Phase 3 — Bringup (starts everything)
+## Phase 3 — Safety stop (before anything drives itself)
 
 Folder: `src/ros2/lucia_bringup/`
-- [ ] One launch file that starts control + lidar + mapping together
-- [ ] "Stop if something's too close" layer: watches the lidar and cancels drive commands
+- [ ] "Stop if something's too close" node: watches `/scan` and blocks drive commands
+  that would hit something. Stands in for the removed bump sensor.
+- [ ] Test it on its own, driving by keyboard toward a wall, before SWEEP mode uses it
+
+---
+
+## Phase 4 — SWEEP mode (the robot drives itself)
+
+Folder: `src/ros2/lucia_bringup/`
+- [ ] Port last semester's SWEEP logic (`src/scripts/slam_avoid_server.py`) to a ROS2
+  node: drive straight; when something's ahead, spin toward the clearer side until
+  the front is clear; repeat. Reads `/scan`, publishes drive commands. Needs no
+  encoders, so it works with the current open-loop `/odom`.
+- [ ] Drive commands go through the safety stop, never straight to the wheels
+- [ ] Start/stop it without a keyboard session (e.g. a start/stop topic or service)
+
+---
+
+## Phase 5 — One command starts everything
+
+Folder: `src/ros2/lucia_bringup/`
+- [ ] One launch file: control + lidar + mapping + safety stop + SWEEP
+- [ ] Docker Compose file so the container runs in the background and survives SSH drops
+- [ ] Optionally start it all at boot
 
 ---
 
@@ -91,10 +120,9 @@ Folder: `src/ros2/lucia_bringup/`
 
 ## Later (not started)
 
-- Autonomous navigation (Nav2), once the map and position tracking work
-- Autonomous "drive itself around the room" behavior (last semester's SWEEP
-  mode) - not ported yet. Deliberately not scheduled yet (2026-10-09): comes
-  after the safety-stop layer is built and tested on its own, not alongside it.
+- Frontier exploration (feature, after SWEEP works): Nav2 + `m-explore-ros2` steers
+  the robot toward unmapped areas instead of bouncing around. Needs real encoder
+  odometry first (the cable fix in Phase 1, Step B).
 - A way to actually view the map - live (RViz2, needs ROS2/Docker on a machine
   with a screen) or a revived web control panel. The web panel specifically was
   deferred on purpose, reaffirmed 2026-10-09 - treat reviving it as its own

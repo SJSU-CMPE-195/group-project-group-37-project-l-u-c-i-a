@@ -21,6 +21,8 @@ setup(
     description='RPLidar A2 and slam_toolbox configuration for LUCIA.',
     license='TODO',
     entry_points={
-        'console_scripts': [],
+        'console_scripts': [
+            'scan_check = lucia_lidar.scan_check:main',
+        ],
     },
 )
