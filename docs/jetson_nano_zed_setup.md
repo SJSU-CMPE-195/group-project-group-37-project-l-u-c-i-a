@@ -395,8 +395,8 @@ Paused:
 
 ## Personal notes
 - Updated Password from `lucia-143-tomato` -> `lucia-tomato`
-    *This was due to issues of password not working at home setup, but working within school computers
-        *May be due to compatibility issues?
+    * This was due to issues of password not working at home setup, but working within school computers
+        ** May be due to compatibility issues?
     * Issue solved: Password and compatibility are ok, issue was keyboard itself
-- 
+ 
 - Make sure to use a power adapter with at least 5V 4A or Nano will turn off 
