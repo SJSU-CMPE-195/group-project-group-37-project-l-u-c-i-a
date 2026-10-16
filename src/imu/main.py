@@ -23,7 +23,7 @@ print("Libraries and drivers imported")
 
 bno = BNO08X_I2C(
     i2c,
-    address=0x4B,
+    address=0x4A,
     int_pin=int_pin,
     reset_pin=None
 )
