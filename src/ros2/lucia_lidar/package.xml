@@ -7,6 +7,9 @@
   <maintainer email="christianmichael.villanueva@sjsu.edu">LUCIA Team</maintainer>
   <license>TODO</license>
 
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>sensor_msgs</exec_depend>
+  <exec_depend>tf2_ros</exec_depend>
   <exec_depend>rplidar_ros</exec_depend>
   <exec_depend>slam_toolbox</exec_depend>
   <exec_depend>launch</exec_depend>
