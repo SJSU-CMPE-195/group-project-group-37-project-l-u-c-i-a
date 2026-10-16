@@ -14,9 +14,10 @@ a test tool for checking one piece at a time; it is not how the robot is meant t
 
 ## Right now
 
-Control (wheels, open-loop `/odom`), the lidar (`/scan`) and mapping all work on the real robot:
-the first map of a real room was built by driving with the keyboard on 2026-10-16.
-Next: the safety stop (Phase 3), then SWEEP mode.
+Control (wheels, open-loop `/odom`), the lidar (`/scan`), mapping and the IMU all work on the real robot.
+2026-10-16: first room map by keyboard driving, then a much cleaner one with Ling's IMU fused in
+(`ros2 launch lucia_bringup mapping.launch.py`).
+Next: the safety stop (Phase 3) waits on the team's ToF sensors; then SWEEP mode.
 Decided 2026-10-16: SWEEP mode first; frontier exploration is a later feature.
 
 ---
@@ -25,7 +26,7 @@ Decided 2026-10-16: SWEEP mode first; frontier exploration is a later feature.
 
 - **One program per device.** Only the control program talks to the Roomba, and only the lidar program talks to the lidar. Nothing else opens those USB ports.
 - **Safe mode.** The Roomba stops on its own if it's lifted or drives off a ledge. The control program turns it back on automatically, so no restart is needed after a pickup.
-- **No bump sensor** (it was removed). "Stop, something's too close" uses the lidar and lives in Bringup, not Control.
+- **No bump sensor** (it was removed). "Stop, something's too close" will use the ToF distance sensors (decided 2026-10-16) and lives in Bringup, not Control.
 - **Not now:** the web control panel.
 
 ---
@@ -81,16 +82,21 @@ without waiting on the Roomba cable.
 - [x] `imu_bridge` on the Pi (2026-10-16): 50 readings/s, 0 bad lines. A quarter turn left by hand read +94.7° (positive = left, the ROS convention) and came back to about +1-2° when turned back
 - [ ] Mount the IMU flat and fixed on the robot; note which way its axes point (needs a `base_link`→`imu_link` transform, like the lidar's)
 - [x] Fusion written (not yet run): `lucia_bringup/config/ekf.yaml` takes forward speed from `/odom` and heading + turn rate from `/imu/data`; `roomba_bridge` gained `publish_tf` (off when the EKF runs) and now fills in `/odom`'s twist with rough variances. `ros2 launch lucia_bringup mapping.launch.py` starts roomba_bridge + imu_bridge + EKF + lidar + slam_toolbox (`use_imu:=false` = the first-map setup)
-- [ ] Rebuild the image on the Pi for `ros-jazzy-robot-localization` (Dockerfile updated), then run `mapping.launch.py`
-- [ ] Map the same room again and compare against `room1.png`
+- [x] Image rebuilt on the Pi (about 6.5 min); plain `colcon build` skips `lucia_vision`. `mapping.launch.py` starts cleanly: `imu_bridge` on `/dev/imu`, `roomba_bridge` hands `odom`→`base_link` to the EKF, slam_toolbox registers the lidar, no warnings (2026-10-16)
+- [x] Mapped the same room again with the IMU (`room2.png`, 2026-10-16): walls are single thin lines with square corners and much less speckle; the doubled wall from `room1.png` is gone. One run each with different starting headings, so not a controlled comparison, but the heading fix is clearly visible
+- [ ] `imu_bridge`: skip the first, partial line after opening the port (it shows up as a harmless `Pico: 01477,...` log line)
 
 ---
 
 ## Phase 3 — Safety stop (before anything drives itself)
 
 Folder: `src/ros2/lucia_bringup/`
-- [ ] "Stop if something's too close" node: watches `/scan` and blocks drive commands
-  that would hit something. Stands in for the removed bump sensor.
+
+Decided 2026-10-16: built on the **ToF distance sensors** the team is implementing
+(`src/tof_pico/`, VL53L5CX on a Pico), not the lidar. Waits until those are ready.
+- [ ] ToF Pico → Pi → ROS2 (same pattern as the IMU: Pico streams over USB, a bridge node publishes)
+- [ ] "Stop if something's too close" node: blocks drive commands that would hit something.
+  Stands in for the removed bump sensor.
 - [ ] Test it on its own, driving by keyboard toward a wall, before SWEEP mode uses it
 
 ---
@@ -146,5 +152,4 @@ Folder: `src/ros2/lucia_bringup/`
   with a screen) or a revived web control panel. The web panel specifically was
   deferred on purpose, reaffirmed 2026-10-09 - treat reviving it as its own
   decision, not something to bundle into another task.
-- ToF distance sensors as an emergency stop, once that hardware arrives
 - Camera and Jetson: start from scratch when the time comes
