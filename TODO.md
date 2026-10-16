@@ -76,11 +76,12 @@ The first map's doubled wall is heading drift from the open-loop `/odom`. The IM
 without waiting on the Roomba cable.
 - [x] Pico streaming code `src/imu/stream_main.py` (upload as `main.py`): game rotation vector + gyro, one `I,qw,qx,qy,qz,gx,gy,gz` line per reading at about 50 Hz. Ling to review against her setup
 - [x] `lucia_imu` package: `imu_bridge` node reads the Pico and publishes `/imu/data` (parser has pure-Python tests). Not yet run on the Pi
-- [ ] Pico streams `I,` lines when plugged into the Pi (`/dev/ttyACM0`)
-- [ ] udev rule `/dev/imu` (match the Pico's serial number; the ToF Pico has the same vendor/product ID), and `--device=/dev/imu` in the `docker run` command
-- [ ] `imu_bridge` on the Pi: heading follows turning the robot by hand
+- [x] Pico streams `I,` lines when plugged into the Pi (`/dev/ttyACM0`), about 50/s (2026-10-16). Loaded from the Pi with `mpremote` (installed via `pipx`): `mpremote connect /dev/ttyACM0 fs cp src/imu/stream_main.py :main.py`. That Pico previously held a ToF `main.py`; it's backed up on the Pi at `~/tof_main_backup.py`. The driver files `bno08x.py` / `i2c.py` live in the Pico's root (Ling's copies, import already fixed). Unused duplicates also got copied to the Pico's `lib/`; delete them next time the Pico is in VS Code (`mpremote` couldn't interrupt the running stream to do it)
+- [x] udev rule `/dev/imu` added to `/etc/udev/rules.d/99-lucia.rules` (2026-10-16), matching the Pico's serial `fd92d5f577b9417b` (the ToF Pico has the same vendor/product ID). Confirm `ls -la /dev/imu` shows the link, and use `--device=/dev/imu` in the `docker run` command
+- [x] `imu_bridge` on the Pi (2026-10-16): 50 readings/s, 0 bad lines. A quarter turn left by hand read +94.7° (positive = left, the ROS convention) and came back to about +1-2° when turned back
 - [ ] Mount the IMU flat and fixed on the robot; note which way its axes point (needs a `base_link`→`imu_link` transform, like the lidar's)
-- [ ] Fuse it: `robot_localization` EKF combines `/odom` + `/imu/data` and publishes `odom`→`base_link` (`roomba_bridge` stops publishing that transform). Add `ros-jazzy-robot-localization` to the Dockerfile
+- [x] Fusion written (not yet run): `lucia_bringup/config/ekf.yaml` takes forward speed from `/odom` and heading + turn rate from `/imu/data`; `roomba_bridge` gained `publish_tf` (off when the EKF runs) and now fills in `/odom`'s twist with rough variances. `ros2 launch lucia_bringup mapping.launch.py` starts roomba_bridge + imu_bridge + EKF + lidar + slam_toolbox (`use_imu:=false` = the first-map setup)
+- [ ] Rebuild the image on the Pi for `ros-jazzy-robot-localization` (Dockerfile updated), then run `mapping.launch.py`
 - [ ] Map the same room again and compare against `room1.png`
 
 ---
@@ -125,7 +126,7 @@ Folder: `src/ros2/lucia_bringup/`
 - [x] Build it on the Pi: `docker build -t lucia/ros2:latest docker/` (built fine, about 8 minutes). Needs internet, so do it on a network with internet, not the robot's own WiFi.
 - [x] `update.sh` was hardcoded to pull the `testing` branch. Fixed 2026-10-16 to pull `dev`, the team's new shared integration branch.
 - [ ] Update `docs/setup/ros2-pi.md` to use the new image once it builds
-- [ ] `colcon build` on the Pi fails on `lucia_vision` (Jetson/ZED package, needs CUDA) and then skips the remaining packages. For now build with `--packages-skip lucia_vision`; bake that skip into the Pi image (colcon defaults file in `docker/Dockerfile`) so it's automatic
+- [x] `colcon build` on the Pi fails on `lucia_vision` (Jetson/ZED package, needs CUDA) and then skips the rest. The Dockerfile now writes a colcon defaults file (skip `lucia_vision`, symlink-install), so plain `colcon build` works once the image is rebuilt
 
 ---
 

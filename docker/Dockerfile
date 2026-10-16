@@ -15,9 +15,18 @@ RUN apt-get update && apt-get install -y \
     ros-jazzy-slam-toolbox \
     ros-jazzy-nav2-bringup \
     ros-jazzy-teleop-twist-keyboard \
+    ros-jazzy-robot-localization \
     && rm -rf /var/lib/apt/lists/*
 
 ENV ROS_DOMAIN_ID=42
+
+# Plain `colcon build` does the right thing on the Pi: skip lucia_vision (Jetson
+# ZED package, needs CUDA, fails here and makes colcon abort the rest).
+RUN mkdir -p /root/.colcon && printf '%s\n' \
+    'build:' \
+    '  symlink-install: true' \
+    '  packages-skip: [lucia_vision]' \
+    > /root/.colcon/defaults.yaml
 
 WORKDIR /ros2_ws
 

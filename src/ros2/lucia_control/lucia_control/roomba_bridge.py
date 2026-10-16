@@ -13,6 +13,9 @@ ROS2 node that owns the Roomba's serial port (nothing else may open it).
   odometry.py and docs/changelogs/2026-10-09.md for why. This will drift more
   than real encoder feedback, but it's what's available until the Roomba's
   sensor replies reach the Pi again.
+- publish_tf:=false leaves the odom->base_link transform to robot_localization
+  (lucia_bringup's mapping.launch.py), which combines /odom's forward speed
+  with the IMU's heading. /odom itself is still published either way.
 
 Battery is not read yet.
 
@@ -47,6 +50,12 @@ class RoombaBridge(Node):
         self.declare_parameter('heartbeat_period_s', 1.0)
         self.declare_parameter('odom_frame_id', 'odom')
         self.declare_parameter('base_frame_id', 'base_link')
+        self.declare_parameter('publish_tf', True)
+        # Rough guesses for how far off the commanded speeds are, as variances in
+        # /odom's twist - robot_localization needs nonzero values to weigh /odom
+        # against the IMU. Not measured; revisit with real encoder data.
+        self.declare_parameter('linear_velocity_variance', 0.0025)    # (m/s)^2, ~5 cm/s
+        self.declare_parameter('angular_velocity_variance', 0.04)     # (rad/s)^2, ~11 deg/s
 
         port = self.get_parameter('port').value
         self._oi_mode = self.get_parameter('oi_mode').value
@@ -57,6 +66,9 @@ class RoombaBridge(Node):
         heartbeat_period_s = self.get_parameter('heartbeat_period_s').value
         self._odom_frame_id = self.get_parameter('odom_frame_id').value
         self._base_frame_id = self.get_parameter('base_frame_id').value
+        self._publish_tf = self.get_parameter('publish_tf').value
+        self._linear_velocity_variance = self.get_parameter('linear_velocity_variance').value
+        self._angular_velocity_variance = self.get_parameter('angular_velocity_variance').value
 
         # Check settings before touching the serial port
         if self._oi_mode not in ('safe', 'full'):
@@ -93,7 +105,8 @@ class RoombaBridge(Node):
         self.get_logger().info(
             f'Ready: mode={self._oi_mode}, wheel_base={self._wheel_base_mm} mm, '
             f'max_speed={self._max_speed_mm_s} mm/s, cmd_vel_timeout={self._cmd_vel_timeout_s} s, '
-            f'odom is open-loop (commanded speed, not sensor-measured) - see odometry.py')
+            f'odom is open-loop (commanded speed, not sensor-measured) - see odometry.py, '
+            f'odom->base_link transform: {"published here" if self._publish_tf else "left to robot_localization"}')
 
     # ------------------------------------------------------------------
     # Callbacks
@@ -134,11 +147,20 @@ class RoombaBridge(Node):
         msg.pose.pose.position.x = x_mm / 1000.0
         msg.pose.pose.position.y = y_mm / 1000.0
         msg.pose.pose.orientation = quat
-        # Not filled in: this estimate comes from commanded speed, not a sensor, so its
-        # true uncertainty isn't known. Leaving it at zero rather than inventing numbers
-        # that look precise but aren't - revisit once real encoder data is available.
+        # Pose covariance not filled in: nothing fuses /odom's pose, and its true
+        # uncertainty isn't known.
+        # Twist (in base_link): what robot_localization fuses. Sideways speed is
+        # always 0 for a two-wheeled robot, so that one is near-certain.
+        msg.twist.twist.linear.x = (commanded_left_mm_s + commanded_right_mm_s) / 2.0 / 1000.0
+        msg.twist.twist.angular.z = (
+            (commanded_right_mm_s - commanded_left_mm_s) / self._wheel_base_mm)
+        msg.twist.covariance[0] = self._linear_velocity_variance
+        msg.twist.covariance[7] = 1e-4
+        msg.twist.covariance[35] = self._angular_velocity_variance
         self._odom_pub.publish(msg)
 
+        if not self._publish_tf:
+            return
         tf = TransformStamped()
         tf.header.stamp = stamp
         tf.header.frame_id = self._odom_frame_id

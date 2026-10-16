@@ -1,0 +1,44 @@
+# robot_localization EKF: combines the wheels and the IMU into one position
+# estimate, and publishes the odom->base_link transform slam_toolbox uses.
+#
+# What comes from where:
+# - Forward speed (and "no sideways motion") from /odom. It's open-loop
+#   (commanded wheel speed, not encoders - see lucia_control/odometry.py), but
+#   distance errors are what slam_toolbox's scan matching corrects best.
+# - Heading and turn rate from the IMU (/imu/data, game rotation vector).
+#   /odom's own turn rate is NOT used: heading drift from it is what doubled a
+#   wall in the first map (docs/changelogs/2026-10-16.md).
+#
+# Config vectors are: x, y, z, roll, pitch, yaw,
+#                     vx, vy, vz, vroll, vpitch, vyaw,
+#                     ax, ay, az
+
+ekf_filter_node:
+  ros__parameters:
+    frequency: 30.0
+    sensor_timeout: 0.2
+    two_d_mode: true                # Roomba stays on the floor
+    publish_tf: true
+
+    map_frame: map
+    odom_frame: odom
+    base_link_frame: base_link
+    world_frame: odom
+
+    odom0: /odom
+    odom0_config: [false, false, false,
+                   false, false, false,
+                   true,  true,  false,
+                   false, false, false,
+                   false, false, false]
+    odom0_queue_size: 10
+
+    imu0: /imu/data
+    imu0_config: [false, false, false,
+                  false, false, true,
+                  false, false, false,
+                  false, false, true,
+                  false, false, false]
+    imu0_relative: true             # heading at startup counts as 0, whichever way the board faces
+    imu0_queue_size: 10
+    imu0_remove_gravitational_acceleration: false   # acceleration isn't sent or fused
