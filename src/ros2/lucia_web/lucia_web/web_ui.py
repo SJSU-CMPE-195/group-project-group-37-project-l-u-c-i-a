@@ -18,6 +18,8 @@ From the page you can:
 - see live metrics: heading, speed, turn rate (IMU), distance driven, area
   mapped, sensor message rates, the Pi's CPU temperature / load / memory
 - read every node's log (/rosout) and the launch output in a drawer under the map
+- reconnect to the Roomba after it was turned off and on (roomba_bridge's
+  ~/reconnect service), without stopping mapping
 - save the map and download the PNG
 
 Driving is hold-to-move: the page sends a command every 100 ms while a button
@@ -54,6 +56,7 @@ from rclpy.qos import (DurabilityPolicy, QoSProfile, ReliabilityPolicy,
 from rclpy.time import Time
 from sensor_msgs.msg import Imu, LaserScan
 from std_msgs.msg import String
+from std_srvs.srv import Trigger
 from tf2_ros import Buffer, TransformException, TransformListener
 
 from lucia_web.logic import (RateMeter, Trail, clamp_speed, cpu_percent,
@@ -71,6 +74,7 @@ CMD_FRESH_S = 1.0           # roomba_bridge stops the wheels after 0.5 s without
 LOG_KEEP = 2000             # /rosout entries kept for the page
 LOG_SEND_MAX = 500          # most entries sent in one /api/logs reply
 LOG_MSG_MAX = 500           # characters kept per log message
+RECONNECT_TIMEOUT_S = 20.0  # roomba_bridge's reconnect takes about 5 s
 
 
 class WebUi(Node):
@@ -140,6 +144,8 @@ class WebUi(Node):
         self._cmd_pub = self.create_publisher(Twist, 'cmd_vel', 10)
         self._mission_pub = self.create_publisher(String, 'mission/command', 10)
         self._speed_limit_pub = self.create_publisher(SpeedLimit, 'speed_limit', 10)
+        self._reconnect_client = self.create_client(Trigger, 'roomba_bridge/reconnect')
+        self._reconnecting = threading.Lock()
         self._tf_buffer = Buffer()
         self._tf_listener = TransformListener(self._tf_buffer, self)
 
@@ -337,6 +343,33 @@ class WebUi(Node):
             self.get_logger().info('Driving by hand: stopped the mission')
         return True
 
+    def reconnect_roomba(self):
+        """Ask roomba_bridge to rebuild its Roomba connection. Called from an HTTP thread; waits for the answer."""
+        if not self.mapping.running:
+            return False, 'Start mapping first - the Roomba driver runs with it'
+        if not self._reconnecting.acquire(blocking=False):
+            return False, 'Already reconnecting'
+        try:
+            # Don't let it drive off the moment the Roomba wakes up.
+            with self._lock:
+                self._drive_time = None
+                mission = self._mission_state()
+            if mission and mission.get('mode') != 'idle':
+                self._mission_pub.publish(String(data='stop'))
+            if not self._reconnect_client.service_is_ready():
+                return False, 'roomba_bridge is not running (see Logs)'
+            done = threading.Event()
+            future = self._reconnect_client.call_async(Trigger.Request())
+            future.add_done_callback(lambda _: done.set())
+            if not done.wait(RECONNECT_TIMEOUT_S):
+                return False, 'roomba_bridge did not answer (see Logs)'
+            result = future.result()
+            if result is None:
+                return False, 'Reconnect failed (see Logs)'
+            return result.success, result.message
+        finally:
+            self._reconnecting.release()
+
     def start_mapping(self, use_imu):
         with self._lock:
             self._trail.reset()
@@ -531,6 +564,9 @@ class _Handler(BaseHTTPRequestHandler):
             self._send_json({'ok': ok, 'message': message})
         elif self.path == '/api/speed':
             ok, message = self.ui.set_speed(body.get('mps'))
+            self._send_json({'ok': ok, 'message': message})
+        elif self.path == '/api/roomba/reconnect':
+            ok, message = self.ui.reconnect_roomba()
             self._send_json({'ok': ok, 'message': message})
         elif self.path == '/api/mapping/start':
             started = self.ui.start_mapping(use_imu=bool(body.get('use_imu', True)))

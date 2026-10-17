@@ -56,7 +56,12 @@ Folder: `src/ros2/lucia_control/`
 - [x] Tried `/odom` on the real robot: position and heading both tracked driving + turning correctly.
 - [ ] Once the cable is fixed: measure wheel size and encoder counts per turn (drive a known distance, read the raw counts), then switch `/odom` to use real encoder readings instead of commanded speed. `odometry.py`'s math doesn't change either way — only what feeds it does.
 - [ ] Add battery to the control program (needs the cable fixed too)
-- [ ] Recover after the Roomba is power-cycled. The heartbeat only re-sends Safe (131), which a freshly powered-on Roomba ignores until it gets Start (128), so for now `roomba_bridge` has to be restarted. Fix carefully: sending Start while already in Safe mode drops the Roomba to Passive for a moment, so don't just send Start every second
+- [x] Recover after the Roomba is power-cycled (2026-10-17, not yet tried on the robot): a **Reconnect Roomba** button on
+  the page calls `roomba_bridge`'s `~/reconnect` service, which reopens the port, wakes the Roomba (BRC pulse), sends
+  Start + Safe and beeps; mapping keeps running. It's manual because nothing comes back from the Roomba, so
+  `roomba_bridge` can't tell it was power-cycled (and sending Start every second would drop it to Passive each time).
+  Also: a serial error (adapter unplugged) is now logged instead of crashing `roomba_bridge`
+- [ ] Automatic recovery once the reply cable works (read the OI mode, packet 35, and re-send Start only when needed)
 
 ---
 

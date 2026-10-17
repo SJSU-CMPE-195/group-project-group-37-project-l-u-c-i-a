@@ -17,6 +17,18 @@ ROS2 node that owns the Roomba's serial port (nothing else may open it).
   (lucia_bringup's mapping.launch.py), which combines /odom's forward speed
   with the IMU's heading. /odom itself is still published either way.
 
+- Service ~/reconnect (/roomba_bridge/reconnect, std_srvs/Trigger): for when the
+  Roomba was turned off and on, or its battery died and it was put back on. It
+  reopens the serial port, wakes the Roomba, sends Start + the mode, and beeps.
+  The heartbeat alone can't do that: it only re-sends Safe (131), which a
+  freshly powered-on Roomba ignores until it gets Start (128). Nothing comes back
+  from the Roomba over serial (TODO.md, Phase 1 Step B), so the beep is the only
+  confirmation. The web page's "Reconnect Roomba" button calls it; mapping keeps
+  running, so the map isn't lost.
+      ros2 service call /roomba_bridge/reconnect std_srvs/srv/Trigger
+- A serial error (adapter unplugged) is logged instead of crashing the node;
+  plug it back in and reconnect.
+
 Battery is not read yet.
 
 Usage:
@@ -30,6 +42,8 @@ from geometry_msgs.msg import Quaternion, Twist, TransformStamped
 from nav_msgs.msg import Odometry as OdometryMsg
 from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
+from serial import SerialException
+from std_srvs.srv import Trigger
 from tf2_ros import TransformBroadcaster
 
 from lucia_control.motion import twist_to_wheel_speeds
@@ -87,6 +101,8 @@ class RoombaBridge(Node):
         self._odom = Odometry(self._wheel_base_mm)
         self._last_tick_time = None
 
+        self._port = port
+        self._serial_error = False
         self.get_logger().info(f'Opening Roomba on {port} (takes a few seconds)')
         self._roomba = RoombaOI(port)
         self._roomba.start()
@@ -101,6 +117,7 @@ class RoombaBridge(Node):
         self.create_subscription(Twist, 'cmd_vel', self._on_cmd_vel, 10)
         self.create_timer(drive_period_s, self._drive_tick)
         self.create_timer(heartbeat_period_s, self._enter_mode)
+        self.create_service(Trigger, '~/reconnect', self._on_reconnect)
 
         self.get_logger().info(
             f'Ready: mode={self._oi_mode}, wheel_base={self._wheel_base_mm} mm, '
@@ -126,7 +143,9 @@ class RoombaBridge(Node):
         self._timed_out = stale
 
         left, right = (0, 0) if stale else (self._left, self._right)
-        self._roomba.drive_direct(left, right)
+        if self._roomba is None:
+            left, right = 0, 0
+        self._write(lambda roomba: roomba.drive_direct(left, right))
         # Estimated from the speeds just sent above, not a sensor reading - see odometry.py.
         self._update_and_publish_odom(left, right)
 
@@ -173,9 +192,62 @@ class RoombaBridge(Node):
     def _enter_mode(self):
         """Put (or keep) the Roomba in the configured mode. Safe to call repeatedly."""
         if self._oi_mode == 'full':
-            self._roomba.full_mode()
+            self._write(lambda roomba: roomba.full_mode())
         else:
-            self._roomba.safe_mode()
+            self._write(lambda roomba: roomba.safe_mode())
+
+    def _on_reconnect(self, request, response):
+        """Rebuild the connection to the Roomba (see the module docstring). Takes about 5 s."""
+        self.get_logger().info('Reconnecting to the Roomba: reopen port, wake, Start, mode, beep')
+        self._left = self._right = 0
+        self._last_cmd_time = None          # wheels stay stopped until a new command arrives
+        old, self._roomba = self._roomba, None
+        if old is not None:
+            try:
+                old.stop()
+                old.ser.close()             # not old.close(): that also resets the Roomba and waits 3 s
+            except (SerialException, OSError):
+                pass
+        try:
+            roomba = RoombaOI(self._port)
+            roomba.wake()                   # only does something if the cable has the BRC wire
+            roomba.start()
+            if self._oi_mode == 'full':
+                roomba.full_mode()
+            else:
+                roomba.safe_mode()
+            roomba.beep()
+        except (SerialException, OSError) as exc:
+            response.success = False
+            response.message = f'Could not open the Roomba on {self._port}: {exc}'
+            self.get_logger().error(response.message)
+            return response
+        self._roomba = roomba
+        self._serial_error = False
+        response.success = True
+        response.message = (f'Sent wake, Start and {self._oi_mode.capitalize()} mode. The Roomba should beep; '
+                            'if it doesn\'t, check it\'s on (press CLEAN once to wake it) and try again.')
+        self.get_logger().info('Reconnect commands sent (listen for the beep)')
+        return response
+
+    def _write(self, action):
+        """
+        Send one command to the Roomba. On a serial error (adapter unplugged), log
+        it once and carry on rather than crash; reconnecting fixes it.
+        """
+        if self._roomba is None:
+            return
+        try:
+            action(self._roomba)
+        except (SerialException, OSError) as exc:
+            if not self._serial_error:
+                self.get_logger().error(
+                    f'Roomba serial error: {exc}. Plug it back in, then Reconnect Roomba on the page.')
+            self._serial_error = True
+            return
+        if self._serial_error:
+            self.get_logger().info('Roomba serial port working again')
+            self._serial_error = False
 
     # ------------------------------------------------------------------
     # Helpers
@@ -190,6 +262,8 @@ class RoombaBridge(Node):
     def shutdown(self):
         """Stop the wheels, reset the Roomba, and release the serial port."""
         self.get_logger().info('Stopping wheels and releasing the Roomba')
+        if self._roomba is None:
+            return
         try:
             self._roomba.close()
         except Exception as exc:

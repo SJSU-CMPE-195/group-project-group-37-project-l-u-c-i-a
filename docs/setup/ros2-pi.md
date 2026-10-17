@@ -67,7 +67,7 @@ during Explore or HOME stops the mission first.
 | Mapping | `mapping.launch.py` is running | Press Start mapping; open Logs → Launch output |
 | Lidar | `/scan` arrived in the last second | See "Lidar freezes after Start" under Known issues |
 | IMU | `/imu/data` arrived in the last second | Is the IMU Pico plugged in? Replug it; untick "Use IMU" to map without it |
-| Wheels | `/odom` arrived in the last second | Is the Roomba on? See "Roomba turned off and on" under Known issues |
+| Wheels | `/odom` arrived in the last second | `roomba_bridge` isn't running: check Logs. (This light doesn't show whether the Roomba itself is on, since its replies don't reach the Pi; if the wheels don't move, see "Roomba turned off and on" under Known issues) |
 | Navigation | The mission node is running and Nav2 is up (yellow: mapping runs but Nav2 isn't ready yet) | Open Logs, filter Warnings and up, look for `lifecycle_manager` or `controller_server` errors |
 | Connection | The page can reach the Pi | Are you on `lucia-control`? Is the Pi on? |
 
@@ -355,9 +355,13 @@ comes back. See Known issues.
 - **Lidar freezes after `Start`** (rare, seen once on a first run): the motor
   spins, but there's no `current scan mode` line and no `/scan`, and Ctrl+C is
   ignored. Press Ctrl+\ and rerun, or Stop and Start mapping on the page.
-- **Roomba turned off and on:** `roomba_bridge` has to be restarted (Stop and
-  Start mapping), because a freshly powered-on Roomba ignores the Safe-mode
-  heartbeat until it gets Start again. Listed as a fix in `TODO.md`.
+- **Roomba turned off and on, or its battery died:** turn it on and press
+  **Reconnect Roomba** on the page, then listen for a short beep. Mapping keeps
+  running, so the map isn't lost. (A freshly powered-on Roomba ignores the
+  Safe-mode heartbeat until it gets Start; Reconnect reopens the serial port,
+  wakes it, sends Start and Safe, and beeps.) No beep: press the Roomba's CLEAN
+  button once to wake it and try again. From a terminal:
+  `ros2 service call /roomba_bridge/reconnect std_srvs/srv/Trigger`.
 - **First line from the IMU** shows up in the log as `Pico: 01477,...`. It's half
   a line caught mid-stream, and harmless.
 - **`lucia_vision` build error:** shouldn't happen any more with the current

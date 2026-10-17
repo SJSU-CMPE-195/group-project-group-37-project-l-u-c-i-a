@@ -225,6 +225,12 @@
         <button class="danger" id="stop">Stop mapping</button>
         <label class="check"><input type="checkbox" id="useImu" checked> Use IMU</label>
       </div>
+      <div class="row" style="margin-top:8px">
+        <button id="reconnect" title="After the Roomba was turned off and on, or its battery died. Keeps the map.">Reconnect Roomba</button>
+      </div>
+      <p class="hint" id="reconnectMsg" hidden></p>
+      <p class="hint">Roomba turned off and on, or its battery died? Turn it on, press Reconnect, and listen
+        for a beep. Mapping keeps running, so the map isn't lost.</p>
       <div class="speed">
         <label for="speed">Speed</label>
         <input type="range" id="speed" min="5" max="30" step="1" value="15">
@@ -325,7 +331,7 @@ async function post(path, body) {
                                 body: JSON.stringify(body || {}) });
   return r.json();
 }
-function say(text, ok) { const m = $('message'); m.textContent = text; m.className = ok ? 'okmsg' : 'err'; }
+function say(text, ok) { const m = $('message'); m.textContent = m.title = text; m.className = ok ? 'okmsg' : 'err'; }
 
 // ---- Status ------------------------------------------------------------
 function setPill(id, state) { $(id).className = 'pill ' + state; }
@@ -345,6 +351,7 @@ async function pollStatus() {
   $('start').disabled = status.mapping;
   $('stop').disabled = !status.mapping;
   $('useImu').disabled = status.mapping;
+  $('reconnect').disabled = !status.mapping || reconnecting;
   const mission = status.mission, busy = !!mission && mission.mode !== 'idle';
   const navReady = status.mapping && !!mission && mission.nav_ready;
   setPill('p-nav', navReady ? 'ok' : status.mapping ? 'stale' : 'missing');
@@ -377,6 +384,20 @@ $('stop').onclick = async () => {
   say('Stopping... (takes a few seconds)', true);
   const r = await post('/api/mapping/stop');
   say(r.message, r.ok);
+  pollStatus();
+};
+
+let reconnecting = false;
+$('reconnect').onclick = async () => {
+  reconnecting = true; $('reconnect').disabled = true;
+  say('Reconnecting to the Roomba... (about 5 s)', true);
+  try {
+    const r = await post('/api/roomba/reconnect');
+    say(r.ok ? 'Roomba: commands sent, listen for the beep' : r.message, r.ok);
+    $('reconnectMsg').textContent = r.message; $('reconnectMsg').hidden = false;
+    $('reconnectMsg').style.color = r.ok ? '' : 'var(--bad)';
+  } catch (e) { say('Could not reach the robot', false); }
+  reconnecting = false;
   pollStatus();
 };
 

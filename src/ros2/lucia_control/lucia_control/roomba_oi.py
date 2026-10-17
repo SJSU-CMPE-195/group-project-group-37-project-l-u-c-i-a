@@ -37,6 +37,9 @@ class RoombaOI:
     OP_SENSORS      = 142
     OP_QUERY_LIST   = 149
     OP_SEEK_DOCK    = 143
+    OP_SONG         = 140
+    OP_PLAY         = 141
+    BEEP_SLOT       = 3       # song slot used by beep()
 
     # --- Sensor packet IDs ---
     PKT_BUMPS_DROPS      = 7
@@ -125,6 +128,16 @@ class RoombaOI:
         """Return to passive mode (same opcode as start)."""
         self._send(self.OP_START)
         time.sleep(0.1)
+
+    def beep(self):
+        """
+        Play two short rising notes. Works in Passive, Safe or Full mode, so call
+        it after start(). Since the Roomba's replies don't reach the Pi, hearing
+        this is the only sign that it received the commands. (ROS2 copy only.)
+        """
+        # Song: slot, note count, then (MIDI note, duration in 1/64 s) pairs
+        self._send(self.OP_SONG, self.BEEP_SLOT, 2, 72, 8, 79, 12)
+        self._send(self.OP_PLAY, self.BEEP_SLOT)
 
     # ------------------------------------------------------------------
     # Motion
