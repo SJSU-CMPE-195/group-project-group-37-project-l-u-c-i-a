@@ -15,16 +15,29 @@ update and debug it. Current as of 2026-10-16. For what changed when, see
    `lucia-143-tomato`).
 3. **Open http://10.42.0.1:8080** in a browser.
 4. Press **Start mapping**. Within about 10 seconds the Lidar, IMU and Wheels
-   lights should turn green and the map should appear.
-5. Drive with the pad (hold a button; it stops when you let go) or the arrow
-   keys / WASD. Drive slowly, turn gently, and finish where you started; that
-   lets the mapper correct drift.
+   lights should turn green and the map should appear; the Navigation light
+   follows once Nav2 has started. The **Radar** shows what the lidar sees right
+   now, forward up (red under 0.3 m, amber under 0.6 m).
+5. Press **Explore**. The robot drives itself to the edges of what it has
+   mapped (orange dots on the map, "frontiers"), one after another, until
+   nothing is left, then drives back **HOME** (the green H: where it was when
+   you pressed Start mapping). The dashed line is the path it's following.
+   - **Return HOME** sends it home at any time.
+   - **STOP** (or Space / Esc) stops it where it is. On a phone a STOP button
+     floats at the bottom while the robot is driving itself.
+   - **Speed** sets how fast it drives, for Explore, HOME and the drive pad.
+   - Tick **Click the map to send the robot there** to send it to one spot.
+   Stay with it: it steers around what the lidar sees, not things lower than the
+   lidar (until the ToF safety stop is on; see `use_tof` below).
 6. Type a name and press **Save**. The map appears in the list underneath; click
    **download** to get the PNG. Saved maps live on the Pi in `~/maps/`.
-7. Press **Stop** when done.
+7. Press **Stop mapping** when done.
 
-Keyboard driving is a test tool. The goal is for the robot to map a room by itself
-(SWEEP mode, not built yet); a "Start SWEEP" button will replace the drive pad.
+The drive pad (hold a button; it stops when you let go) and the arrow keys /
+WASD are a test tool, and are locked while the robot drives itself.
+
+**Navigation (Explore, Return HOME, map click) has not been run on the robot
+yet** (written 2026-10-16). See TODO.md, Phase 4, for the first-run checks.
 
 ### What the lights mean
 
@@ -34,6 +47,7 @@ Keyboard driving is a test tool. The goal is for the robot to map a room by itse
 | Lidar | `/scan` arrived in the last second | See "Lidar freezes after Start" under Known issues |
 | IMU | `/imu/data` arrived in the last second | Is the IMU Pico plugged in? Replug it; untick "Use IMU" to map without it |
 | Wheels | `/odom` arrived in the last second | Is the Roomba on? See "Roomba turned off and on" under Known issues |
+| Navigation | The mission node is running and Nav2 is up (yellow: mapping runs but Nav2 isn't ready yet) | Check "Mapping output" for `lifecycle_manager` or `controller_server` errors |
 | Connection | The page can reach the Pi | Are you on `lucia-control`? Is the Pi on? |
 
 Yellow means the topic has gone quiet for 1-5 seconds; red means longer, or never.
@@ -54,15 +68,22 @@ plus our additions (`docker/Dockerfile`), sidesteps that.
 | `lucia_lidar` | `slam_toolbox` | | `/map`, `map`→`odom` |
 | `lucia_imu` | `imu_bridge` | `/dev/imu` | `/imu/data` (heading + turn rate) at about 50 Hz |
 | `lucia_bringup` | `ekf_filter_node` (`robot_localization`) | | Combines `/odom` forward speed with IMU heading → `odom`→`base_link` |
-| `lucia_web` | `web_ui` | port 8080 | The control page; starts/stops `mapping.launch.py` |
+| `lucia_bringup` | `safety_gate` | | `/cmd_vel` → `/cmd_vel_safe` (what `roomba_bridge` listens to); with `use_tof:=true`, blocks forward motion while `tof/near` is true or silent |
+| `lucia_nav` | Nav2: `controller_server`, `planner_server`, `behavior_server`, `bt_navigator`, `lifecycle_manager_navigation` | | Plans a path on `/map` and drives it (`/cmd_vel`, `/plan`); settings in `lucia_nav/config/nav2.yaml` |
+| `lucia_nav` | `mission` | | Explore (frontiers) / return home / go to a spot: takes `/mission/command`, sends Nav2 goals, publishes `/mission/state` |
+| `lucia_web` | `web_ui` | port 8080 | The control page; starts/stops `mapping.launch.py`, sends `/mission/command`, sets Nav2's `speed_limit` |
 | `lucia_vision` | | | Jetson/ZED camera code. Doesn't build on the Pi (needs CUDA); skipped automatically |
 
 Rule: **one program per device.** Nothing else opens a device's port while its
 node runs. That includes VS Code's MicroPico console for the IMU Pico.
 
 Launch files:
-- `lucia_bringup/launch/mapping.launch.py`: everything for mapping (control,
-  IMU, EKF, lidar, slam_toolbox). `use_imu:=false` gives the wheels-only setup.
+- `lucia_bringup/launch/mapping.launch.py`: everything (control, safety gate,
+  IMU, EKF, lidar, slam_toolbox, Nav2 + mission). Options:
+  `use_imu:=false` (wheels-only heading), `use_nav:=false` (mapping only, no
+  Nav2), `use_tof:=true` (ToF safety stop on; needs Noel's `lucia_tof` node
+  running, or forward driving stays blocked).
+- `lucia_nav/launch/navigation.launch.py`: Nav2 + the mission node only.
 - `lucia_lidar/launch/lidar_and_map.launch.py`: lidar + slam_toolbox only, plus
   the `base_link`→`laser` transform (`laser_yaw` default π: the lidar is mounted
   turned around, which `scan_check` confirmed).

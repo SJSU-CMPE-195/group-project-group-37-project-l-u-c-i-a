@@ -1,15 +1,15 @@
 # Project L.U.C.I.A — TODO
 
 > Rebuilding the robot software as small pieces (ROS2), one piece at a time.
-> Order: **Control → Lidar → Map → Safety stop → SWEEP → one-command bringup.** Check items off as they're done.
+> Order: **Control → Lidar → Map → Safety stop → driving itself (frontier exploration; SWEEP) → one-command bringup.** Check items off as they're done.
 > Work on `195B-Christian`, merge into `dev` and push both. The Pi pulls `dev`.
 
 ---
 
 ## The goal
 
-**The robot maps a room on its own.** Turn it on, it drives itself around (SWEEP mode),
-builds the map as it goes, and you save the map at the end. Driving by keyboard is only
+**The robot maps a room on its own.** Turn it on, it drives itself around (Explore:
+frontier exploration), builds the map as it goes, comes back HOME, and you save the map at the end. Driving by keyboard is only
 a test tool for checking one piece at a time; it is not how the robot is meant to run.
 
 ## Right now
@@ -18,8 +18,12 @@ Control (wheels, open-loop `/odom`), the lidar (`/scan`), mapping and the IMU al
 2026-10-16: first room map by keyboard driving, then a much cleaner one with Ling's IMU fused in,
 then the web control page: power on, join `lucia-control`, open http://10.42.0.1:8080
 (how-to: `docs/setup/ros2-pi.md`; maps in `media/maps/`).
-Next: the safety stop (Phase 3) waits on the team's ToF sensors; then SWEEP mode.
 Decided 2026-10-16: SWEEP mode first; frontier exploration is a later feature.
+**Changed the same evening, at Christian's request:** frontier exploration, return HOME, a live
+radar and a speed control on the web page, built on Nav2 (already in the Docker image). All
+written and tested on the laptop (pure-Python tests + the page against a simulated robot);
+**none of it has run on the robot yet.** Next: the first-run checks in Phase 4 below.
+The ToF safety gate is written too (`use_tof`, off until the sensors are mounted).
 
 ---
 
@@ -95,15 +99,53 @@ Folder: `src/ros2/lucia_bringup/`
 
 Decided 2026-10-16: built on the **ToF distance sensors** the team is implementing
 (`src/tof_pico/`, VL53L5CX on a Pico), not the lidar. Waits until those are ready.
-- [ ] ToF Pico → Pi → ROS2 (same pattern as the IMU: Pico streams over USB, a bridge node publishes)
-- [ ] "Stop if something's too close" node: blocks drive commands that would hit something.
-  Stands in for the removed bump sensor.
-- [ ] Test it on its own, driving by keyboard toward a wall, before SWEEP mode uses it
+- [x] ToF Pico → Pi → ROS2: Noel's `lucia_tof` package (branch `tof_pico`, not merged into `dev` yet).
+  Publishes an 8x8 distance grid and nearest reading per sensor, and `tof/near` (Bool: true = something
+  within 300 mm, or a sensor silent). Before it goes on the Pi: its udev rule (`99-lucia-tof.rules`) matches
+  any MicroPython Pico (`2e8a:0005`) without a serial number, so `/dev/lucia_tof` can grab the IMU Pico
+  too. Add the ToF Pico's `ATTRS{serial}`, like the `/dev/imu` rule
+- [x] "Stop if something's too close" node (2026-10-16, not yet run): `lucia_bringup` `safety_gate`.
+  Everything that drives (page, Nav2, mission) publishes `/cmd_vel`; the gate passes it to `/cmd_vel_safe`,
+  which `roomba_bridge` listens to in `mapping.launch.py`. With `use_tof:=true` it blocks forward motion
+  while `tof/near` is true or silent; turning and backing up still pass so Nav2 can turn away. Default
+  `use_tof:=false` = pass-through. Rules in `safety_logic.py` (tested)
+- [ ] Merge `lucia_tof` (with the udev fix), mount the sensors, add its node to `mapping.launch.py` under `use_tof`
+- [ ] Test it on its own, driving by keyboard toward a wall, before Explore relies on it
 
 ---
 
-## Phase 4 — SWEEP mode (the robot drives itself)
+## Phase 4 — The robot drives itself
 
+**Frontier exploration + return HOME** (Nav2), pulled forward 2026-10-16 at Christian's request.
+Folder: `src/ros2/lucia_nav/`
+- [x] Nav2 settings for the Roomba (`config/nav2.yaml`): Regulated Pure Pursuit controller, NavFn planner,
+  spin/backup/wait recoveries, costmaps from `/map` + `/scan`. Default speed 0.15 m/s; the page's speed
+  slider overrides it through Nav2's `speed_limit` topic. `launch/navigation.launch.py` starts only the four
+  Nav2 servers used (nav2_bringup's launch also starts docking/collision-monitor servers that need their own
+  settings). Included in `mapping.launch.py` (`use_nav:=false` to leave it out)
+- [x] `mission` node: `/mission/command` (`explore`, `home`, `goto X Y`, `stop`) → Nav2 goals;
+  `/mission/state` (JSON) for the page. Explore = find frontiers in `/map` (edges between seen-open and
+  unseen), drive to the best one (near beats far, long beats short), skip ones that fail or time out,
+  move on early if the lidar sees past the target on the way, go HOME when none are left.
+  HOME = the map origin = where the robot was when mapping started. Our own frontier code instead of
+  `m-explore-ros2` (not released for Jazzy, C++ build on the Pi). Logic in `frontier.py` /
+  `mission_logic.py`, tested, including a full simulated two-room exploration
+- [ ] First run on the Pi (after `git pull` + `docker compose -f docker/compose.yml restart`; no image rebuild
+  expected since `ros-jazzy-nav2-bringup` is already installed):
+  - [ ] Check executable names: `ros2 pkg executables nav2_controller nav2_planner nav2_behaviors nav2_bt_navigator nav2_lifecycle_manager lucia_nav lucia_bringup`
+  - [ ] Start mapping from the page; the Navigation light turns green; "Mapping output" shows the lifecycle
+    manager activating all four servers, with no plugin or parameter errors
+  - [ ] Radar: a hand in front of the robot shows at the top, a hand on its left shows on the left
+  - [ ] Speed slider: the drive pad gets faster/slower
+  - [ ] Click the map 0.5-1 m ahead in open floor: the robot plans (dashed line) and drives there
+  - [ ] Return HOME from about 1 m away
+  - [ ] Explore one room, staying next to it with STOP ready. Watch for: getting stuck without noticing
+    (open-loop `/odom`), spinning in place too long, goals too close to walls
+  - [ ] Measure the robot's real footprint (arm, Pi drawer) and set `robot_radius` in `nav2.yaml`
+- [ ] Later: real encoder `/odom` (Phase 1, Step B) should make Nav2 noticeably more precise
+
+**SWEEP mode** (last semester's bounce-around logic). Not started; may not be needed if Explore works
+well. Team's call.
 Folder: `src/ros2/lucia_bringup/`
 - [ ] Port last semester's SWEEP logic (`src/scripts/slam_avoid_server.py`) to a ROS2
   node: drive straight; when something's ahead, spin toward the clearer side until
@@ -117,7 +159,7 @@ Folder: `src/ros2/lucia_bringup/`
 ## Phase 5 — One command starts everything
 
 Folder: `src/ros2/lucia_bringup/`, `src/ros2/lucia_web/`, `docker/compose.yml`
-- [x] `mapping.launch.py`: control + IMU + EKF + lidar + slam_toolbox (2026-10-16). Safety stop and SWEEP get added once they exist
+- [x] `mapping.launch.py`: control + IMU + EKF + lidar + slam_toolbox (2026-10-16). Same evening: + safety gate (`use_tof`) and Nav2 + mission (`use_nav`), not yet run
 - [x] Web control page `lucia_web` (written 2026-10-16, not yet run on the Pi): status lights for lidar/IMU/wheels,
   Start/Stop mapping (runs `mapping.launch.py`, IMU on/off), live map with the robot's position, hold-to-drive pad
   and arrow keys (test tool; the page stops sending when released and `roomba_bridge` times out as a second layer),
@@ -128,8 +170,13 @@ Folder: `src/ros2/lucia_bringup/`, `src/ros2/lucia_web/`, `docker/compose.yml`
   boot doesn't stop the container from starting
 - [x] On the Pi (2026-10-16): `docker compose -f docker/compose.yml up -d`, page opened from the laptop, mapping started, driven and saved from the browser. Working
 - [ ] Reboot test on the hotspot alone: Pi comes up on `lucia-control`, the container starts by itself, page loads at http://10.42.0.1:8080 (not separately confirmed yet)
-- [ ] Christian's changes to the web page (next session)
-- [ ] Later: a "Start SWEEP" button replaces the drive pad as the main control
+- [x] Christian's changes to the web page (2026-10-16, tested against a simulated robot, not yet on the Pi):
+  - Radar: live lidar around the robot, forward up, 1/2/4 m zoom, nearest-obstacle readout
+  - Speed slider (5-30 cm/s): drive pad and Nav2
+  - Autonomy card: Explore, Return HOME, STOP (also Space/Esc; floats on phones while driving itself),
+    click-the-map go-to. The map shows frontiers, the current goal, HOME and Nav2's planned path.
+    The drive pad is locked while the robot drives itself
+  - Navigation light in the header
 
 ---
 
@@ -156,7 +203,6 @@ Folder: `src/ros2/lucia_bringup/`, `src/ros2/lucia_web/`, `docker/compose.yml`
 
 ## Later (not started)
 
-- Frontier exploration (feature, after SWEEP works): Nav2 + `m-explore-ros2` steers
-  the robot toward unmapped areas instead of bouncing around. Needs real encoder
-  odometry first (the cable fix in Phase 1, Step B).
+- (Frontier exploration moved up to Phase 4 on 2026-10-16. It runs on today's open-loop
+  `/odom` + IMU heading; real encoders would make it more precise.)
 - Camera and Jetson: start from scratch when the time comes

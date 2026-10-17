@@ -3,17 +3,20 @@
 <package format="3">
   <name>lucia_web</name>
   <version>0.1.0</version>
-  <description>Web control page: start/stop mapping, live map, drive pad, save maps.</description>
+  <description>Web control page: mapping, live map and radar, explore / return home, speed, drive pad, save maps.</description>
   <maintainer email="christianmichael.villanueva@sjsu.edu">LUCIA Team</maintainer>
   <license>TODO</license>
 
   <exec_depend>rclpy</exec_depend>
   <exec_depend>geometry_msgs</exec_depend>
   <exec_depend>nav_msgs</exec_depend>
+  <exec_depend>nav2_msgs</exec_depend>
+  <exec_depend>std_msgs</exec_depend>
   <exec_depend>sensor_msgs</exec_depend>
   <exec_depend>tf2_ros</exec_depend>
   <exec_depend>nav2_map_server</exec_depend>
   <exec_depend>lucia_bringup</exec_depend>
+  <exec_depend>lucia_nav</exec_depend>
 
   <test_depend>python3-pytest</test_depend>
   <test_depend>ament_copyright</test_depend>

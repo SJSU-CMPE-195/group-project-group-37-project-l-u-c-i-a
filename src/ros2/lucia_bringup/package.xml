@@ -7,15 +7,20 @@
   <maintainer email="christianmichael.villanueva@sjsu.edu">LUCIA Team</maintainer>
   <license>TODO</license>
 
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>geometry_msgs</exec_depend>
+  <exec_depend>std_msgs</exec_depend>
   <exec_depend>rplidar_ros</exec_depend>
   <exec_depend>slam_toolbox</exec_depend>
   <exec_depend>nav2_bringup</exec_depend>
   <exec_depend>lucia_lidar</exec_depend>
   <exec_depend>lucia_control</exec_depend>
   <exec_depend>lucia_imu</exec_depend>
+  <exec_depend>lucia_nav</exec_depend>
   <exec_depend>robot_localization</exec_depend>
   <exec_depend>tf2_ros</exec_depend>
 
+  <test_depend>python3-pytest</test_depend>
   <test_depend>ament_copyright</test_depend>
   <test_depend>ament_flake8</test_depend>
   <test_depend>ament_pep257</test_depend>

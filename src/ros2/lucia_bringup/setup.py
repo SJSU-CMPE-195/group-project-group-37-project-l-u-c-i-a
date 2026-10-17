@@ -21,6 +21,8 @@ setup(
     description='Launch files for bringing up the full LUCIA rover stack.',
     license='TODO',
     entry_points={
-        'console_scripts': [],
+        'console_scripts': [
+            'safety_gate = lucia_bringup.safety_gate:main',
+        ],
     },
 )

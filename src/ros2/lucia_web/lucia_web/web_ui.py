@@ -8,6 +8,11 @@ From the page you can:
 - see whether the lidar, IMU and wheels (/scan, /imu/data, /odom) are alive
 - start/stop mapping (runs `ros2 launch lucia_bringup mapping.launch.py`)
 - watch the map build live, with the robot's position on it
+- watch the lidar live as a radar around the robot (forward is up)
+- set the driving speed (the drive pad, and Nav2 through its speed_limit topic)
+- explore on its own (frontier exploration), return home, or click the map to
+  send the robot somewhere: these go to lucia_nav's mission node on
+  /mission/command, and its /mission/state and Nav2's /plan are drawn on the map
 - drive with an on-screen pad or the arrow keys (testing tool, like teleop)
 - save the map and download the PNG
 
@@ -34,20 +39,26 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import rclpy
 from ament_index_python.packages import get_package_share_directory
 from geometry_msgs.msg import Twist
-from nav_msgs.msg import OccupancyGrid, Odometry
+from nav2_msgs.msg import SpeedLimit
+from nav_msgs.msg import OccupancyGrid, Odometry, Path
 from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 from rclpy.qos import (DurabilityPolicy, QoSProfile, ReliabilityPolicy,
                        qos_profile_sensor_data)
 from rclpy.time import Time
 from sensor_msgs.msg import Imu, LaserScan
+from std_msgs.msg import String
 from tf2_ros import Buffer, TransformException, TransformListener
 
-from lucia_web.logic import (drive_to_twist, encode_grid, topic_status,
-                             valid_map_name, yaw_from_quaternion)
+from lucia_web.logic import (clamp_speed, drive_to_twist, encode_grid,
+                             mission_text, radar_nearest, scan_to_radar,
+                             thin_path, topic_status, valid_map_name,
+                             yaw_from_quaternion)
 from lucia_web.mapping_process import MappingProcess
 
 MAP_FILE_EXTENSIONS = ('.png', '.yaml')
+MISSION_FRESH_S = 3.0       # mission node publishes its state twice a second
+PLAN_FRESH_S = 5.0
 
 
 class WebUi(Node):
@@ -56,15 +67,20 @@ class WebUi(Node):
 
         self.declare_parameter('http_port', 8080)
         self.declare_parameter('maps_dir', '/maps')
-        self.declare_parameter('max_linear_mps', 0.15)
-        self.declare_parameter('max_angular_rad_s', 0.6)
+        self.declare_parameter('speed_mps', 0.15)           # starting value of the page's speed slider
+        self.declare_parameter('min_speed_mps', 0.05)
+        self.declare_parameter('max_speed_mps', 0.30)       # roomba_bridge's own cap is 0.30
+        self.declare_parameter('turn_rate_ratio', 4.0)      # rad/s of turning per m/s of speed (0.15 -> 0.6)
         self.declare_parameter('drive_timeout_s', 0.3)
+        self.declare_parameter('radar_slices', 180)         # 2 degrees each
 
         self._http_port = self.get_parameter('http_port').value
         self.maps_dir = self.get_parameter('maps_dir').value
-        self._max_linear = self.get_parameter('max_linear_mps').value
-        self._max_angular = self.get_parameter('max_angular_rad_s').value
+        self._min_speed = self.get_parameter('min_speed_mps').value
+        self._max_speed = self.get_parameter('max_speed_mps').value
+        self._turn_rate_ratio = self.get_parameter('turn_rate_ratio').value
         self._drive_timeout_s = self.get_parameter('drive_timeout_s').value
+        self._radar_slices = self.get_parameter('radar_slices').value
 
         self.static_dir = os.path.join(get_package_share_directory('lucia_web'), 'static')
         self.mapping = MappingProcess()
@@ -77,21 +93,32 @@ class WebUi(Node):
         self._drive = (0.0, 0.0)
         self._drive_time = None
         self._driving = False
+        self._speed = clamp_speed(self.get_parameter('speed_mps').value,
+                                  self._min_speed, self._max_speed)
+        self._radar = None          # latest radar view for the page, see _on_scan
+        self._radar_seq = 0
+        self._laser_yaw = {}        # scan frame_id -> its yaw on the robot, from TF
+        self._mission = None        # (time, state dict) from /mission/state
+        self._plan = None           # (time, [(x, y), ...]) from Nav2's /plan
 
-        self.create_subscription(LaserScan, 'scan', lambda _: self._seen('lidar'),
-                                 qos_profile_sensor_data)
+        self.create_subscription(LaserScan, 'scan', self._on_scan, qos_profile_sensor_data)
         self.create_subscription(Imu, 'imu/data', lambda _: self._seen('imu'), 10)
         self.create_subscription(Odometry, 'odom', lambda _: self._seen('wheels'), 10)
         map_qos = QoSProfile(depth=1, reliability=ReliabilityPolicy.RELIABLE,
                              durability=DurabilityPolicy.TRANSIENT_LOCAL)
         self.create_subscription(OccupancyGrid, 'map', self._on_map, map_qos)
+        self.create_subscription(String, 'mission/state', self._on_mission, 10)
+        self.create_subscription(Path, 'plan', self._on_plan, 1)
 
         self._cmd_pub = self.create_publisher(Twist, 'cmd_vel', 10)
+        self._mission_pub = self.create_publisher(String, 'mission/command', 10)
+        self._speed_limit_pub = self.create_publisher(SpeedLimit, 'speed_limit', 10)
         self._tf_buffer = Buffer()
         self._tf_listener = TransformListener(self._tf_buffer, self)
 
         self.create_timer(0.1, self._drive_tick)
         self.create_timer(0.2, self._update_pose)
+        self.create_timer(1.0, self._publish_speed_limit)
 
         handler = type('Handler', (_Handler,), {'ui': self})
         self._server = ThreadingHTTPServer(('0.0.0.0', self._http_port), handler)
@@ -109,6 +136,26 @@ class WebUi(Node):
         with self._lock:
             self._last_seen[name] = time.monotonic()
 
+    def _on_scan(self, msg):
+        self._seen('lidar')
+        frame = msg.header.frame_id
+        if frame not in self._laser_yaw:
+            # The lidar's mounting is a static transform, so look it up once.
+            try:
+                t = self._tf_buffer.lookup_transform('base_link', frame, Time())
+            except TransformException:
+                return      # not received yet; the next scan tries again
+            q = t.transform.rotation
+            self._laser_yaw[frame] = yaw_from_quaternion(q.x, q.y, q.z, q.w)
+        slices = scan_to_radar(msg.ranges, msg.angle_min, msg.angle_increment,
+                               msg.range_min, msg.range_max,
+                               self._laser_yaw[frame], self._radar_slices)
+        radar = {'slices_cm': slices, 'nearest': radar_nearest(slices)}
+        with self._lock:
+            self._radar_seq += 1
+            radar['seq'] = self._radar_seq
+            self._radar = radar
+
     def _on_map(self, msg):
         info = msg.info
         page_map = {
@@ -123,6 +170,36 @@ class WebUi(Node):
             self._map_version += 1
             page_map['version'] = self._map_version
             self._map = page_map
+
+    def _on_mission(self, msg):
+        try:
+            state = json.loads(msg.data)
+        except json.JSONDecodeError:
+            return
+        if not isinstance(state, dict):
+            return
+        with self._lock:
+            self._mission = (time.monotonic(), state)
+
+    def _on_plan(self, msg):
+        points = thin_path((p.pose.position.x, p.pose.position.y) for p in msg.poses)
+        with self._lock:
+            self._plan = (time.monotonic(), points)
+
+    def _publish_speed_limit(self):
+        # Nav2's controller only listens while it runs and keeps no history,
+        # so this is sent every second rather than only when the slider moves.
+        msg = SpeedLimit()
+        msg.percentage = False
+        with self._lock:
+            msg.speed_limit = float(self._speed)
+        self._speed_limit_pub.publish(msg)
+
+    def _mission_state(self):
+        """Latest mission state if the mission node is alive, else None. Call with the lock held."""
+        if self._mission is None or time.monotonic() - self._mission[0] > MISSION_FRESH_S:
+            return None
+        return self._mission[1]
 
     def _update_pose(self):
         try:
@@ -153,10 +230,44 @@ class WebUi(Node):
     # ------------------------------------------------------------------
 
     def set_drive(self, linear_frac, angular_frac):
-        twist = drive_to_twist(linear_frac, angular_frac, self._max_linear, self._max_angular)
         with self._lock:
-            self._drive = twist
+            mission = self._mission_state()
+            if mission and mission.get('mode') != 'idle':
+                return False    # the robot is driving itself; STOP first
+            speed = self._speed
+            self._drive = drive_to_twist(linear_frac, angular_frac,
+                                         speed, speed * self._turn_rate_ratio)
             self._drive_time = time.monotonic()
+        return True
+
+    def send_mission(self, body):
+        text = mission_text(body)
+        if text is None:
+            return False, 'Unknown request'
+        if text == 'stop':
+            # Stop the wheels right here too, in case the mission node isn't running.
+            with self._lock:
+                self._drive_time = None
+            self._cmd_pub.publish(Twist())
+        elif not self.mapping.running:
+            return False, 'Start mapping first - navigation runs with it'
+        self._mission_pub.publish(String(data=text))
+        return True, {'explore': 'Exploring', 'home': 'Going home',
+                      'stop': 'Stopped'}.get(text, 'Going there')
+
+    def set_speed(self, mps):
+        speed = clamp_speed(mps, self._min_speed, self._max_speed)
+        if speed is None:
+            return False, 'Speed must be a number'
+        with self._lock:
+            self._speed = speed
+        return True, f'Speed {speed * 100:.0f} cm/s'
+
+    def radar_if_newer(self, seq):
+        with self._lock:
+            if self._radar is None or self._radar['seq'] == seq:
+                return None
+            return self._radar
 
     def status(self):
         now = time.monotonic()
@@ -165,12 +276,21 @@ class WebUi(Node):
                        for name, t in self._last_seen.items()}
             pose = self._pose
             map_version = self._map['version'] if self._map else None
+            speed = self._speed
+            mission = self._mission_state()
+            plan = None
+            if (mission and mission.get('mode') != 'idle' and self._plan is not None
+                    and now - self._plan[0] < PLAN_FRESH_S):
+                plan = self._plan[1]
         return {
             'mapping': self.mapping.running,
             'use_imu': self.mapping.use_imu,
             'sensors': sensors,
             'pose': None if pose is None else {'x': pose[0], 'y': pose[1], 'yaw': pose[2]},
             'map_version': map_version,
+            'speed': {'mps': speed, 'min': self._min_speed, 'max': self._max_speed},
+            'mission': mission,
+            'plan': plan,
             'log': self.mapping.log_tail(),
         }
 
@@ -236,6 +356,13 @@ class _Handler(BaseHTTPRequestHandler):
                 self.end_headers()
             else:
                 self._send_json(page_map)
+        elif path == '/api/scan':
+            radar = self.ui.radar_if_newer(_query_int(query, 'seq'))
+            if radar is None:
+                self.send_response(204)
+                self.end_headers()
+            else:
+                self._send_json(radar)
         elif path == '/api/maps':
             self._send_json({'maps': self.ui.list_maps()})
         elif path.startswith('/maps/'):
@@ -257,8 +384,14 @@ class _Handler(BaseHTTPRequestHandler):
             self._send_json({'ok': False, 'message': 'bad JSON'}, 400)
             return
         if self.path == '/api/drive':
-            self.ui.set_drive(body.get('linear', 0), body.get('angular', 0))
-            self._send_json({'ok': True})
+            ok = self.ui.set_drive(body.get('linear', 0), body.get('angular', 0))
+            self._send_json({'ok': ok})
+        elif self.path == '/api/mission':
+            ok, message = self.ui.send_mission(body)
+            self._send_json({'ok': ok, 'message': message})
+        elif self.path == '/api/speed':
+            ok, message = self.ui.set_speed(body.get('mps'))
+            self._send_json({'ok': ok, 'message': message})
         elif self.path == '/api/mapping/start':
             started = self.ui.mapping.start(use_imu=bool(body.get('use_imu', True)))
             self._send_json({'ok': started, 'message': 'Mapping started' if started else 'Already running'})

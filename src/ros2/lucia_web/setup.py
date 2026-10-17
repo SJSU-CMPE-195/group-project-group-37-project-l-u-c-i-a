@@ -17,7 +17,7 @@ setup(
     zip_safe=True,
     maintainer='LUCIA Team',
     maintainer_email='christianmichael.villanueva@sjsu.edu',
-    description='Web control page: start/stop mapping, live map, drive pad, save maps.',
+    description='Web control page: mapping, live map and radar, explore / return home, speed, drive pad, save maps.',
     license='TODO',
     entry_points={
         'console_scripts': [
