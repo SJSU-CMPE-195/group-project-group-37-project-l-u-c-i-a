@@ -49,7 +49,8 @@
 | 9/4/2026 | 3 hours | In-person | Ling, Ethan | CAD Planning | 
 | 9/18/2026 | 6 hours | In-person | Christian, Ling, Ethan, Noel | CAD Continuation and TOF Sensor Compatibility | 
 | 10/9/2026 | 5 hours | In-person | Christian, Ling, Ethan, Noel | Hardware Testing | 
-| 10/9/2026 | 3 hours | In-person | Ling, Ethan | IMU and Nano Setup |
+| 10/12/2026 | 3 hours | In-person | Ling, Ethan | IMU and Nano Setup |
+| 10/16/2026 | 5 hours | In-person | Christian, Ling, Ethan, Noel | IMU and TOF Implementation | 
 
 ---
 ## Meeting Notes
@@ -455,3 +456,19 @@ Ling, Ethan
 **Decisions:**
 - Will work on creating Python code to have the Nano deliver data to Pi
 - Need to look into solving compatibility issues of Nano with personal hardware
+
+### 10/16/2026 - Team Meeting
+
+**Attendees:**
+Christian, Ling, Ethan, Noel
+
+**Discussion:**
+- Assembled arm and all printed hardware
+- Created object detection on the Nano
+- Implemented IMU alongside LiDAR scanning algorithm
+
+**Decisions:**
+- Finalize Pi Drawer mounting and IMU
+- Work on Frontier Mode
+- Create a return to Home feature
+- Have Jetson communicate with Pi (and screen)
