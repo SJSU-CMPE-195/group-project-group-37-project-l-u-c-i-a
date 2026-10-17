@@ -213,6 +213,19 @@ Folder: `src/ros2/lucia_bringup/`, `src/ros2/lucia_web/`, `docker/compose.yml`
   - Includes the serial library control needs, the lidar and mapping packages, and the keyboard driving tool (`teleop_twist_keyboard`)
 - [x] Build it on the Pi: `docker build -t lucia/ros2:latest docker/` (built fine, about 8 minutes). Needs internet, so do it on a network with internet, not the robot's own WiFi.
 - [x] `update.sh` was hardcoded to pull the `testing` branch. Fixed 2026-10-16 to pull `dev`, the team's new shared integration branch.
+  Removed 2026-10-17, with `docs/Updating the Repo on the Pi.md`: it joined a `lucia` WiFi that doesn't exist and ran
+  `git clean -fd` (deletes saved maps). Updating is `git pull` + compose restart, see `docs/setup/ros2-pi.md`
+- [x] Network settings checked on the Pi (2026-10-17): `pi-ap` autoconnect priority 100 (saved WiFi: 0), AP mode,
+  10.42.0.1/24, channel 6, country US; `dnsmasq` serves 10.42.0.10-100; docker, dnsmasq, NetworkManager and
+  avahi-daemon enabled at boot; container `restart: unless-stopped`. The setup doc was missing the priority step (added)
+- [x] Container stops cleanly (written 2026-10-17, not yet tried): `ros2 run` was the container's main process and
+  ignored SIGTERM, so every restart/shutdown waited 30 s and force-killed everything (the Roomba could keep driving).
+  `compose.yml` now has `init: true` and starts `web_ui` directly. On the Pi: `docker compose -f docker/compose.yml up -d`
+  once (restart keeps old settings), then `time docker compose -f docker/compose.yml restart` should take seconds
+- [ ] Try `ssh lucia@lucia.local` from the laptop on a shared WiFi
+- [ ] Try the Pi 5 power button for a clean shutdown (two presses on the desktop OS)
+- [ ] Optional: let NetworkManager run the hotspot's address server (`ipv4.method shared`) instead of the separate
+  `dnsmasq`; switching WiFi would then be one command each way, with no dnsmasq to stop and start
 - [x] `docs/setup/ros2-pi.md` rewritten (2026-10-16): running from the web page, what runs where, updating, network modes, udev rules, compose, IMU Pico, diagnostics, known issues
 - [x] `colcon build` on the Pi fails on `lucia_vision` (Jetson/ZED package, needs CUDA) and then skips the rest. The Dockerfile now writes a colcon defaults file (skip `lucia_vision`, symlink-install), so plain `colcon build` works once the image is rebuilt
 

@@ -125,7 +125,12 @@ The hotspot has no internet, so updates need a network that does.
    git fetch origin && git checkout dev && git pull && git submodule update --init
    docker compose -f docker/compose.yml restart    # rebuilds the ROS2 code on start
    ```
-3. If `docker/Dockerfile` changed, rebuild the image first (about 7 minutes):
+3. If `docker/compose.yml` changed, use `up -d` instead of `restart`
+   (`restart` keeps the container's old settings):
+   ```bash
+   docker compose -f docker/compose.yml up -d
+   ```
+4. If `docker/Dockerfile` changed, rebuild the image first (about 7 minutes):
    ```bash
    docker build -t lucia/ros2:latest docker/
    docker compose -f docker/compose.yml up -d --force-recreate
@@ -134,8 +139,9 @@ The hotspot has no internet, so updates need a network that does.
 The Pi keeps only the `dev` and `main` branches. Work happens on personal
 branches and is merged into `dev`; the Pi pulls `dev`.
 
-Avoid `update.sh` for now: it tries to join a `lucia` WiFi that may not exist,
-and runs `git clean -fd`.
+(`update.sh` was removed on 2026-10-17. It joined a `lucia` WiFi that doesn't
+exist, worked around NetworkManager to do it, and ran `git clean -fd`, which
+deletes untracked files such as saved maps.)
 
 ---
 
@@ -148,26 +154,44 @@ and runs `git clean -fd`.
 | Ethernet | Bench work, or as a safe way in while switching WiFi | Varies: `ip -4 addr show eth0` | Depends |
 
 The Pi has one WiFi radio, so it's either a hotspot or on a shared WiFi, not both.
+At boot it always starts the hotspot: `pi-ap` has autoconnect priority 100 and
+every saved WiFi has 0 (checked 2026-10-17). Saved WiFi on the Pi: Christian's
+personal network and `LiveLaughLove`.
 
-**Switch to a shared WiFi.** Do this over Ethernet SSH if you can, since the
-hotspot goes away:
+**Switch to a shared WiFi.** Ethernet SSH is the safest way in, but it works over
+the hotspot too; the session just drops when the hotspot goes away:
 ```bash
 nmcli connection show                        # saved networks
-sudo systemctl stop dnsmasq                  # the hotspot's address server - must stop first
-sudo nmcli connection up "<network name or UUID>"
-ip -4 addr show wlan0                        # the new address
+sudo systemctl stop dnsmasq                  # the hotspot's address server - stop it first
+sudo nmcli connection up "<network name or UUID>" || sudo systemctl start dnsmasq
 ```
-Stopping `dnsmasq` matters. It hands out addresses on the hotspot, and if it
-keeps running on a shared network it hands them out there too, which can knock
-other devices offline.
+Then join your laptop to that same WiFi and `ssh lucia@lucia.local` (the Pi
+announces its name on the network with avahi, so you don't need its IP; not yet
+tried from the laptop). Otherwise: `ip -4 addr show wlan0` on the Pi, or your
+router's device list.
+
+If the WiFi doesn't come up (wrong password, out of range), NetworkManager falls
+back to the hotspot by itself. The `|| sudo systemctl start dnsmasq` restarts the
+address server for that case. If you ever see `lucia-control` but your laptop
+gets no address, `dnsmasq` is still stopped: reboot the Pi, or give the laptop the
+address `10.42.0.50/24` by hand, `ssh lucia@10.42.0.1`, and run
+`sudo systemctl start dnsmasq`.
 
 **Back to the hotspot:** reboot, or
-`sudo nmcli connection up pi-ap && sudo systemctl start dnsmasq`.
+`sudo nmcli connection up pi-ap && sudo systemctl start dnsmasq` (the session
+drops; join `lucia-control`).
 
 The page is on port 8080 whichever network the Pi is on, for example
-`http://<pi address>:8080`.
+`http://lucia.local:8080`.
 
-SSH: `ssh lucia@10.42.0.1` on the hotspot, otherwise the address from the table above.
+SSH: `ssh lucia@10.42.0.1` on the hotspot, `ssh lucia@lucia.local` elsewhere.
+
+**Turning it off without a screen:** press the Pi 5's power button, then press it
+again (on the desktop version of the OS the first press opens a shutdown menu).
+Don't hold it down: that cuts the power. Or `sudo poweroff` over SSH. Either way
+the container gets told to stop, so mapping stops and the Roomba is released
+cleanly before the Pi powers off. (The two-press behavior is from the Pi docs,
+not yet tried on this robot.)
 
 ---
 
@@ -202,6 +226,8 @@ the Pi 5 limits its own USB ports to 600 mA in total (`usb_max_current_enable=0`
 
 `docker/compose.yml` runs it in the background and restarts it at boot
 (`restart: unless-stopped`). On start, it runs `colcon build` and then `web_ui`.
+Stopping it (`restart`, `down`, or a Pi shutdown) lets `web_ui` stop mapping
+first, so the wheels stop and the Roomba is released; that takes a few seconds.
 It shares all of `/dev` with access rules by device type, so it starts even if a
 device is unplugged, and sees devices that are plugged in later.
 
@@ -210,6 +236,7 @@ cd ~/repos/group-project-group-37-project-l-u-c-i-a
 docker compose -f docker/compose.yml up -d        # start (and at every boot from then on)
 docker compose -f docker/compose.yml logs -f      # watch output (Ctrl+C stops watching only)
 docker compose -f docker/compose.yml restart      # after a git pull
+docker compose -f docker/compose.yml up -d        # after a change to compose.yml itself
 docker compose -f docker/compose.yml down         # stop, and don't start at boot
 docker exec -it lucia_ros2 bash                   # a shell inside, for ROS2 commands
 ```
