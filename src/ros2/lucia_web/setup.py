@@ -17,7 +17,7 @@ setup(
     zip_safe=True,
     maintainer='LUCIA Team',
     maintainer_email='christianmichael.villanueva@sjsu.edu',
-    description='Web control page: mapping, live map and radar, explore / return home, speed, drive pad, save maps.',
+    description='Web control page: mapping, map + radar + metrics, Explore / HOME / STOP, logs, Reconnect Roomba, horn and tunes, keyboard driving, save maps.',
     license='TODO',
     entry_points={
         'console_scripts': [

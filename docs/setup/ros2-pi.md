@@ -96,7 +96,7 @@ plus our additions (`docker/Dockerfile`), sidesteps that.
 
 | Package (`src/ros2/`) | Node | Owns | Publishes / does |
 |---|---|---|---|
-| `lucia_control` | `roomba_bridge` | `/dev/roomba` | `/cmd_vel` → wheels (Safe mode, re-entered every second); `/odom` estimated from commanded wheel speeds |
+| `lucia_control` | `roomba_bridge` | `/dev/roomba` | `/cmd_vel_safe` → wheels (Safe mode, re-entered every second); `/odom` estimated from commanded wheel speeds; `~/reconnect` service (Reconnect Roomba); `~/song` topic (horn and tunes, up to 64 notes) |
 | `lucia_lidar` | `rplidar_composition` (from `rplidar_ros`) | `/dev/rplidar` | `/scan` at about 10 Hz |
 | `lucia_lidar` | `slam_toolbox` | | `/map`, `map`→`odom` |
 | `lucia_imu` | `imu_bridge` | `/dev/imu` | `/imu/data` (heading + turn rate) at about 50 Hz |
@@ -104,7 +104,7 @@ plus our additions (`docker/Dockerfile`), sidesteps that.
 | `lucia_bringup` | `safety_gate` | | `/cmd_vel` → `/cmd_vel_safe` (what `roomba_bridge` listens to); with `use_tof:=true`, blocks forward motion while `tof/near` is true or silent |
 | `lucia_nav` | Nav2: `controller_server`, `planner_server`, `behavior_server`, `bt_navigator`, `lifecycle_manager_navigation` | | Plans a path on `/map` and drives it (`/cmd_vel`, `/plan`); settings in `lucia_nav/config/nav2.yaml` |
 | `lucia_nav` | `mission` | | Explore (frontiers) / return home / go to a spot: takes `/mission/command`, sends Nav2 goals, publishes `/mission/state` |
-| `lucia_web` | `web_ui` | port 8080 | The control page; starts/stops `mapping.launch.py`, sends `/mission/command`, sets Nav2's `speed_limit` |
+| `lucia_web` | `web_ui` | port 8080 | The control page; starts/stops `mapping.launch.py`, sends `/mission/command`, sets Nav2's `speed_limit`, reads every node's log (`/rosout`), keeps saved tunes in `~/maps/tunes.json` |
 | `lucia_vision` | | | Jetson/ZED camera code. Doesn't build on the Pi (needs CUDA); skipped automatically |
 
 Rule: **one program per device.** Nothing else opens a device's port while its
@@ -366,7 +366,7 @@ comes back. See Known issues.
   If they do, the fault is at the Roomba end; if not, replace the adapter or cable.
 - **Lidar freezes after `Start`** (rare, seen once on a first run): the motor
   spins, but there's no `current scan mode` line and no `/scan`, and Ctrl+C is
-  ignored. Press Ctrl+\ and rerun, or Stop and Start mapping on the page.
+  ignored. On the page: Stop mapping, then Start mapping. In a terminal: Ctrl+\ and rerun.
 - **Roomba turned off and on, or its battery died:** turn it on and press
   **Reconnect Roomba** on the page, then listen for a short beep. Mapping keeps
   running, so the map isn't lost. (A freshly powered-on Roomba ignores the

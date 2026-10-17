@@ -23,7 +23,11 @@ SJSU CMPE 195A/B senior design, team 37. **Advisor:** Professor Wencen Wu
   in, which removed the drift of the first maps.
 - **Web control page** at http://10.42.0.1:8080: start mapping, Explore / Return HOME / STOP,
   a live radar of the lidar, live metrics (heading, speed, distance, area mapped, Pi
-  health), every node's log, drive by keyboard for testing, save and download maps.
+  health), every node's log, Reconnect Roomba (after it was turned off and on, without
+  losing the map), a horn and tunes on the Roomba's speaker (including melodies imported
+  from MIDI files), drive by keyboard for testing, save and download maps.
+- **Starts by itself:** power on and the Pi brings up its hotspot and the page; no screen,
+  keyboard or other network needed.
 - **In progress:** a time-of-flight safety stop for things below the lidar (Noel), object
   recognition with a ZED 2i camera on a Jetson Nano (Ethan). Not working yet: battery and
   wheel encoder readings (the Roomba's serial replies don't reach the Pi).
@@ -40,6 +44,11 @@ SJSU CMPE 195A/B senior design, team 37. **Advisor:** Professor Wencen Wu
 5. Press **Explore**. Stay near it: it steers around what the lidar sees, not things lower
    than the lidar. **STOP** (top right, or Space / Esc) stops it.
 6. When it's back HOME, type a name and press **Save**; download the PNG from the list.
+
+If the Roomba was turned off and on (or its battery died), turn it on and press
+**Reconnect Roomba**; it beeps when it's listening again. **Horn** (or the H key) honks.
+To turn everything off, `sudo poweroff` over SSH, or the Pi's power button (twice on the
+desktop OS; not tried yet), rather than pulling the plug.
 
 The full how-to (what each light means, the logs, updating the code, switching the Pi to
 another WiFi for internet, debugging): **[`docs/setup/ros2-pi.md`](docs/setup/ros2-pi.md)**.
@@ -66,12 +75,12 @@ support directly). The container starts at boot (Docker Compose) and serves the 
 
 | Package (`src/ros2/`) | What it does |
 |---|---|
-| `lucia_control` | `roomba_bridge`: drives the wheels over serial (Safe mode), position estimate |
+| `lucia_control` | `roomba_bridge`: drives the wheels over serial (Safe mode), position estimate, reconnect, tunes |
 | `lucia_lidar` | RPLidar driver + slam_toolbox (the map) |
 | `lucia_imu` | `imu_bridge`: reads the IMU Pico, publishes heading and turn rate |
 | `lucia_bringup` | `mapping.launch.py` (starts everything), IMU + wheels fusion (EKF), `safety_gate` |
 | `lucia_nav` | Nav2 set up for the Roomba, and `mission`: Explore, Return HOME, go to a spot |
-| `lucia_web` | `web_ui`: the control page |
+| `lucia_web` | `web_ui`: the control page (also: logs, metrics, tunes and MIDI import) |
 | `lucia_vision` | Jetson / ZED camera code (doesn't build on the Pi) |
 
 Code for the Picos: `src/imu/` (IMU) and `src/tof_pico/` (ToF sensors).

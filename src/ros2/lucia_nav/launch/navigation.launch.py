@@ -17,7 +17,7 @@ start the rest either.
 Usage:
     ros2 launch lucia_nav navigation.launch.py
 
-NOT YET RUN on the Pi.
+Runs on the Pi: Explore worked on the robot 2026-10-17.
 """
 
 import os

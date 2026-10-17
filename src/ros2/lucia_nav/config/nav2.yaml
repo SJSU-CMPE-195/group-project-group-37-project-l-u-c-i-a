@@ -15,7 +15,7 @@
 # Speed: desired_linear_vel is only the default. The web page's speed slider
 # overrides it through Nav2's speed_limit topic (lucia_web/web_ui.py).
 #
-# NOT YET RUN on the Pi.
+# Runs on the Pi: Explore worked on the robot 2026-10-17 (after allow_unknown: false).
 
 bt_navigator:
   ros__parameters:

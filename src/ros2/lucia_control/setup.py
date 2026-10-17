@@ -14,7 +14,7 @@ setup(
     zip_safe=True,
     maintainer='LUCIA Team',
     maintainer_email='christianmichael.villanueva@sjsu.edu',
-    description='Roomba bridge node — translates ROS2 /cmd_vel to Roomba OI serial commands.',
+    description='Roomba bridge: /cmd_vel to the wheels over serial (Safe mode), /odom, reconnect service, tunes on the speaker.',
     license='TODO',
     entry_points={
         'console_scripts': [

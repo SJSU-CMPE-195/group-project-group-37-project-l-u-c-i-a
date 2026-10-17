@@ -19,7 +19,8 @@ mapping.launch.py starts it and points roomba_bridge at /cmd_vel_safe:
 lucia_tof's own node must be running for tof/near to exist; without it,
 use_tof:=true blocks all forward driving (missing = danger).
 
-NOT YET RUN on the Pi.
+Runs on the Pi in pass-through (use_tof:=false) as part of mapping.launch.py since
+2026-10-16. The blocking path (use_tof:=true) is not yet tried.
 """
 
 import time

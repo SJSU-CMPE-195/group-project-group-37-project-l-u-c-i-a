@@ -22,7 +22,7 @@ path and steers around what the lidar sees.
 Usage (normally started by lucia_nav's navigation.launch.py):
     ros2 run lucia_nav mission
 
-NOT YET RUN on the Pi.
+Runs on the Pi: Explore worked on the robot 2026-10-17.
 """
 
 import json

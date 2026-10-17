@@ -3,7 +3,7 @@
 <package format="3">
   <name>lucia_web</name>
   <version>0.1.0</version>
-  <description>Web control page: mapping, live map and radar, explore / return home, speed, drive pad, save maps.</description>
+  <description>Web control page: mapping, map + radar + metrics, Explore / HOME / STOP, logs, Reconnect Roomba, horn and tunes, keyboard driving, save maps.</description>
   <maintainer email="christianmichael.villanueva@sjsu.edu">LUCIA Team</maintainer>
   <license>TODO</license>
 

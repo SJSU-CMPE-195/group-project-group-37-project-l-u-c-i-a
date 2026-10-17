@@ -31,7 +31,8 @@ The IMU transform is identity: mount the board flat, chip side up. Which way it
 points doesn't matter - only heading and turn rate are used, and the EKF treats
 its heading at startup as 0 (imu0_relative in ekf.yaml).
 
-Ran on the Pi 2026-10-16 without the navigation part; use_nav (Nav2) is NOT YET RUN.
+Runs on the Pi: mapping since 2026-10-16, with Nav2 + Explore since 2026-10-17.
+use_tof:=true is not yet tried (the ToF sensors aren't mounted).
 """
 
 import os

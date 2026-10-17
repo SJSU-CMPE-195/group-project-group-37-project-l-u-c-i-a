@@ -3,7 +3,7 @@
 <package format="3">
   <name>lucia_control</name>
   <version>0.1.0</version>
-  <description>Roomba bridge node — translates ROS2 /cmd_vel to Roomba OI serial commands.</description>
+  <description>Roomba bridge: /cmd_vel to the wheels over serial (Safe mode), /odom, reconnect service, tunes on the speaker.</description>
   <maintainer email="christianmichael.villanueva@sjsu.edu">LUCIA Team</maintainer>
   <license>TODO</license>
 

@@ -14,17 +14,20 @@ a test tool for checking one piece at a time; it is not how the robot is meant t
 
 ## Right now
 
-Control (wheels, open-loop `/odom`), the lidar (`/scan`), mapping and the IMU all work on the real robot.
-2026-10-16: first room map by keyboard driving, then a much cleaner one with Ling's IMU fused in,
-then the web control page: power on, join `lucia-control`, open http://10.42.0.1:8080
-(how-to: `docs/setup/ros2-pi.md`; maps in `media/maps/`).
-Decided 2026-10-16: SWEEP mode first; frontier exploration is a later feature.
-**Changed the same evening, at Christian's request:** frontier exploration, return HOME, a live
-radar and a speed control on the web page, built on Nav2 (already in the Docker image). All
-written and tested on the laptop (pure-Python tests + the page against a simulated robot).
-**2026-10-17: Explore works on the robot** after fixing its routes (Phase 4). Then the web page v2
-(big map, radar + metrics sidebar, on-screen logs, working keys; Phase 5), laptop-tested, not yet on
-the Pi. The ToF safety gate is written too (`use_tof`, off until the sensors are mounted).
+**The robot maps a room by itself** (as of 2026-10-17): power on, join `lucia-control`, open
+http://10.42.0.1:8080, Start mapping, **Explore**; it maps what it can reach and comes back HOME
+(how-to: `docs/setup/ros2-pi.md`; maps in `media/maps/`). Working on the real robot: wheels
+(open-loop `/odom`), lidar, IMU heading, slam_toolbox mapping, Nav2 + frontier exploration, the
+web page (v2: big map, radar + metrics, logs drawer, keys).
+
+History: 2026-10-16 first maps by keyboard, then IMU fused in, then the web page. SWEEP was
+planned first; frontier exploration was moved ahead of it that evening at Christian's request.
+2026-10-17: Explore fixed and working, page v2, README and network docs checked against the Pi.
+
+Written 2026-10-17, **not yet tried on the robot**: clean container stop (`compose.yml`, needs
+`up -d` once), Reconnect Roomba, horn and tunes (with MIDI import), the 0.23 m footprint. Written
+earlier and waiting on hardware: the ToF safety gate (`use_tof`, off until the sensors are mounted).
+Next: those first tries (see Phase 5 and "Setup on the Pi"), then the ToF stop.
 
 ---
 
@@ -72,7 +75,7 @@ Folder: `src/ros2/lucia_lidar/`
 - [x] Map-building settings file (`config/slam_toolbox.yaml`) - package defaults plus this lidar's real range limits
 - [x] Tried on the real lidar (2026-10-09): the executable name is `rplidar_composition`, not `rplidar_node` (though the *node* it creates is still named `rplidar_node`, which is what the config file's settings apply to - that part was already right). Hit "Cannot start scan" at first - fixed by explicitly setting `scan_mode: Standard`, already in the config file; the ROS2 driver's own default scan mode isn't compatible with this lidar's firmware (Hardware Rev 5, Firmware 1.25). `/scan` now publishes at ~11.7 Hz.
 - [x] Lidar scans show up on `/scan`
-- [x] Launch file (`launch/lidar_and_map.launch.py`) starts the lidar + `slam_toolbox` together - written, syntax-checked, **not yet run** (no ROS2 on the laptop that wrote it)
+- [x] Launch file (`launch/lidar_and_map.launch.py`) starts the lidar + `slam_toolbox` together; runs on the Pi (2026-10-16, see the bench test and the room maps below)
   - Fixed 2026-10-16 before the first run: it now starts `slam_toolbox` through the package's own launch file (Jazzy's slam_toolbox needs a lifecycle activate step, so the executable-name guess is gone), and adds the missing `base_link`→`laser` transform, without which every scan is dropped
 - [x] `scan_check` works on the Pi (2026-10-16): readings follow a hand moved around the lidar
 - [x] Bench test, robot stationary (2026-10-16): launch file + `roomba_bridge` → slam_toolbox configured, activated, built and saved a map (`map_saver_cli`, 68×121 cells @ 5 cm). Only a small starburst is filled in: a stationary robot gives slam_toolbox a single scan, and it leaves cells unknown until a ray has crossed them at least twice. Driving fills it in
@@ -87,12 +90,12 @@ Works best after Phase 1, Step B.
 The first map's doubled wall is heading drift from the open-loop `/odom`. The IMU fixes heading
 without waiting on the Roomba cable.
 - [x] Pico streaming code `src/imu/stream_main.py` (upload as `main.py`): game rotation vector + gyro, one `I,qw,qx,qy,qz,gx,gy,gz` line per reading at about 50 Hz. Ling to review against her setup
-- [x] `lucia_imu` package: `imu_bridge` node reads the Pico and publishes `/imu/data` (parser has pure-Python tests). Not yet run on the Pi
+- [x] `lucia_imu` package: `imu_bridge` node reads the Pico and publishes `/imu/data` (parser has pure-Python tests). Runs on the Pi (2026-10-16)
 - [x] Pico streams `I,` lines when plugged into the Pi (`/dev/ttyACM0`), about 50/s (2026-10-16). Loaded from the Pi with `mpremote` (installed via `pipx`): `mpremote connect /dev/ttyACM0 fs cp src/imu/stream_main.py :main.py`. That Pico previously held a ToF `main.py`; it's backed up on the Pi at `~/tof_main_backup.py`. The driver files `bno08x.py` / `i2c.py` live in the Pico's root (Ling's copies, import already fixed). Unused duplicates also got copied to the Pico's `lib/`; delete them next time the Pico is in VS Code (`mpremote` couldn't interrupt the running stream to do it)
 - [x] udev rule `/dev/imu` added to `/etc/udev/rules.d/99-lucia.rules` (2026-10-16), matching the Pico's serial `fd92d5f577b9417b` (the ToF Pico has the same vendor/product ID). Confirm `ls -la /dev/imu` shows the link, and use `--device=/dev/imu` in the `docker run` command
 - [x] `imu_bridge` on the Pi (2026-10-16): 50 readings/s, 0 bad lines. A quarter turn left by hand read +94.7° (positive = left, the ROS convention) and came back to about +1-2° when turned back
 - [ ] Mount the IMU flat and fixed on the robot; note which way its axes point (needs a `base_link`→`imu_link` transform, like the lidar's)
-- [x] Fusion written (not yet run): `lucia_bringup/config/ekf.yaml` takes forward speed from `/odom` and heading + turn rate from `/imu/data`; `roomba_bridge` gained `publish_tf` (off when the EKF runs) and now fills in `/odom`'s twist with rough variances. `ros2 launch lucia_bringup mapping.launch.py` starts roomba_bridge + imu_bridge + EKF + lidar + slam_toolbox (`use_imu:=false` = the first-map setup)
+- [x] Fusion (runs on the Pi since 2026-10-16, `room2.png`): `lucia_bringup/config/ekf.yaml` takes forward speed from `/odom` and heading + turn rate from `/imu/data`; `roomba_bridge` gained `publish_tf` (off when the EKF runs) and now fills in `/odom`'s twist with rough variances. `ros2 launch lucia_bringup mapping.launch.py` starts roomba_bridge + imu_bridge + EKF + lidar + slam_toolbox (`use_imu:=false` = the first-map setup)
 - [x] Image rebuilt on the Pi (about 6.5 min); plain `colcon build` skips `lucia_vision`. `mapping.launch.py` starts cleanly: `imu_bridge` on `/dev/imu`, `roomba_bridge` hands `odom`→`base_link` to the EKF, slam_toolbox registers the lidar, no warnings (2026-10-16)
 - [x] Mapped the same room again with the IMU (`room2.png`, 2026-10-16): walls are single thin lines with square corners and much less speckle; the doubled wall from `room1.png` is gone. One run each with different starting headings, so not a controlled comparison, but the heading fix is clearly visible
 - [ ] `imu_bridge`: skip the first, partial line after opening the port (it shows up as a harmless `Pico: 01477,...` log line)
@@ -110,7 +113,7 @@ Decided 2026-10-16: built on the **ToF distance sensors** the team is implementi
   within 300 mm, or a sensor silent). Before it goes on the Pi: its udev rule (`99-lucia-tof.rules`) matches
   any MicroPython Pico (`2e8a:0005`) without a serial number, so `/dev/lucia_tof` can grab the IMU Pico
   too. Add the ToF Pico's `ATTRS{serial}`, like the `/dev/imu` rule
-- [x] "Stop if something's too close" node (2026-10-16, not yet run): `lucia_bringup` `safety_gate`.
+- [x] "Stop if something's too close" node (2026-10-16; runs in pass-through on the Pi, the blocking path not yet tried): `lucia_bringup` `safety_gate`.
   Everything that drives (page, Nav2, mission) publishes `/cmd_vel`; the gate passes it to `/cmd_vel_safe`,
   which `roomba_bridge` listens to in `mapping.launch.py`. With `use_tof:=true` it blocks forward motion
   while `tof/near` is true or silent; turning and backing up still pass so Nav2 can turn away. Default
@@ -174,26 +177,26 @@ Folder: `src/ros2/lucia_bringup/`
 ## Phase 5 — One command starts everything
 
 Folder: `src/ros2/lucia_bringup/`, `src/ros2/lucia_web/`, `docker/compose.yml`
-- [x] `mapping.launch.py`: control + IMU + EKF + lidar + slam_toolbox (2026-10-16). Same evening: + safety gate (`use_tof`) and Nav2 + mission (`use_nav`), not yet run
-- [x] Web control page `lucia_web` (written 2026-10-16, not yet run on the Pi): status lights for lidar/IMU/wheels,
+- [x] `mapping.launch.py`: control + IMU + EKF + lidar + slam_toolbox (2026-10-16). Same evening: + safety gate (`use_tof`) and Nav2 + mission (`use_nav`); Nav2 runs on the robot since 2026-10-17, `use_tof:=true` not yet tried
+- [x] Web control page `lucia_web` (2026-10-16, working on the Pi the same day, see below): status lights for lidar/IMU/wheels,
   Start/Stop mapping (runs `mapping.launch.py`, IMU on/off), live map with the robot's position, hold-to-drive pad
   and arrow keys (test tool; the page stops sending when released and `roomba_bridge` times out as a second layer),
   save map + download PNG. Plain `http.server`, no new packages. Parsing/validation and process control have
   pure-Python tests; the HTTP endpoints were smoke-tested with ROS stubbed out
-- [x] `docker/compose.yml` (written, not yet run): container in the background, `restart: unless-stopped` so it starts
+- [x] `docker/compose.yml` (2026-10-16, running on the Pi since): container in the background, `restart: unless-stopped` so it starts
   at boot, runs `colcon build` then `web_ui`. Shares `/dev` with device-type rules, so an unplugged Pico or lidar at
   boot doesn't stop the container from starting
 - [x] On the Pi (2026-10-16): `docker compose -f docker/compose.yml up -d`, page opened from the laptop, mapping started, driven and saved from the browser. Working
 - [ ] Reboot test on the hotspot alone: Pi comes up on `lucia-control`, the container starts by itself, page loads at http://10.42.0.1:8080 (not separately confirmed yet)
-- [x] Christian's changes to the web page (2026-10-16, tested against a simulated robot, not yet on the Pi):
+- [x] Christian's changes to the web page (2026-10-16; used on the robot 2026-10-17):
   - Radar: live lidar around the robot, forward up, 1/2/4 m zoom, nearest-obstacle readout
   - Speed slider (5-30 cm/s): drive pad and Nav2
   - Autonomy card: Explore, Return HOME, STOP (also Space/Esc; floats on phones while driving itself),
     click-the-map go-to. The map shows frontiers, the current goal, HOME and Nav2's planned path.
-    The drive pad is locked while the robot drives itself
+    The drive pad was locked while the robot drives itself (replaced 2026-10-17: driving by hand takes over)
   - Navigation light in the header
-- [x] Web page v2 (2026-10-17, laptop-tested with scripted browser checks against the simulated robot, not yet on
-  the Pi):
+- [x] Web page v2 (2026-10-17, scripted browser checks against the simulated robot; on the Pi since 2026-10-17, the
+  checks below still open):
   - Layout: left column (about 1/5) with the radar at the top, live metrics under it, then the controls; the map
     fills the rest. Explore / HOME / STOP also in the header so they're always on screen
   - Metrics: heading + compass, wheel speed, ground speed, turn rate (IMU gyro), distance driven, time, distance
@@ -209,6 +212,8 @@ Folder: `src/ros2/lucia_bringup/`, `src/ros2/lucia_web/`, `docker/compose.yml`
   (pick the part, start time, octave); saved tunes in `~/maps/tunes.json` on the Pi. Played by `roomba_bridge`'s
   `~/song` topic: up to 64 notes as 4 song slots back to back. Persona / Pokémon tunes: import fan MIDIs (not
   committed to the repo)
+- [ ] Later: tunes longer than 64 notes, by refilling the Roomba's song slots while it plays (untested whether
+  the Roomba allows that; a short gap every 16 notes)
 - [ ] On the Pi: Pi-health metrics show numbers (container reads `/sys` thermal), logs drawer shows Nav2/mission
   lines, keys + takeover on the real robot
 
