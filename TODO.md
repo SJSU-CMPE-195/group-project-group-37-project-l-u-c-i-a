@@ -260,6 +260,25 @@ Folder: `src/ros2/lucia_bringup/`, `src/ros2/lucia_web/`, `docker/compose.yml`
   map image and the on-screen drive pad (arrow buttons) are only reachable by scrolling down the left column,
   which he doesn't like. Idea: a Download button at the top of the page (header) instead. Ask what else he wants
   changed before starting
+- [ ] **Next session: settings menu** (Christian, 2026-10-17; note only, not started). The values that are fixed in
+  code today should be editable on the page: a small menu that opens on **Start mapping**, filled with the current
+  values as defaults (plus a way back to the defaults). Inventory of what's fixed today:
+  - Speed: top speed 0.30 / min 0.05 (`web_ui`), wheel cap `max_speed_mm_s` 300 (`roomba_bridge`), Nav2
+    `desired_linear_vel` 0.30, keyboard turn rate `turn_rate_ratio` 4
+  - Acceleration: `roomba_bridge` `max_linear_accel` / `decel` 0.3 / 0.6, `max_angular_accel` / `decel` 1.5 / 3.0
+  - Tight spaces ("doorway" slowdown): `safety_gate` `min_speed_mps` 0.06, and the room thresholds in
+    `safety_logic.tight_space_cap` (`near_slow` / `near_fast` 0.05 / 0.35 m, `ahead_slow` / `ahead_fast` 0.2 / 0.8 m),
+    which are function defaults, not node parameters yet
+  - Robot size 0.23 m radius: in four places (`nav2.yaml` both costmaps + inflation 0.45, mission `clearance_m` 0.25
+    and `robot_radius_m`, `safety_gate`, `web_ui` drawing); one setting should feed all of them
+  - Stuck check / recovery: mission `stuck_checks` 3, `max_stuck` 3, `backup_m` 0.15, `backup_speed_mps` 0.08; the
+    check's own thresholds (`MotionCheck` window 3 s, min travel 0.12 m, etc.) are constructor defaults
+  - Explore: `goal_timeout_s` 90, `min_frontier_m` 0.3, `frontier_gain` 0.5, `avoid_radius_m` 0.5,
+    `return_home_when_done`; driving by hand `resume_after_s` 3
+  - Maybe: slam_toolbox `occupancy_threshold` (how fast moved objects fade from the map), `resolution`
+  - How it could work: `web_ui` saves the settings (like `tunes.json`, in `~/maps/`) and passes them to
+    `mapping.launch.py` at Start mapping (launch arguments, or a generated params file), so they apply from the next
+    Start mapping. Nodes only read parameters at startup today; the speed slider is the one live setting
 - [ ] On the Pi: Pi-health metrics show numbers (container reads `/sys` thermal), logs drawer shows Nav2/mission
   lines, keys + takeover on the real robot
 
