@@ -20,6 +20,9 @@ From the page you can:
 - read every node's log (/rosout) and the launch output in a drawer under the map
 - reconnect to the Roomba after it was turned off and on (roomba_bridge's
   ~/reconnect service), without stopping mapping
+- honk the horn and play tunes on the Roomba's speaker (roomba_bridge's ~/song
+  topic): built-in ones, saved ones (tunes.json next to the saved maps), typed
+  ones, and melodies taken from MIDI files (tunes.py)
 - save the map and download the PNG
 
 Driving is hold-to-move: the page sends a command every 100 ms while a button
@@ -66,6 +69,9 @@ from lucia_web.logic import (RateMeter, Trail, clamp_speed, cpu_percent,
                              radar_nearest, scan_to_radar, thin_path,
                              topic_status, valid_map_name, yaw_from_quaternion)
 from lucia_web.mapping_process import MappingProcess
+from lucia_web.tunes import (BUILTIN, guess_melody_part, load_library,
+                             melody, parse_midi, parse_tune_text, save_library,
+                             tune_seconds, tune_text, valid_tune_name)
 
 MAP_FILE_EXTENSIONS = ('.png', '.yaml')
 MISSION_FRESH_S = 3.0       # mission node publishes its state twice a second
@@ -75,6 +81,7 @@ LOG_KEEP = 2000             # /rosout entries kept for the page
 LOG_SEND_MAX = 500          # most entries sent in one /api/logs reply
 LOG_MSG_MAX = 500           # characters kept per log message
 RECONNECT_TIMEOUT_S = 20.0  # roomba_bridge's reconnect takes about 5 s
+MIDI_MAX_BYTES = 2_000_000
 
 
 class WebUi(Node):
@@ -145,6 +152,9 @@ class WebUi(Node):
         self._mission_pub = self.create_publisher(String, 'mission/command', 10)
         self._speed_limit_pub = self.create_publisher(SpeedLimit, 'speed_limit', 10)
         self._reconnect_client = self.create_client(Trigger, 'roomba_bridge/reconnect')
+        self._song_pub = self.create_publisher(String, 'roomba_bridge/song', 10)
+        self._tunes_path = os.path.join(self.maps_dir, 'tunes.json')
+        self._tunes_lock = threading.Lock()
         self._reconnecting = threading.Lock()
         self._tf_buffer = Buffer()
         self._tf_listener = TransformListener(self._tf_buffer, self)
@@ -370,6 +380,99 @@ class WebUi(Node):
         finally:
             self._reconnecting.release()
 
+    # ---- Tunes ---------------------------------------------------------
+
+    def tunes_list(self):
+        def entry(name, notes):
+            return {'name': name, 'text': tune_text(notes), 'notes': len(notes),
+                    'seconds': round(tune_seconds(notes), 1)}
+        with self._tunes_lock:
+            custom = load_library(self._tunes_path)
+        return {'builtin': [entry(n, t) for n, t in BUILTIN.items()],
+                'custom': [entry(n, t) for n, t in sorted(custom.items(), key=lambda kv: kv[0].lower())]}
+
+    def _tune_from(self, body):
+        """(name, tune) from {'name': ...} (built-in or saved) or {'text': ...}. ValueError if neither works."""
+        if not isinstance(body, dict):
+            raise ValueError('bad request')
+        if body.get('text'):
+            return body.get('name') or 'Tune', parse_tune_text(body['text'])
+        name = body.get('name')
+        if name in BUILTIN:
+            return name, BUILTIN[name]
+        with self._tunes_lock:
+            custom = load_library(self._tunes_path)
+        if name in custom:
+            return name, custom[name]
+        raise ValueError(f'No tune called "{name}"')
+
+    def check_tune(self, body):
+        try:
+            _, tune = self._tune_from(body)
+        except ValueError as exc:
+            return {'ok': False, 'message': str(exc)}
+        return {'ok': True, 'text': tune_text(tune), 'tune': tune, 'notes': len(tune),
+                'seconds': round(tune_seconds(tune), 1)}
+
+    def play_tune(self, body):
+        try:
+            name, tune = self._tune_from(body)
+        except ValueError as exc:
+            return False, str(exc)
+        if not self.mapping.running:
+            return False, 'Start mapping first - the Roomba driver runs with it'
+        self._song_pub.publish(String(data=json.dumps({'notes': tune})))
+        return True, f'Playing {name} ({tune_seconds(tune):.1f} s)'
+
+    def save_tune(self, body):
+        name = body.get('name', '').strip() if isinstance(body.get('name'), str) else ''
+        if not valid_tune_name(name):
+            return False, 'Name it with 1-40 letters, digits, spaces or ( ) \' ! & . , + -'
+        if name in BUILTIN:
+            return False, f'"{name}" is a built-in tune - pick another name'
+        try:
+            tune = parse_tune_text(body.get('text'))
+        except ValueError as exc:
+            return False, str(exc)
+        with self._tunes_lock:
+            library = load_library(self._tunes_path)
+            existed = name in library
+            library[name] = tune
+            try:
+                save_library(self._tunes_path, library)
+            except OSError as exc:
+                return False, f'Could not save: {exc}'
+        return True, f'{"Updated" if existed else "Saved"} "{name}"'
+
+    def delete_tune(self, body):
+        name = body.get('name')
+        with self._tunes_lock:
+            library = load_library(self._tunes_path)
+            if name not in library:
+                return False, 'Only saved tunes can be deleted' if name in BUILTIN else f'No saved tune "{name}"'
+            del library[name]
+            try:
+                save_library(self._tunes_path, library)
+            except OSError as exc:
+                return False, f'Could not delete: {exc}'
+        return True, f'Deleted "{name}"'
+
+    def midi_tune(self, data, part, start_s, transpose):
+        """A MIDI file -> its parts, and one part's melody as a tune (text format)."""
+        try:
+            parts = parse_midi(data)
+            index = part if part is not None and 0 <= part < len(parts) else guess_melody_part(parts)
+            tune, info = melody(parts[index]['notes'], start_s or 0.0, transpose or 0)
+        except ValueError as exc:
+            return {'ok': False, 'message': str(exc)}
+        return {
+            'ok': True,
+            'parts': [{'index': k, 'name': p['name'], 'notes': len(p['notes']),
+                       'seconds': round(p['notes'][-1][1], 1)} for k, p in enumerate(parts)],
+            'part': index, 'text': tune_text(tune), 'notes': len(tune),
+            'seconds': round(tune_seconds(tune), 1), 'info': info,
+        }
+
     def start_mapping(self, use_imu):
         with self._lock:
             self._trail.reset()
@@ -536,6 +639,8 @@ class _Handler(BaseHTTPRequestHandler):
             self._send_json({'lines': self.ui.mapping.log_tail(200)})
         elif path == '/api/trail':
             self._send_json(self.ui.trail_since(_query_str(query, 'session'), _query_int(query, 'from')))
+        elif path == '/api/tunes':
+            self._send_json(self.ui.tunes_list())
         elif path == '/api/maps':
             self._send_json({'maps': self.ui.list_maps()})
         elif path.startswith('/maps/'):
@@ -552,6 +657,15 @@ class _Handler(BaseHTTPRequestHandler):
     # POST --------------------------------------------------------------
 
     def do_POST(self):
+        path, _, query = self.path.partition('?')
+        if path == '/api/tunes/midi':
+            length = int(self.headers.get('Content-Length') or 0)
+            if not 0 < length <= MIDI_MAX_BYTES:
+                self._send_json({'ok': False, 'message': 'MIDI file missing or over 2 MB'}, 400)
+                return
+            self._send_json(self.ui.midi_tune(self.rfile.read(length), _query_int(query, 'part'),
+                                              _query_float(query, 'start'), _query_int(query, 'transpose')))
+            return
         body = self._read_json()
         if body is None:
             self._send_json({'ok': False, 'message': 'bad JSON'}, 400)
@@ -564,6 +678,17 @@ class _Handler(BaseHTTPRequestHandler):
             self._send_json({'ok': ok, 'message': message})
         elif self.path == '/api/speed':
             ok, message = self.ui.set_speed(body.get('mps'))
+            self._send_json({'ok': ok, 'message': message})
+        elif self.path == '/api/tunes/check':
+            self._send_json(self.ui.check_tune(body))
+        elif self.path == '/api/tunes/play':
+            ok, message = self.ui.play_tune(body)
+            self._send_json({'ok': ok, 'message': message})
+        elif self.path == '/api/tunes/save':
+            ok, message = self.ui.save_tune(body)
+            self._send_json({'ok': ok, 'message': message})
+        elif self.path == '/api/tunes/delete':
+            ok, message = self.ui.delete_tune(body)
             self._send_json({'ok': ok, 'message': message})
         elif self.path == '/api/roomba/reconnect':
             ok, message = self.ui.reconnect_roomba()
@@ -619,6 +744,15 @@ def _query_str(query, key):
         if k == key:
             return v
     return None
+
+
+def _query_float(query, key):
+    v = _query_str(query, key)
+    try:
+        f = float(v)
+    except (TypeError, ValueError):
+        return None
+    return f if f == f and abs(f) < 1e6 else None     # no NaN / inf
 
 
 def _query_int(query, key):

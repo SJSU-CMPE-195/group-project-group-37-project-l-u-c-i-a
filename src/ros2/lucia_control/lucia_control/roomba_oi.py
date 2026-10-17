@@ -135,9 +135,24 @@ class RoombaOI:
         it after start(). Since the Roomba's replies don't reach the Pi, hearing
         this is the only sign that it received the commands. (ROS2 copy only.)
         """
-        # Song: slot, note count, then (MIDI note, duration in 1/64 s) pairs
-        self._send(self.OP_SONG, self.BEEP_SLOT, 2, 72, 8, 79, 12)
-        self._send(self.OP_PLAY, self.BEEP_SLOT)
+        self.define_song(self.BEEP_SLOT, [(72, 8), (79, 12)])
+        self.play_song(self.BEEP_SLOT)
+
+    def define_song(self, slot, notes):
+        """
+        Store a song in slot 0-3: up to 16 (MIDI note, duration in 1/64 s) pairs.
+        Notes outside 31-127 are rests. (ROS2 copy only; see lucia_control/song.py.)
+        """
+        if not 0 <= slot <= 3 or not 1 <= len(notes) <= 16:
+            raise ValueError('slot must be 0-3 and a song 1-16 notes')
+        cmd = [self.OP_SONG, slot, len(notes)]
+        for note, duration in notes:
+            cmd.extend([note, duration])
+        self._send(*cmd)
+
+    def play_song(self, slot):
+        """Play a stored song. The Roomba ignores this while another song is playing."""
+        self._send(self.OP_PLAY, slot)
 
     # ------------------------------------------------------------------
     # Motion

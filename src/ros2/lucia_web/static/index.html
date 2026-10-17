@@ -132,6 +132,13 @@
   .logview .WARN { color: var(--warn); } .logview .ERROR, .logview .FATAL { color: var(--bad); } .logview .DEBUG { color: var(--muted); }
   #scrollNote { font-size: 12px; color: var(--warn); }
 
+  textarea { font: 12px/1.4 ui-monospace, Menlo, Consolas, monospace; width: 100%; resize: vertical; padding: 6px 8px;
+             border-radius: 8px; border: 1px solid var(--line); background: var(--bg); color: var(--text); margin-top: 8px; }
+  #tunesCard .row + .row { margin-top: 8px; }
+  #tunesCard details { margin-top: 10px; }
+  #tunesCard details .row { margin-top: 8px; }
+  #tunesCard input[type=file] { font-size: 12px; margin-top: 8px; max-width: 100%; }
+  #tuneInfo.err, #midiInfo.err { color: var(--bad); }
   #haltFloat { display: none; position: fixed; right: 16px; bottom: 16px; z-index: 10; padding: 14px 26px; font-size: 17px;
                box-shadow: 0 4px 14px rgba(0,0,0,.3); }
 
@@ -160,6 +167,7 @@
   </div>
   <span id="message"></span>
   <span class="row headbtns">
+    <button id="hornTop" title="Honk the Roomba's horn (H)">Horn</button>
     <button class="primary" id="exploreTop" title="Frontier exploration: map everything it can reach, then come home">Explore</button>
     <button id="homeTop" title="Drive back to where mapping started">HOME</button>
     <button class="halt" id="haltTop" title="Stop driving (Space or Esc)">STOP</button>
@@ -257,6 +265,40 @@
       </div>
       <p class="hint"><span id="driveHint">WASD or arrow keys; hold to move. Space or Esc = STOP.</span>
         Driving by hand during Explore or HOME stops it.</p>
+    </section>
+
+    <section class="card" id="tunesCard">
+      <h2>Horn and tunes</h2>
+      <div class="row">
+        <button class="primary" id="horn" title="Honk (H key)">Horn</button>
+        <select id="tuneSel" style="flex:1" title="Built-in and saved tunes"></select>
+      </div>
+      <div class="row">
+        <button id="tunePlay" title="Play the notes in the box on the Roomba's speaker">Play on Roomba</button>
+        <button id="tunePreview" title="Play the notes in the box here, in the browser">Preview here</button>
+      </div>
+      <textarea id="tuneText" rows="4" spellcheck="false" placeholder="B4:16 G#4:16 R:8 ..."></textarea>
+      <p class="hint" id="tuneInfo"></p>
+      <div class="row">
+        <input type="text" id="tuneName" placeholder="Name to save as" maxlength="40" style="flex:1">
+        <button id="tuneSave">Save</button>
+        <button id="tuneDelete" title="Delete the selected saved tune">Delete</button>
+      </div>
+      <details id="midiBox">
+        <summary>Import from a MIDI file</summary>
+        <input type="file" id="midiFile" accept=".mid,.midi,audio/midi,audio/x-midi">
+        <div class="row"><select id="midiPart" style="flex:1" disabled title="Which instrument has the tune"></select></div>
+        <div class="row">
+          <label>Start at <input type="number" id="midiStart" value="0" min="0" step="0.5" style="width:5em"> s</label>
+          <label>Octave <select id="midiOct">
+            <option value="-24">-2</option><option value="-12">-1</option><option value="0" selected>0</option>
+            <option value="12">+1</option><option value="24">+2</option></select></label>
+        </div>
+        <p class="hint" id="midiInfo">Pick the part that has the tune; its melody lands in the box above, one note at a
+          time, at most 64 notes. Preview, adjust, then Save.</p>
+      </details>
+      <p class="hint">Notes: a name and octave (C4 = middle C), a MIDI number, or R for a rest, then :duration in
+        1/64 s (16 = a quarter second). One note at a time, up to 64.</p>
     </section>
 
     <section class="card">
@@ -876,6 +918,7 @@ window.addEventListener('keydown', e => {
     if (status && status.mapping) { e.preventDefault(); keys.clear(); lightPad(keys); stopAll(); }
     return;
   }
+  if (e.key.toLowerCase() === 'h') { e.preventDefault(); if (!e.repeat) horn(); return; }
   const k = KEYMAP[e.key.toLowerCase()];
   if (!k) return;
   e.preventDefault();                           // the speed slider / a dropdown mustn't take the arrows
@@ -886,6 +929,149 @@ window.addEventListener('keyup', e => {
   if (k && keys.delete(k)) keyDrive();
 });
 window.addEventListener('blur', () => { keys.clear(); lightPad(keys); stopDrive(); });
+
+// ---- Horn and tunes ----------------------------------------------------------
+// The Roomba plays one note at a time, up to 64 notes (4 song slots of 16). The
+// server checks and stores tunes; the browser preview is a square wave, which
+// sounds roughly like the Roomba's speaker.
+let tunes = { builtin: [], custom: [] };
+const isCustom = name => tunes.custom.some(t => t.name === name);
+
+async function horn() {
+  try { const r = await post('/api/tunes/play', { name: 'Horn' }); say(r.ok ? 'Honk!' : r.message, r.ok); }
+  catch (e) { say('Could not reach the robot', false); }
+}
+$('horn').onclick = $('hornTop').onclick = horn;
+
+async function loadTunes(select) {
+  try { tunes = await (await fetch('/api/tunes')).json(); } catch (e) { return; }
+  const sel = $('tuneSel'), keep = select ?? sel.value;
+  sel.innerHTML = '';
+  for (const [label, list] of [['Built-in', tunes.builtin], ['Saved', tunes.custom]]) {
+    if (!list.length) continue;
+    const g = document.createElement('optgroup'); g.label = label;
+    for (const t of list) { const o = document.createElement('option'); o.value = o.textContent = t.name; g.append(o); }
+    sel.append(g);
+  }
+  if ([...sel.options].some(o => o.value === keep)) sel.value = keep;
+  showTune();
+}
+function showTune() {
+  const t = [...tunes.builtin, ...tunes.custom].find(x => x.name === $('tuneSel').value);
+  if (!t) return;
+  $('tuneText').value = t.text;
+  $('tuneName').value = isCustom(t.name) ? t.name : '';
+  $('tuneDelete').disabled = !isCustom(t.name);
+  setTuneInfo(`${t.notes} notes, ${t.seconds} s`, true);
+}
+function setTuneInfo(text, ok) { const el = $('tuneInfo'); el.textContent = text; el.className = 'hint' + (ok ? '' : ' err'); }
+$('tuneSel').onchange = () => showTune();
+
+async function checkTune() {
+  const r = await post('/api/tunes/check', { text: $('tuneText').value });
+  setTuneInfo(r.ok ? `${r.notes} notes, ${r.seconds} s` : r.message, r.ok);
+  return r;
+}
+let checkTimer = null;
+$('tuneText').addEventListener('input', () => { clearTimeout(checkTimer); checkTimer = setTimeout(checkTune, 300); });
+
+$('tunePlay').onclick = async () => {
+  try {
+    const r = await post('/api/tunes/play', { text: $('tuneText').value, name: $('tuneName').value || $('tuneSel').value });
+    say(r.message, r.ok);
+  } catch (e) { say('Could not reach the robot', false); }
+};
+$('tuneSave').onclick = async () => {
+  const name = $('tuneName').value.trim();
+  const r = await post('/api/tunes/save', { name, text: $('tuneText').value });
+  say(r.message, r.ok);
+  if (r.ok) loadTunes(name);
+};
+$('tuneDelete').onclick = async () => {
+  const name = $('tuneSel').value;
+  if (!isCustom(name) || !confirm(`Delete "${name}"?`)) return;
+  const r = await post('/api/tunes/delete', { name });
+  say(r.message, r.ok);
+  if (r.ok) loadTunes(tunes.builtin[0] && tunes.builtin[0].name);
+};
+
+// Preview in the browser
+let audio = null, previewOsc = null;
+function stopPreview() {
+  if (previewOsc) { try { previewOsc.stop(); } catch (e) { /* already stopped */ } }
+  previewOsc = null; $('tunePreview').textContent = 'Preview here';
+}
+function playPreview(tune) {
+  stopPreview();
+  const Ctx = window.AudioContext || window.webkitAudioContext;
+  if (!Ctx) { say('This browser cannot play sound', false); return; }
+  audio = audio || new Ctx();
+  audio.resume();
+  const osc = audio.createOscillator(), gain = audio.createGain();
+  osc.type = 'square'; gain.gain.value = 0;
+  osc.connect(gain).connect(audio.destination);
+  const t0 = audio.currentTime + 0.05;
+  let t = t0;
+  for (const [n, d] of tune) {
+    const len = d / 64;
+    if (n >= 31 && n <= 127) {
+      osc.frequency.setValueAtTime(440 * Math.pow(2, (n - 69) / 12), t);
+      gain.gain.setValueAtTime(0.06, t);
+      gain.gain.setValueAtTime(0, t + len * 0.92);        // a tiny gap, so repeated notes are heard
+    }
+    t += len;
+  }
+  osc.start(t0); osc.stop(t);
+  osc.onended = () => { if (previewOsc === osc) stopPreview(); };
+  previewOsc = osc;
+  $('tunePreview').textContent = 'Stop preview';
+}
+$('tunePreview').onclick = async () => {
+  if (previewOsc) { stopPreview(); return; }
+  const r = await checkTune();
+  if (r.ok) playPreview(r.tune);
+};
+
+// MIDI import: the server picks out the melody; the page re-sends the file when settings change.
+let midiBytes = null, midiName = '';
+async function convertMidi(keepPart) {
+  if (!midiBytes) return;
+  const part = keepPart ? $('midiPart').value : '';
+  const q = `part=${part}&start=${+$('midiStart').value || 0}&transpose=${$('midiOct').value}`;
+  try {
+    const r = await (await fetch('/api/tunes/midi?' + q, { method: 'POST', body: midiBytes,
+                                headers: { 'Content-Type': 'application/octet-stream' } })).json();
+    const info = $('midiInfo');
+    if (!r.ok) { info.textContent = r.message; info.className = 'hint err'; return; }
+    if (!keepPart) {
+      $('midiPart').innerHTML = '';
+      for (const p of r.parts) {
+        const o = document.createElement('option');
+        o.value = p.index; o.textContent = `${p.name}: ${p.notes} notes, ${p.seconds} s`;
+        $('midiPart').append(o);
+      }
+      $('midiPart').disabled = false;
+    }
+    $('midiPart').value = r.part;
+    $('tuneText').value = r.text;
+    if (!keepPart) $('tuneName').value = midiName;     // a new file; later changes keep what you typed
+    setTuneInfo(`${r.notes} notes, ${r.seconds} s`, true);
+    let msg = `Melody: ${r.notes} notes, ${r.seconds} s` + (r.info.truncated ? ` (the first 64 of ${r.info.available}; use Start at for a later part)` : '');
+    if (r.info.out_of_range) msg += `. ${r.info.out_of_range} notes were too low or high for the Roomba (now rests): try another octave.`;
+    info.textContent = msg; info.className = 'hint';
+  } catch (e) { $('midiInfo').textContent = 'Could not reach the robot'; $('midiInfo').className = 'hint err'; }
+}
+$('midiFile').onchange = async () => {
+  const f = $('midiFile').files[0];
+  if (!f) return;
+  midiBytes = await f.arrayBuffer();
+  midiName = f.name.replace(/\.midi?$/i, '').replace(/[^\w ()'!&.,+-]/g, ' ').trim().slice(0, 40);
+  $('midiStart').value = 0;
+  convertMidi(false);
+};
+$('midiPart').onchange = () => convertMidi(true);
+$('midiStart').onchange = () => convertMidi(true);
+$('midiOct').onchange = () => convertMidi(true);
 
 // ---- Save / list maps ----------------------------------------------------
 async function loadMaps() {
@@ -1009,7 +1195,7 @@ $('logDownload').onclick = () => {
 };
 
 // ---- Start ---------------------------------------------------------------
-pollStatus(); loadMaps(); drawRadar(); pollLogs();
+pollStatus(); loadMaps(); drawRadar(); pollLogs(); loadTunes();
 setInterval(pollStatus, 1000);
 setInterval(pollScan, 200);
 setInterval(pollMap, 2000);

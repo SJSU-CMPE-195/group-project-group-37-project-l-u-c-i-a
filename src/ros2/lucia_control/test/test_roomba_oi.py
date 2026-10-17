@@ -33,3 +33,16 @@ def test_start_and_safe_opcodes(monkeypatch):
     roomba.start()
     roomba.safe_mode()
     assert roomba.ser.written == [[128], [131]]
+
+
+def test_define_and_play_song():
+    roomba = make_roomba()
+    roomba.define_song(1, [(60, 16), (0, 8)])
+    roomba.play_song(1)
+    assert roomba.ser.written == [[140, 1, 2, 60, 16, 0, 8], [141, 1]]
+
+
+@pytest.mark.parametrize('slot, notes', [(4, [(60, 8)]), (0, []), (0, [(60, 8)] * 17)])
+def test_define_song_rejects(slot, notes):
+    with pytest.raises(ValueError):
+        make_roomba().define_song(slot, notes)

@@ -204,6 +204,11 @@ Folder: `src/ros2/lucia_bringup/`, `src/ros2/lucia_web/`, `docker/compose.yml`
   - Keys fixed: they used to stop working once the speed slider or a checkbox had focus (and Space/Esc STOP did
     nothing then). Now they work anywhere except while typing in a text box, capitals included
   - Driving by hand during Explore/HOME stops the mission and takes over
+- [x] Horn and tunes (2026-10-17, laptop-tested, not yet on the robot): Horn button + H key; built-in tunes (Horn,
+  Charge!, La Cucaracha, Mass Destruction); type/edit notes; preview in the browser; import a MIDI file's melody
+  (pick the part, start time, octave); saved tunes in `~/maps/tunes.json` on the Pi. Played by `roomba_bridge`'s
+  `~/song` topic: up to 64 notes as 4 song slots back to back. Persona / Pokémon tunes: import fan MIDIs (not
+  committed to the repo)
 - [ ] On the Pi: Pi-health metrics show numbers (container reads `/sys` thermal), logs drawer shows Nav2/mission
   lines, keys + takeover on the real robot
 

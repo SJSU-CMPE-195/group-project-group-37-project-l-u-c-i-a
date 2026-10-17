@@ -55,6 +55,18 @@ Nav2, slam_toolbox, roomba_bridge...), with level / node / text filters, a
 **Launch output** tab (the raw `ros2 launch` text, where startup errors show
 up), and **Download** to save what's shown as a text file.
 
+**Horn and tunes** (on the Roomba's own speaker, while mapping runs): **Horn** in
+the header or the **H** key honks. The *Horn and tunes* card plays the built-in
+tunes (Horn, Charge!, La Cucaracha, Mass Destruction from Persona 3) or saved
+ones, and **Preview here** plays them in the browser first. Notes can be typed
+or edited (`B4:16 G#4:16 R:8 ...`: name and octave, C4 = middle C, or R for a
+rest, then the length in 1/64 s), at most 64, one at a time. **Import from a
+MIDI file** takes the melody of any MIDI file on your laptop or phone: pick the
+part that has the tune, set where to start and the octave, preview, Save. Saved
+tunes live on the Pi in `~/maps/tunes.json` (not in git). Keep the MIDI files
+themselves out of the repo: fan MIDIs of game music are arrangements of
+copyrighted songs.
+
 **Driving by hand** (test tool): WASD or the arrow keys anywhere on the page
 except while typing in a text box, or hold a pad button; it stops when you let
 go. Only while mapping runs (the wheels driver is part of it). Driving by hand

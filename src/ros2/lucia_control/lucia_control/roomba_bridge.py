@@ -26,6 +26,11 @@ ROS2 node that owns the Roomba's serial port (nothing else may open it).
   confirmation. The web page's "Reconnect Roomba" button calls it; mapping keeps
   running, so the map isn't lost.
       ros2 service call /roomba_bridge/reconnect std_srvs/srv/Trigger
+- Topic ~/song (/roomba_bridge/song, std_msgs/String): JSON {"notes": [[note,
+  duration], ...]} plays a tune on the Roomba's speaker (the web page's Horn and
+  tunes). Up to 64 notes, as 4 song slots played back to back by timers, so
+  driving isn't held up. See song.py.
+  Easiest from the page; from a terminal, publish that JSON as the String's data.
 - A serial error (adapter unplugged) is logged instead of crashing the node;
   plug it back in and reconnect.
 
@@ -35,6 +40,7 @@ Usage:
     ros2 run lucia_control roomba_bridge --ros-args -p port:=/dev/ttyUSB0
 """
 
+import json
 import math
 
 import rclpy
@@ -43,12 +49,14 @@ from nav_msgs.msg import Odometry as OdometryMsg
 from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 from serial import SerialException
+from std_msgs.msg import String
 from std_srvs.srv import Trigger
 from tf2_ros import TransformBroadcaster
 
 from lucia_control.motion import twist_to_wheel_speeds
 from lucia_control.odometry import Odometry
 from lucia_control.roomba_oi import RoombaOI
+from lucia_control.song import slot_start_times, slots
 
 
 class RoombaBridge(Node):
@@ -118,6 +126,8 @@ class RoombaBridge(Node):
         self.create_timer(drive_period_s, self._drive_tick)
         self.create_timer(heartbeat_period_s, self._enter_mode)
         self.create_service(Trigger, '~/reconnect', self._on_reconnect)
+        self.create_subscription(String, '~/song', self._on_song, 10)
+        self._song_timers = []              # one-shot timers playing the later slots of a tune
 
         self.get_logger().info(
             f'Ready: mode={self._oi_mode}, wheel_base={self._wheel_base_mm} mm, '
@@ -229,6 +239,42 @@ class RoombaBridge(Node):
                             'if it doesn\'t, check it\'s on (press CLEAN once to wake it) and try again.')
         self.get_logger().info('Reconnect commands sent (listen for the beep)')
         return response
+
+    def _on_song(self, msg):
+        """Play a tune: store all its slots, play the first, and time the rest to follow."""
+        try:
+            tune = json.loads(msg.data)['notes']
+            parts = slots(tune)
+            starts = slot_start_times(tune)
+        except (ValueError, KeyError, TypeError) as exc:
+            self.get_logger().warning(f'Ignoring tune: {exc}')
+            return
+        self._cancel_song()
+        for slot, pairs in parts:
+            self._write(lambda roomba, s=slot, p=pairs: roomba.define_song(s, p))
+        for slot, start_s in starts:
+            if start_s == 0.0:
+                self._write(lambda roomba, s=slot: roomba.play_song(s))
+            else:
+                self._song_timers.append(self._one_shot(
+                    start_s, lambda s=slot: self._write(lambda roomba: roomba.play_song(s))))
+        self.get_logger().info(f'Playing a tune: {sum(len(p) for _, p in parts)} notes, {len(parts)} slot(s)')
+
+    def _one_shot(self, delay_s, action):
+        """Run action once after delay_s (an rclpy timer that cancels itself)."""
+        timer = None
+
+        def fire():
+            timer.cancel()
+            action()
+        timer = self.create_timer(delay_s, fire)
+        return timer
+
+    def _cancel_song(self):
+        for timer in self._song_timers:
+            timer.cancel()
+            self.destroy_timer(timer)
+        self._song_timers = []
 
     def _write(self, action):
         """
