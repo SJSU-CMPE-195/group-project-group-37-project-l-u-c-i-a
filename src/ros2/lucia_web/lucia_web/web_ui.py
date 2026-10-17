@@ -14,7 +14,10 @@ From the page you can:
   send the robot somewhere: these go to lucia_nav's mission node on
   /mission/command, and its /mission/state and Nav2's /plan are drawn on the map
 - drive with an on-screen pad or WASD / arrow keys (testing tool, like teleop).
-  Driving by hand while the robot drives itself stops the mission first.
+  Driving by hand while the robot drives itself pauses the mission (lucia_nav's
+  'pause'); resume_after_s (3 s) after the last key press it carries on by
+  itself ('resume'): Explore keeps going from where it was driven to, HOME and
+  go-to head for the same spot. STOP cancels that.
 - see live metrics: heading, speed, turn rate (IMU), distance driven, area
   mapped, sensor message rates, the Pi's CPU temperature / load / memory
 - read every node's log (/rosout) and the launch output in a drawer under the map
@@ -62,7 +65,7 @@ from std_msgs.msg import String
 from std_srvs.srv import Trigger
 from tf2_ros import Buffer, TransformException, TransformListener
 
-from lucia_web.logic import (RateMeter, Trail, clamp_speed, cpu_percent,
+from lucia_web.logic import (AutoResume, RateMeter, Trail, clamp_speed, cpu_percent,
                              cpu_times, drive_to_twist, encode_grid,
                              log_level_name, mapped_area_m2, mission_text,
                              parse_loadavg, parse_meminfo, parse_temp,
@@ -90,11 +93,12 @@ class WebUi(Node):
 
         self.declare_parameter('http_port', 8080)
         self.declare_parameter('maps_dir', '/maps')
-        self.declare_parameter('speed_mps', 0.15)           # starting value of the page's speed slider
+        self.declare_parameter('speed_mps', 0.30)           # starting top speed (the slider); safety_gate slows it near things
         self.declare_parameter('min_speed_mps', 0.05)
         self.declare_parameter('max_speed_mps', 0.30)       # roomba_bridge's own cap is 0.30
         self.declare_parameter('turn_rate_ratio', 4.0)      # rad/s of turning per m/s of speed (0.15 -> 0.6)
         self.declare_parameter('drive_timeout_s', 0.3)
+        self.declare_parameter('resume_after_s', 3.0)       # driving by hand: carry on this long after; 0 = never
         self.declare_parameter('radar_slices', 180)         # 2 degrees each
         self.declare_parameter('robot_radius_m', 0.23)      # for drawing; 18 in across (nav2.yaml has the same)
 
@@ -104,6 +108,7 @@ class WebUi(Node):
         self._max_speed = self.get_parameter('max_speed_mps').value
         self._turn_rate_ratio = self.get_parameter('turn_rate_ratio').value
         self._drive_timeout_s = self.get_parameter('drive_timeout_s').value
+        self._resume = AutoResume(self.get_parameter('resume_after_s').value)
         self._radar_slices = self.get_parameter('radar_slices').value
         self._robot_radius = self.get_parameter('robot_radius_m').value
 
@@ -160,6 +165,7 @@ class WebUi(Node):
         self._tf_listener = TransformListener(self._tf_buffer, self)
 
         self.create_timer(0.1, self._drive_tick)
+        self.create_timer(0.2, self._resume_tick)
         self.create_timer(0.2, self._update_pose)
         self.create_timer(1.0, self._publish_speed_limit)
         self.create_timer(2.0, self._read_pi_health)
@@ -333,25 +339,38 @@ class WebUi(Node):
     # ------------------------------------------------------------------
 
     def set_drive(self, linear_frac, angular_frac):
-        takeover = False
         with self._lock:
             twist = drive_to_twist(linear_frac, angular_frac,
                                    self._speed, self._speed * self._turn_rate_ratio)
             mission = self._mission_state()
-            if mission and mission.get('mode') != 'idle':
-                if twist == (0.0, 0.0):
-                    return True     # a key let go: don't interrupt the mission with stops
-                # Driving by hand takes over: stop the mission, then drive. Mark it
-                # idle here so the next presses go through before its next update.
-                takeover = True
+            mode = mission.get('mode') if mission else None
+            now = time.monotonic()
+            what = self._resume.drive(mode, twist != (0.0, 0.0), now)
+            if what == 'ignore':
+                return True         # a key let go: don't interrupt the mission with stops
+            if what == 'pause':
+                # Driving by hand takes over: pause the mission, then drive. Mark it
+                # paused here so the next presses go through before its next update.
                 self._mission = (self._mission[0],
-                                 dict(mission, mode='idle', goal=None, message='Stopped: driving by hand'))
+                                 dict(mission, mode='paused', goal=None, paused_from=mode,
+                                      message='Paused: driving by hand'))
             self._drive = twist
-            self._drive_time = time.monotonic()
-        if takeover:
-            self._mission_pub.publish(String(data='stop'))
-            self.get_logger().info('Driving by hand: stopped the mission')
+            self._drive_time = now
+        if what == 'pause':
+            self._mission_pub.publish(String(data='pause'))
+            self.get_logger().info('Driving by hand: paused the mission'
+                                   + ('' if self._resume.after_s <= 0 else
+                                      f'; it carries on {self._resume.after_s:g} s after the last key press'))
         return True
+
+    def _resume_tick(self):
+        """Driving by hand is over (nothing for resume_after_s): let the mission carry on."""
+        with self._lock:
+            mission = self._mission_state()
+            due = self._resume.due(mission.get('mode') if mission else None, time.monotonic())
+        if due:
+            self._mission_pub.publish(String(data='resume'))
+            self.get_logger().info('No driving by hand for a while: resuming the mission')
 
     def reconnect_roomba(self):
         """Ask roomba_bridge to rebuild its Roomba connection. Called from an HTTP thread; waits for the answer."""
@@ -363,6 +382,7 @@ class WebUi(Node):
             # Don't let it drive off the moment the Roomba wakes up.
             with self._lock:
                 self._drive_time = None
+                self._resume.cancel()
                 mission = self._mission_state()
             if mission and mission.get('mode') != 'idle':
                 self._mission_pub.publish(String(data='stop'))
@@ -497,6 +517,8 @@ class WebUi(Node):
         text = mission_text(body)
         if text is None:
             return False, 'Unknown request'
+        with self._lock:
+            self._resume.cancel()       # an order from the page replaces carrying on by itself
         if text == 'stop':
             # Stop the wheels right here too, in case the mission node isn't running.
             with self._lock:
@@ -550,6 +572,7 @@ class WebUi(Node):
                 'pi': self._pi,
             }
             trail = {'session': self._trail.session, 'len': len(self._trail.points)}
+            resume_in_s = self._resume.seconds_left(now) if mission and mission.get('mode') == 'paused' else None
         return {
             'mapping': self.mapping.running,
             'use_imu': self.mapping.use_imu,
@@ -558,6 +581,7 @@ class WebUi(Node):
             'map_version': map_version,
             'speed': {'mps': speed, 'min': self._min_speed, 'max': self._max_speed},
             'mission': mission,
+            'resume_in_s': resume_in_s,
             'plan': plan,
             'telemetry': telemetry,
             'trail': trail,

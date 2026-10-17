@@ -4,7 +4,8 @@
 # planner (finds a path on the map), controller (follows it), behaviors
 # (recoveries: spin, back up, wait) and bt_navigator (the navigate_to_pose
 # action that ties them together). No velocity smoother: the controller
-# publishes /cmd_vel straight to roomba_bridge.
+# publishes /cmd_vel to roomba_bridge (through safety_gate), and roomba_bridge
+# ramps every speed change itself (max_linear_accel etc.), for all drivers.
 #
 # Based on Nav2 Jazzy's nav2_params.yaml, cut down and slowed down.
 #
@@ -13,7 +14,10 @@
 # clearance_m (lucia_nav/mission.py) and web_ui's robot_radius_m (the drawing).
 #
 # Speed: desired_linear_vel is only the default. The web page's speed slider
-# overrides it through Nav2's speed_limit topic (lucia_web/web_ui.py).
+# overrides it through Nav2's speed_limit topic (lucia_web/web_ui.py). Both
+# start at the top speed, 0.30 m/s (roomba_bridge's limit); lucia_bringup's
+# safety_gate slows it down in tight spaces, from the lidar, for every driver.
+# The cost-based slowdown below (center within 0.4 m of an obstacle) adds to it.
 #
 # Runs on the Pi: Explore worked on the robot 2026-10-17 (after allow_unknown: false).
 
@@ -47,6 +51,9 @@ controller_server:
 
     # Give up on a goal (and let the behavior tree recover) if the robot
     # hasn't moved 0.3 m in 15 s. Slow robot, turns in place: be patient.
+    # This watches the odom frame, which is open-loop (commanded speed), so it
+    # can't tell when the robot is stuck; the mission node's stuck check
+    # (lucia_nav/motion_check.py, from the lidar and IMU) does that.
     progress_checker:
       plugin: "nav2_controller::SimpleProgressChecker"
       required_movement_radius: 0.3
@@ -62,7 +69,7 @@ controller_server:
     # A good fit for a differential-drive robot this simple.
     FollowPath:
       plugin: "nav2_regulated_pure_pursuit_controller::RegulatedPurePursuitController"
-      desired_linear_vel: 0.15
+      desired_linear_vel: 0.30      # top speed; safety_gate slows it in tight spaces
       lookahead_dist: 0.4
       min_lookahead_dist: 0.25
       max_lookahead_dist: 0.7

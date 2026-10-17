@@ -141,6 +141,53 @@ def mission_text(body):
     return None
 
 
+DRIVING_MODES = ('explore', 'home', 'goto')     # mission modes where it drives itself
+
+
+class AutoResume:
+    """
+    Driving by hand while the robot drives itself pauses the mission (lucia_nav's
+    'pause'); once nobody has driven for after_s seconds it carries on
+    ('resume'). STOP or any other mission command from the page calls cancel().
+    after_s <= 0: never carry on by itself (press Explore again).
+    """
+
+    def __init__(self, after_s):
+        self.after_s = after_s
+        self.at = None              # when to send resume (time.monotonic())
+
+    def drive(self, mission_mode, moving, now):
+        """
+        A drive command from the page. Returns 'pause' (pause the mission, then
+        drive), 'ignore' (drop this command: a key let go while the mission
+        drives) or None (just drive).
+        """
+        if mission_mode in DRIVING_MODES:
+            if not moving:
+                return 'ignore'
+            self._restart(now)
+            return 'pause'
+        if mission_mode == 'paused' and moving:
+            self._restart(now)
+        return None
+
+    def cancel(self):
+        self.at = None
+
+    def due(self, mission_mode, now):
+        """True once, when it's time to send resume. Forgets it if the mission isn't paused any more."""
+        if self.at is None or now < self.at:
+            return False
+        self.at = None
+        return mission_mode == 'paused'
+
+    def seconds_left(self, now):
+        return None if self.at is None else max(0.0, self.at - now)
+
+    def _restart(self, now):
+        self.at = now + self.after_s if self.after_s > 0 else None
+
+
 def thin_path(points, max_points=120):
     """Every n-th (x, y) of a planned path so at most max_points are sent; always keeps the end."""
     points = list(points)

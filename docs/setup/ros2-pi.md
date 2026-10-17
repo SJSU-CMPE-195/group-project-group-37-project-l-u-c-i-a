@@ -25,9 +25,22 @@ update and debug it. Current as of 2026-10-17. For what changed when, see
    - **HOME** sends it home at any time.
    - **STOP** (top right, or Space / Esc) stops it where it is. On a phone a
      STOP button also floats at the bottom while the robot drives itself.
-   - **Speed** sets how fast it drives, for Explore, HOME and driving by hand.
+   - **Top speed** (starts at the maximum, 30 cm/s) is how fast it drives in the
+     open, for Explore, HOME and driving by hand. It slows down by itself in
+     tight spaces, from the lidar: about 20 cm/s nearing a doorway, 10 cm/s in
+     a 0.7 m doorway, and toward 6 cm/s with something within 5 cm of its side
+     or 20 cm ahead. It never stops on its own account; backing up and turning
+     in place aren't slowed. (`safety_gate`, `tight_space:=false` turns it off.)
    - Stay with it: it steers around what the lidar sees, not things lower than
      the lidar (until the ToF safety stop is on; see `use_tof` below).
+   - **If it gets stuck** (the wheels turn but the robot doesn't move: a cable,
+     a ledge, a chair leg under the lidar, or the Roomba stopping itself at a
+     cliff), it notices within about 2-3 s from the lidar and IMU, plays a short
+     "uh-oh", backs up 15 cm (if nothing is behind it) and tries another
+     frontier; going HOME, it tries again. Stuck 3 times in a row with no goal
+     reached in between, it stops and plays a falling tune three times: come and
+     help. Places it got stuck show as red **!** on the map, and the **Really
+     moving?** metric shows what the check sees. (Not yet tried on the robot.)
 6. Type a name and press **Save**. The map appears in the list underneath; click
    **download** to get the PNG. Saved maps live on the Pi in `~/maps/`.
 7. Press **Stop mapping** when done.
@@ -44,7 +57,9 @@ and autonomy controls, the drive pad, Save map. The rest is the **map**:
 - **Click to go**, then click the map, to send the robot to one spot.
 
 Metrics: heading (0° = the way it faced at Start mapping, clockwise), speed the
-wheels are told, ground speed (from the map), turn rate (IMU gyro), distance
+wheels are told, ground speed (from the map), turn rate (IMU gyro), really
+moving? (the stuck check: how much of what the wheels were told the lidar and
+IMU saw happen), distance
 driven, time mapping, distance from HOME, position, area mapped, frontiers,
 nearest obstacle, lidar / IMU / odom message rates, Pi CPU temperature, CPU and
 memory. Battery says n/a until the Roomba reply cable is fixed.
@@ -70,7 +85,16 @@ copyrighted songs.
 **Driving by hand** (test tool): WASD or the arrow keys anywhere on the page
 except while typing in a text box, or hold a pad button; it stops when you let
 go. Only while mapping runs (the wheels driver is part of it). Driving by hand
-during Explore or HOME stops the mission first.
+during Explore, HOME or a click-to-go pauses it; 3 s after your last key press it
+carries on by itself (Explore from wherever you drove it, keeping what it had
+learned; HOME and go-to head for the same spot). The autonomy message counts
+down. **STOP** cancels that. (`web_ui` parameter `resume_after_s`; 0 = never.)
+
+**Speed changes are gradual**, to spare the Pi, lidar and arm: `roomba_bridge`
+takes 0.5 s to reach 15 cm/s and 0.3 s to stop from it (1 s and 0.5 s at
+30 cm/s). That covers everything, STOP included; parameters
+`max_linear_accel` / `max_linear_decel` (0.3 / 0.6 m/s²) and
+`max_angular_accel` / `max_angular_decel` (1.5 / 3.0 rad/s²).
 
 ### What the lights mean
 

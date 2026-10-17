@@ -8,16 +8,19 @@ they can be tested anywhere:
     home        drive back to where mapping started
     goto X Y    drive to map point (X, Y), in meters
     stop        cancel whatever it's doing and stop the wheels
+    pause       like stop, but remember what it was doing (driving by hand takes over)
+    resume      carry on with what it was doing before pause
 """
 
 import math
 
-SIMPLE = ('explore', 'home', 'stop')
+SIMPLE = ('explore', 'home', 'stop', 'pause', 'resume')
 
 
 def parse_command(text):
     """
-    ('explore',), ('home',), ('stop',) or ('goto', x, y); None if the text
+    ('explore',), ('home',), ('stop',), ('pause',), ('resume',) or
+    ('goto', x, y); None if the text
     isn't a valid command. Case and extra spaces don't matter.
     """
     if not isinstance(text, str):

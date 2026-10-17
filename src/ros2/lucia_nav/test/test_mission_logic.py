@@ -235,3 +235,207 @@ def test_state_is_plain_data():
     assert state['mode'] == 'explore'
     assert state['goal'] is not None and state['frontiers']
     assert state['home'] == {'x': 0.0, 'y': 0.0}
+
+
+# ---- Stuck ---------------------------------------------------------------
+
+def kinds(actions):
+    return [a[0] for a in actions]
+
+
+def test_stuck_exploring_backs_up_then_tries_another_frontier():
+    world = World()
+    logic = make_logic()
+    logic.map_updated(world.grid())
+    (first,) = logic.command('explore', 0.0, world.robot, nav_ready=True)
+    acts = logic.stuck(5.0, (0.3, 0.1), can_back_up=True)
+    assert acts == [('cancel',), ('sound', 'stuck'), ('back_up', 0.15)]
+    assert logic.recovering and logic.mode == 'explore' and logic.goal is None
+    assert logic.failed == [first[2:4]] and logic.stuck_spots == [(0.3, 0.1)]
+    assert 'backing up' in logic.message
+    # Nothing happens until it's done backing up, and the canceled goal's result is ignored
+    assert logic.tick(7.0, world.robot) == []
+    assert logic.goal_finished(first[1], False, 7.0, world.robot) == []
+    assert logic.stuck(7.5, (0.3, 0.1), can_back_up=True) == []
+    (nxt,) = logic.backup_done(8.0, world.robot)
+    assert nxt[0] == 'send' and nxt[2:4] != first[2:4]
+    assert not logic.recovering
+
+
+def test_stuck_with_no_room_behind_moves_on_at_once():
+    world = World()
+    logic = make_logic()
+    logic.map_updated(world.grid())
+    (first,) = logic.command('explore', 0.0, world.robot, nav_ready=True)
+    acts = logic.stuck(5.0, world.robot, can_back_up=False)
+    assert kinds(acts) == ['cancel', 'sound', 'stop_wheels', 'send']
+    assert acts[-1][2:4] != first[2:4] and not logic.recovering
+
+
+def test_stuck_going_home_tries_again():
+    logic = make_logic()
+    logic.command('home', 0.0, (2.0, 1.0), nav_ready=True)
+    logic.stuck(5.0, (1.5, 1.0), can_back_up=True)
+    (retry,) = logic.backup_done(8.0, (1.4, 1.0))
+    assert retry[0] == 'send' and retry[2:] == (0.0, 0.0, 0.0)
+    assert logic.mode == 'home' and 'try 2' in logic.message
+
+
+def test_stuck_on_a_goto_tries_the_same_spot_again():
+    logic = make_logic()
+    logic.command('goto 2 0', 0.0, (0.0, 0.0), nav_ready=True)
+    logic.stuck(5.0, (0.5, 0.0), can_back_up=True)
+    (retry,) = logic.backup_done(8.0, (0.4, 0.0))
+    assert retry[2:4] == (2.0, 0.0) and logic.mode == 'goto'
+
+
+def test_stuck_three_times_in_a_row_asks_for_help():
+    logic = make_logic()
+    logic.command('home', 0.0, (2.0, 1.0), nav_ready=True)
+    for n in (1, 2):
+        logic.stuck(5.0 * n, (1.5, 1.0), can_back_up=True)
+        logic.backup_done(5.0 * n + 2, (1.4, 1.0))
+    acts = logic.stuck(20.0, (1.5, 1.0), can_back_up=True)
+    assert acts == [('cancel',), ('stop_wheels',), ('sound', 'help')]
+    assert logic.mode == 'idle' and 'needs help' in logic.message
+    assert len(logic.stuck_spots) == 3
+
+
+def test_reaching_a_goal_resets_the_count():
+    logic = make_logic()
+    logic.command('goto 2 0', 0.0, (0.0, 0.0), nav_ready=True)
+    logic.stuck(5.0, (0.5, 0.0), can_back_up=True)
+    (retry,) = logic.backup_done(8.0, (0.4, 0.0))
+    assert logic.stuck_in_a_row == 1
+    logic.goal_finished(retry[1], True, 20.0, (2.0, 0.0))
+    assert logic.stuck_in_a_row == 0 and logic.message == 'Arrived'
+
+
+def test_stop_while_backing_up():
+    logic = make_logic()
+    logic.command('home', 0.0, (2.0, 1.0), nav_ready=True)
+    logic.stuck(5.0, (1.5, 1.0), can_back_up=True)
+    assert logic.command('stop', 6.0, (1.5, 1.0), nav_ready=True) == [('cancel',), ('stop_wheels',)]
+    assert not logic.recovering and logic.mode == 'idle'
+    assert logic.backup_done(7.0, (1.4, 1.0)) == []
+
+
+def test_new_command_while_backing_up_takes_over():
+    logic = make_logic()
+    logic.command('home', 0.0, (2.0, 1.0), nav_ready=True)
+    logic.stuck(5.0, (1.5, 1.0), can_back_up=True)
+    (act,) = logic.command('goto 1 1', 6.0, (1.5, 1.0), nav_ready=True)
+    assert act[0] == 'send' and not logic.recovering and logic.stuck_in_a_row == 0
+    assert logic.backup_done(7.0, (1.4, 1.0)) == []
+
+
+def test_stuck_while_driving_by_hand_only_says_so():
+    logic = make_logic()
+    assert logic.stuck(5.0, (1.0, 1.0), can_back_up=True) == []
+    assert logic.mode == 'idle' and 'Stuck?' in logic.message
+    assert logic.stuck_spots == [] and logic.stuck_in_a_row == 0
+
+
+def test_stuck_spots_are_in_the_state_and_cleared_by_a_new_explore():
+    import json
+    world = World()
+    logic = make_logic()
+    logic.map_updated(world.grid())
+    logic.command('explore', 0.0, world.robot, nav_ready=True)
+    logic.stuck(5.0, (0.3, 0.1), can_back_up=True)
+    state = json.loads(json.dumps(logic.state()))
+    assert state['stuck_spots'] == [{'x': 0.3, 'y': 0.1}] and state['stuck_in_a_row'] == 1
+    logic.command('explore', 9.0, world.robot, nav_ready=True)
+    assert logic.stuck_spots == [] and logic.failed == []
+
+
+# ---- Pause / resume (driving by hand takes over, then it carries on) -------
+
+def test_commands_pause_and_resume_parse():
+    from lucia_nav.commands import parse_command
+    assert parse_command(' Pause ') == ('pause',)
+    assert parse_command('resume') == ('resume',)
+
+
+def test_pause_explore_then_resume_keeps_what_it_learned():
+    world = World()
+    logic = make_logic()
+    logic.map_updated(world.grid())
+    logic.command('explore', 0.0, world.robot, nav_ready=True)
+    logic.failed.append((5.0, 1.0))                              # a frontier that failed earlier
+    assert logic.command('pause', 6.0, world.robot, nav_ready=True) == [('cancel',)]
+    assert logic.mode == 'paused' and logic.goal is None and 'driving by hand' in logic.message
+    assert logic.state()['paused_from'] == 'explore'
+    assert logic.tick(8.0, world.robot) == []                    # stays put while paused
+    (act,) = logic.command('resume', 9.0, world.robot, nav_ready=True)
+    assert act[0] == 'send' and logic.mode == 'explore'
+    assert len(logic.failed) == 1                                # not started over
+    assert logic.state()['paused_from'] is None
+
+
+def test_pause_home_and_goto_resume_the_same_goal():
+    logic = make_logic()
+    logic.command('home', 0.0, (2.0, 1.0), nav_ready=True)
+    logic.command('pause', 1.0, (2.0, 1.0), nav_ready=True)
+    (act,) = logic.command('resume', 4.0, (1.0, 1.0), nav_ready=True)
+    assert act[2:] == (0.0, 0.0, 0.0) and logic.mode == 'home'
+
+    logic = make_logic()
+    logic.command('goto 2 0', 0.0, (0.0, 0.0), nav_ready=True)
+    logic.command('pause', 1.0, (0.5, 0.0), nav_ready=True)
+    (act,) = logic.command('resume', 4.0, (0.0, 1.0), nav_ready=True)
+    assert act[2:4] == (2.0, 0.0) and logic.mode == 'goto'
+    assert act[4] == pytest.approx(math.atan2(-1.0, 2.0))       # faces the goal from where it is now
+
+
+def test_old_goal_result_after_pause_is_ignored():
+    logic = make_logic()
+    (act,) = logic.command('goto 2 0', 0.0, (0.0, 0.0), nav_ready=True)
+    logic.command('pause', 1.0, (0.5, 0.0), nav_ready=True)
+    assert logic.goal_finished(act[1], False, 2.0, (0.5, 0.0)) == []
+    assert logic.mode == 'paused'
+
+
+def test_stop_while_paused_forgets_it():
+    logic = make_logic()
+    logic.command('home', 0.0, (2.0, 1.0), nav_ready=True)
+    logic.command('pause', 1.0, (2.0, 1.0), nav_ready=True)
+    logic.command('stop', 2.0, (2.0, 1.0), nav_ready=True)
+    assert logic.command('resume', 4.0, (2.0, 1.0), nav_ready=True) == []
+    assert logic.mode == 'idle' and logic.message == 'Nothing to resume'
+
+
+def test_pause_when_idle_or_already_paused_does_nothing():
+    logic = make_logic()
+    assert logic.command('pause', 0.0, (0, 0), nav_ready=True) == []
+    assert logic.mode == 'idle'
+    logic.command('home', 1.0, (2.0, 1.0), nav_ready=True)
+    logic.command('pause', 2.0, (2.0, 1.0), nav_ready=True)
+    assert logic.command('pause', 3.0, (2.0, 1.0), nav_ready=True) == []
+    assert logic.state()['paused_from'] == 'home'
+
+
+def test_new_command_while_paused_replaces_it():
+    logic = make_logic()
+    logic.command('home', 0.0, (2.0, 1.0), nav_ready=True)
+    logic.command('pause', 1.0, (2.0, 1.0), nav_ready=True)
+    logic.command('goto 1 1', 2.0, (2.0, 1.0), nav_ready=True)
+    assert logic.mode == 'goto' and logic.state()['paused_from'] is None
+
+
+def test_pause_while_backing_up_then_resume():
+    logic = make_logic()
+    logic.command('home', 0.0, (2.0, 1.0), nav_ready=True)
+    logic.stuck(5.0, (1.5, 1.0), can_back_up=True)
+    logic.command('pause', 6.0, (1.5, 1.0), nav_ready=True)
+    assert not logic.recovering and logic.backup_done(7.0, (1.4, 1.0)) == []
+    (act,) = logic.command('resume', 9.0, (1.0, 1.0), nav_ready=True)
+    assert act[2:] == (0.0, 0.0, 0.0) and logic.stuck_in_a_row == 0
+
+
+def test_stuck_while_paused_only_says_so():
+    logic = make_logic()
+    logic.command('home', 0.0, (2.0, 1.0), nav_ready=True)
+    logic.command('pause', 1.0, (2.0, 1.0), nav_ready=True)
+    assert logic.stuck(5.0, (2.0, 1.0), can_back_up=True) == []
+    assert logic.mode == 'paused' and logic.stuck_spots == []

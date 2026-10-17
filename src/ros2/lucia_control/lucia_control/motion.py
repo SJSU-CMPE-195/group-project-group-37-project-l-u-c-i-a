@@ -1,7 +1,8 @@
 """
 motion.py
 
-Pure math for turning ROS-style drive commands into Roomba wheel speeds.
+Pure math for turning ROS-style drive commands into Roomba wheel speeds, and
+for ramping speed changes so the robot never jolts.
 Kept free of ROS and serial imports so it can be tested on any machine.
 """
 
@@ -38,3 +39,27 @@ def twist_to_wheel_speeds(linear_mps, angular_rad_s, wheel_base_mm, max_speed_mm
         right *= scale
 
     return int(round(left)), int(round(right))
+
+
+def ramp_toward(current, target, accel, decel, dt_s):
+    """
+    One step of a gradual speed change: move current toward target by at most
+    accel * dt_s when speeding up, or decel * dt_s when slowing down, so the
+    robot never jolts. Works for forward speed (m/s, accel in m/s^2) and turn
+    rate (rad/s, accel in rad/s^2) alike.
+
+    Speeding up = moving away from zero; anything toward zero is slowing down.
+    Reversing direction slows down to exactly 0 first (one step can't cross
+    zero), then speeds up the other way.
+    """
+    if not math.isfinite(target):
+        target = 0.0
+    if dt_s <= 0:
+        return current
+    speeding_up = current * target >= 0 and abs(target) > abs(current)
+    limit = (accel if speeding_up else decel) * dt_s
+    step = max(-limit, min(limit, target - current))
+    new = current + step
+    if current * new < 0:
+        return 0.0
+    return new

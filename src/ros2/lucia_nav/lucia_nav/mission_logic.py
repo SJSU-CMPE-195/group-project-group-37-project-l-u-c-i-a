@@ -3,11 +3,14 @@ mission_logic.py
 
 The mission node's decisions, without ROS, so they can be tested anywhere.
 mission.py feeds this events (a command, a new map, a goal finished, a timer
-tick) and carries out the actions it returns:
+tick, stuck, done backing up) and carries out the actions it returns:
 
     ('send', goal_id, x, y, yaw)   send a Nav2 NavigateToPose goal (map frame)
     ('cancel',)                    cancel every Nav2 goal this node sent
     ('stop_wheels',)               publish one zero /cmd_vel
+    ('back_up', meters)            drive straight back that far, then call backup_done()
+                                   (a later 'send', 'cancel' or 'stop_wheels' ends it early)
+    ('sound', name)                play a short tune: 'stuck' or 'help'
 
 Modes:
     idle      nothing to do
@@ -15,9 +18,19 @@ Modes:
     home      driving back to where mapping started
     explore   frontier exploration: drive to the best frontier, repeat; when
               none are left, go home (or stop, if return_home_when_done is off)
+    paused    someone is driving by hand (the web page sends pause); resume
+              carries on with explore / home / goto, keeping what explore
+              already learned (failed frontiers, stuck spots)
 
 Home is the map frame's origin: slam_toolbox starts the map where the robot is
 when mapping starts, facing the same way.
+
+Stuck (motion_check.py: the wheels are driven but the lidar and IMU say the
+robot isn't moving): stop, back up a little if nothing is behind, then carry
+on: explore skips that frontier and picks the next one, home and goto try the
+same goal again. After max_stuck times in a row with no goal reached in
+between, give up and play the 'help' tune so someone comes. Driving by hand,
+it only says so.
 """
 
 import math
@@ -30,19 +43,27 @@ HOME = (0.0, 0.0, 0.0)      # x, y, yaw in the map frame
 
 class MissionLogic:
     def __init__(self, min_frontier_m=0.3, clearance_m=0.25, gain=0.5,
-                 avoid_radius_m=0.5, goal_timeout_s=90.0, return_home_when_done=True):
+                 avoid_radius_m=0.5, goal_timeout_s=90.0, return_home_when_done=True,
+                 max_stuck=3, backup_m=0.15):
         self.min_frontier_m = min_frontier_m
         self.clearance_m = clearance_m
         self.gain = gain
         self.avoid_radius_m = avoid_radius_m
         self.goal_timeout_s = goal_timeout_s
         self.return_home_when_done = return_home_when_done
+        self.max_stuck = max_stuck
+        self.backup_m = backup_m
 
         self.mode = 'idle'
         self.message = 'Ready'
         self.goal = None            # (x, y) of the goal being driven to, or None
         self.frontiers = []
         self.failed = []            # frontier goals that didn't work out this run
+        self.stuck_spots = []       # where it got stuck this run (map frame)
+        self.stuck_in_a_row = 0     # stuck this many times since a goal was last reached
+        self.recovering = False     # backing up after getting stuck
+        self._retry = None          # home/goto: (x, y, yaw) to try again after backing up
+        self._paused = None         # while paused: (mode, (x, y, yaw) for home/goto)
         self._goal_id = 0
         self._goal_started = None   # when driving to the current target began
         self._grid = None
@@ -70,9 +91,16 @@ class MissionLogic:
             was = self.mode
             self._idle('Stopped' if was != 'idle' else self.message)
             return [('cancel',), ('stop_wheels',)]
+        if cmd[0] == 'pause':
+            return self._pause(robot_xy)
         if not nav_ready:
             self.message = "Navigation (Nav2) isn't running yet"
             return []
+        if cmd[0] == 'resume':
+            return self._resume(now, robot_xy)
+        self.stuck_in_a_row = 0
+        self.recovering = False
+        self._paused = None
         if cmd[0] == 'home':
             self.mode = 'home'
             self.message = 'Going home'
@@ -85,6 +113,7 @@ class MissionLogic:
         # explore
         self.mode = 'explore'
         self.failed = []
+        self.stuck_spots = []
         self.goal = None
         self._map_changed = True    # recompute from where the robot is now
         return self._next_frontier(now, robot_xy)
@@ -94,6 +123,8 @@ class MissionLogic:
             return []           # an old goal (replaced or stopped); ignore
         goal = self.goal
         self.goal = None
+        if succeeded:
+            self.stuck_in_a_row = 0
         if self.mode == 'goto':
             self._idle('Arrived' if succeeded else 'Could not reach that spot')
         elif self.mode == 'home':
@@ -104,9 +135,54 @@ class MissionLogic:
             return self._next_frontier(now, robot_xy)
         return []
 
+    def stuck(self, now, robot_xy, can_back_up):
+        """
+        The wheels are driven but the robot isn't moving (motion_check.py).
+        can_back_up: the lidar sees nothing in the way behind.
+        """
+        if self.recovering:
+            return []
+        if self.mode in ('idle', 'paused'):
+            self.message = "Stuck? The wheels are driven but the robot isn't moving"
+            return []
+        if robot_xy is not None:
+            self.stuck_spots.append(robot_xy)
+        self.stuck_in_a_row += 1
+        if self.mode == 'explore' and self.goal is not None:
+            self.failed.append(self.goal)
+        if self.stuck_in_a_row >= self.max_stuck:
+            self._idle(f'Stuck {self.stuck_in_a_row} times in a row: needs help')
+            return [('cancel',), ('stop_wheels',), ('sound', 'help')]
+
+        if self.mode == 'home':
+            self._retry = HOME
+        elif self.mode == 'goto' and self.goal is not None:
+            self._retry = (self.goal[0], self.goal[1], _heading(robot_xy, self.goal))
+        else:
+            self._retry = None
+        self.goal = None
+        self._goal_id += 1      # the canceled goal's result is stale
+        count = f'{self.stuck_in_a_row} of {self.max_stuck}'
+        actions = [('cancel',), ('sound', 'stuck')]
+        if can_back_up:
+            self.recovering = True
+            self.message = f'Stuck ({count}): backing up'
+            return actions + [('back_up', self.backup_m)]
+        self.message = f'Stuck ({count}): no room to back up'
+        return actions + [('stop_wheels',)] + self._carry_on(now, robot_xy)
+
+    def backup_done(self, now, robot_xy):
+        """Finished backing up after getting stuck."""
+        if not self.recovering:
+            return []           # stopped (or given a new command) meanwhile
+        self.recovering = False
+        return self._carry_on(now, robot_xy)
+
     def tick(self, now, robot_xy):
         """Call every few seconds."""
         changed = self._refresh_frontiers(robot_xy)
+        if self.recovering:
+            return []
         if self.mode == 'explore':
             if self.goal is None:
                 return self._next_frontier(now, robot_xy)
@@ -131,6 +207,9 @@ class MissionLogic:
             'home': {'x': HOME[0], 'y': HOME[1]},
             'frontiers': [{'x': f.x, 'y': f.y, 'length_m': f.length_m} for f in self.frontiers[:100]],
             'failed': [{'x': x, 'y': y} for x, y in self.failed],
+            'stuck_spots': [{'x': x, 'y': y} for x, y in self.stuck_spots],
+            'stuck_in_a_row': self.stuck_in_a_row,
+            'paused_from': None if self._paused is None else self._paused[0],
         }
 
     # ------------------------------------------------------------------
@@ -141,7 +220,62 @@ class MissionLogic:
         self.mode = 'idle'
         self.message = message
         self.goal = None
+        self.recovering = False
+        self._paused = None
         self._goal_id += 1      # any result still on its way is now stale
+
+    def _pause(self, robot_xy):
+        """Someone is driving by hand: let go of the wheels, remember what it was doing."""
+        if self.mode not in ('explore', 'home', 'goto'):
+            return []
+        if self.mode == 'home':
+            target = HOME
+        elif self.mode == 'goto':
+            # The goal, or the one it was going to try again after backing up
+            target = self._retry if self.goal is None else (
+                self.goal[0], self.goal[1], _heading(robot_xy, self.goal))
+        else:
+            target = None
+        self._paused = (self.mode, target)
+        self.mode = 'paused'
+        self.message = 'Paused: driving by hand'
+        self.goal = None
+        self.recovering = False
+        self._goal_id += 1
+        return [('cancel',)]
+
+    def _resume(self, now, robot_xy):
+        if self._paused is None:
+            self.message = 'Nothing to resume'
+            return []
+        mode, target = self._paused
+        self._paused = None
+        self.stuck_in_a_row = 0     # someone just drove it, likely out of trouble
+        self.mode = mode
+        if mode == 'explore':
+            self.goal = None
+            self._map_changed = True    # recompute from where it was driven to
+            return self._next_frontier(now, robot_xy)
+        if target is None:
+            self._idle('Nothing to resume')
+            return []
+        x, y, yaw = target
+        if mode == 'goto':
+            yaw = _heading(robot_xy, (x, y))
+        self.message = 'Going home' if mode == 'home' else f'Going to ({x:.2f}, {y:.2f})'
+        return self._send(now, x, y, yaw)
+
+    def _carry_on(self, now, robot_xy):
+        """After getting stuck: explore picks the next frontier, home/goto try again."""
+        if self.mode == 'explore':
+            return self._next_frontier(now, robot_xy)
+        if self._retry is not None:
+            x, y, yaw = self._retry
+            self.message = ('Going home' if self.mode == 'home' else f'Going to ({x:.2f}, {y:.2f})') + \
+                f' (try {self.stuck_in_a_row + 1})'
+            return self._send(now, x, y, yaw)
+        self._idle('Stuck; stopped')
+        return [('stop_wheels',)]
 
     def _send(self, now, x, y, yaw):
         # Keep the timer running if this is only a nudged version of the same

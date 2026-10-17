@@ -42,7 +42,9 @@ SJSU CMPE 195A/B senior design, team 37. **Advisor:** Professor Wencen Wu
 3. Open **http://10.42.0.1:8080**.
 4. Press **Start mapping**. Wait for the Lidar, IMU, Wheels and Navigation lights to turn green.
 5. Press **Explore**. Stay near it: it steers around what the lidar sees, not things lower
-   than the lidar. **STOP** (top right, or Space / Esc) stops it.
+   than the lidar. **STOP** (top right, or Space / Esc) stops it. Driving with the keys
+   takes over; it carries on exploring 3 s after you let go. If it gets stuck, it backs
+   up and tries elsewhere; stuck 3 times in a row, it stops and plays a tune for help.
 6. When it's back HOME, type a name and press **Save**; download the PNG from the list.
 
 If the Roomba was turned off and on (or its battery died), turn it on and press

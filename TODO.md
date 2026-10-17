@@ -25,15 +25,18 @@ planned first; frontier exploration was moved ahead of it that evening at Christ
 2026-10-17: Explore fixed and working, page v2, README and network docs checked against the Pi.
 
 Written 2026-10-17, **not yet tried on the robot**: clean container stop (`compose.yml`, needs
-`up -d` once), Reconnect Roomba, horn and tunes (with MIDI import), the 0.23 m footprint. Written
-earlier and waiting on hardware: the ToF safety gate (`use_tof`, off until the sensors are mounted).
-Next: those first tries (see Phase 5 and "Setup on the Pi"), then the ToF stop.
+`up -d` once), Reconnect Roomba, tunes and MIDI import (the horn played on the robot), the 0.23 m
+footprint; later that day, on `195B-Christian`: gradual speed changes, the stuck check, and
+driving by hand pausing Explore (it carries on 3 s after the last key press). Written earlier and
+waiting on hardware: the ToF safety gate (`use_tof`, off until the sensors are mounted).
+Next: those first tries (see Phases 1, 4, 5 and "Setup on the Pi"), then the ToF stop.
 
 ---
 
 ## Ground rules (already decided)
 
 - **One program per device.** Only the control program talks to the Roomba, and only the lidar program talks to the lidar. Nothing else opens those USB ports.
+- **The Roomba is only a drive base.** Its brushes and vacuum are removed (2026-10-17); it maps, it never cleans. No cleaning features.
 - **Safe mode.** The Roomba stops on its own if it's lifted or drives off a ledge. The control program turns it back on automatically, so no restart is needed after a pickup.
 - **No bump sensor** (it was removed). "Stop, something's too close" will use the ToF distance sensors (decided 2026-10-16) and lives in Bringup, not Control.
 - **Web control page** (`lucia_web`): revived on request 2026-10-16. Runs from Docker Compose at boot; on the Pi's hotspot it's at http://10.42.0.1:8080.
@@ -50,6 +53,17 @@ Folder: `src/ros2/lucia_control/`
 - [x] Control program (`roomba_bridge.py`): enters Safe mode, listens for drive commands, keeps Safe mode alive, stops the wheels if commands go quiet
 - [x] Try it on the Pi, on the floor with clear space. Drive it over SSH with the keyboard tool (`ros2 run teleop_twist_keyboard teleop_twist_keyboard`) in a second terminal. Hold the keys down, since a single tap is too brief to see.
 - [x] Pick the robot up and put it back down. It should carry on with no restart.
+- [x] Gradual speed changes, to spare the hardware on board (2026-10-17, not yet tried on the robot):
+  `roomba_bridge` ramps toward each command instead of jumping (`motion.ramp_toward`, tested).
+  0 to 15 cm/s in 0.5 s, 15 cm/s to a stop in 0.3 s (about 2 cm); 30 cm/s takes 1 s up, 0.5 s
+  (about 8 cm) down. Every driver and every stop goes through it, STOP included
+- [ ] On the robot: starts and stops are smooth, and STOP still stops within a few cm
+- [x] Top speed in the open, slower in tight spaces (2026-10-17, laptop-tested, not yet on the robot):
+  the speed slider and Nav2 start at 0.30 m/s; `safety_gate` caps forward speed from the lidar (room
+  around the front half, free run ahead): 0.30 in the open, ~0.20 nearing a doorway, ~0.10 in a 0.7 m
+  doorway, 0.06 at the closest. Never stops; backing up and turning in place untouched; no lidar = 0.06
+- [ ] On the robot: Explore at top speed. Does it slow in the doorway and near furniture, and is the map
+  still clean at 30 cm/s?
 
 **Step B — Position tracking and battery**
 - [x] Checked 2026-09-18: **the Roomba's replies don't reach the Pi.** Battery voltage reads 0, encoders read 0. Driving still works, so the Pi-to-Roomba direction is fine.
@@ -119,6 +133,7 @@ Decided 2026-10-16: built on the **ToF distance sensors** the team is implementi
   while `tof/near` is true or silent; turning and backing up still pass so Nav2 can turn away. Default
   `use_tof:=false` = pass-through. Rules in `safety_logic.py` (tested)
 - [ ] Merge `lucia_tof` (with the udev fix), mount the sensors, add its node to `mapping.launch.py` under `use_tof`
+  (the gate's stop is ramped like every stop: about 2 cm extra at 15 cm/s, 8 cm at 30 cm/s, inside the 300 mm)
 - [ ] Test it on its own, driving by keyboard toward a wall, before Explore relies on it
 
 ---
@@ -161,6 +176,27 @@ Folder: `src/ros2/lucia_nav/`
   - [ ] Measure where the lidar sits relative to the Roomba's center and set the `laser_tf` x/y in
     `lucia_lidar/launch/lidar_and_map.launch.py` (0, 0 today)
 - [ ] Later: real encoder `/odom` (Phase 1, Step B) should make Nav2 noticeably more precise
+- [ ] Explore stutters a bit over uneven ground (seen 2026-10-17), smooth elsewhere. Not explained
+  yet. Either the Roomba stops itself (Safe mode: a cliff sensor or wheel drop on a bump drops it to
+  Passive until the 1 s heartbeat restarts it; the Pi can't see that) or Nav2's commands jump (lidar
+  tilt, position corrections; the new ramp smooths those). Test: hold W by hand over the same patch
+  at the same speed. Still stutters = the Roomba side
+
+**Stuck check** (2026-10-17, laptop-tested, not yet tried on the robot). The wheels can't report, and
+Nav2's progress checker watches the same open-loop odom, so a stuck robot went unnoticed.
+- [x] `lucia_nav/motion_check.py`: twice a second, the mission node compares what the wheels were told
+  (`/odom`) with what happened: IMU heading for turning, two lidar scans about 1 s apart for driving
+  (which share of the commanded distance lines them up best). "Can't tell" in a bare hallway, never
+  "stuck". 3 "not moving" in a row while driven = stuck, about 2 s after it stops at 15 cm/s.
+  Simulated room/hallway tests, ~6 ms per check
+- [x] Recovery in `mission_logic.py`: "uh-oh" tune, back up 15 cm if the lidar sees room behind,
+  then Explore skips that frontier, HOME / go-to try again. 3 in a row without reaching a goal: stop,
+  play a tune for help. Driving by hand it only says so. Page: **Really moving?** metric, red **!** on
+  the map. `stuck_check:=false` on the mission node turns it off
+- [ ] On the robot: drive Explore into something low the lidar can't see; noticed in 2-3 s? Backs up and
+  goes elsewhere? No false "stuck" in a normal Explore or a hallway (watch Really moving? and Logs)
+- [ ] Later: tell Nav2 where it got stuck (a small obstacle layer of stuck spots, which the lidar can't
+  clear), so plans route around them; today only the frontier is skipped
 
 **SWEEP mode** (last semester's bounce-around logic). Not started; may not be needed if Explore works
 well. Team's call.
@@ -206,14 +242,24 @@ Folder: `src/ros2/lucia_bringup/`, `src/ros2/lucia_web/`, `docker/compose.yml`
     Download as .txt
   - Keys fixed: they used to stop working once the speed slider or a checkbox had focus (and Space/Esc STOP did
     nothing then). Now they work anywhere except while typing in a text box, capitals included
-  - Driving by hand during Explore/HOME stops the mission and takes over
-- [x] Horn and tunes (2026-10-17, laptop-tested, not yet on the robot): Horn button + H key; built-in tunes (Horn,
+  - Driving by hand during Explore/HOME stops the mission and takes over (changed later the same day:
+    it pauses, and carries on 3 s after the last key press)
+- [x] Driving by hand pauses Explore / HOME / go-to instead of stopping it (2026-10-17, browser-checked
+  against the stub, not yet on the robot): mission `pause` / `resume`; `web_ui` resumes `resume_after_s`
+  (3 s) after the last key press, with a countdown on the page; STOP cancels. Explore keeps its failed
+  frontiers and stuck spots. Letting go of a key while paused stops the wheels at once
+- [ ] On the robot: take over during Explore, let go, it carries on after about 3 s
+- [x] Horn and tunes (2026-10-17; the horn played on the robot, tunes and MIDI import not yet): Horn button + H key; built-in tunes (Horn,
   Charge!, La Cucaracha, Mass Destruction); type/edit notes; preview in the browser; import a MIDI file's melody
   (pick the part, start time, octave); saved tunes in `~/maps/tunes.json` on the Pi. Played by `roomba_bridge`'s
   `~/song` topic: up to 64 notes as 4 song slots back to back. Persona / Pokémon tunes: import fan MIDIs (not
   committed to the repo)
 - [ ] Later: tunes longer than 64 notes, by refilling the Roomba's song slots while it plays (untested whether
   the Roomba allows that; a short gap every 16 notes)
+- [ ] **Next session: page layout** (Christian, 2026-10-17; asked to note it, not build it yet). Downloading the
+  map image and the on-screen drive pad (arrow buttons) are only reachable by scrolling down the left column,
+  which he doesn't like. Idea: a Download button at the top of the page (header) instead. Ask what else he wants
+  changed before starting
 - [ ] On the Pi: Pi-health metrics show numbers (container reads `/sys` thermal), logs drawer shows Nav2/mission
   lines, keys + takeover on the real robot
 

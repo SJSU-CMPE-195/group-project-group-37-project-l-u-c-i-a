@@ -5,7 +5,7 @@ import math
 
 import pytest
 
-from lucia_web.logic import (RateMeter, Trail, clamp_speed, cpu_percent,
+from lucia_web.logic import (AutoResume, RateMeter, Trail, clamp_speed, cpu_percent,
                              cpu_times, drive_to_twist, encode_grid,
                              log_level_name, mapped_area_m2, mission_text,
                              parse_loadavg, parse_meminfo, parse_temp,
@@ -205,3 +205,50 @@ def test_log_level_name():
     assert log_level_name(20) == 'INFO'
     assert log_level_name(40) == 'ERROR'
     assert log_level_name(7) == '7'
+
+
+# ---- AutoResume (driving by hand pauses the mission, it carries on later) ----
+
+def test_driving_by_hand_pauses_then_resumes_after_a_quiet_spell():
+    r = AutoResume(3.0)
+    assert r.drive('explore', moving=True, now=10.0) == 'pause'
+    assert r.drive('paused', moving=True, now=11.0) is None      # still driving: countdown restarts
+    assert r.drive('paused', moving=False, now=11.5) is None     # key let go: drive (stop) normally
+    assert r.seconds_left(12.0) == pytest.approx(2.0)
+    assert not r.due('paused', 13.9)
+    assert r.due('paused', 14.0)
+    assert not r.due('paused', 15.0)                             # only once
+    assert r.seconds_left(15.0) is None
+
+
+def test_let_go_while_the_mission_drives_is_ignored():
+    r = AutoResume(3.0)
+    assert r.drive('home', moving=False, now=1.0) == 'ignore'
+    assert r.at is None
+
+
+def test_stop_cancels_the_resume():
+    r = AutoResume(3.0)
+    r.drive('goto', moving=True, now=1.0)
+    r.cancel()
+    assert not r.due('paused', 10.0)
+
+
+def test_no_resume_if_the_mission_moved_on():
+    r = AutoResume(3.0)
+    r.drive('explore', moving=True, now=1.0)
+    assert not r.due('idle', 5.0)          # e.g. stopped from another page
+    assert r.at is None
+
+
+def test_driving_when_no_mission_runs_does_nothing():
+    r = AutoResume(3.0)
+    assert r.drive('idle', moving=True, now=1.0) is None
+    assert r.drive(None, moving=True, now=1.0) is None           # mission node not running
+    assert r.at is None
+
+
+def test_auto_resume_off():
+    r = AutoResume(0.0)
+    assert r.drive('explore', moving=True, now=1.0) == 'pause'
+    assert r.at is None and not r.due('paused', 100.0)

@@ -201,6 +201,8 @@
           <span class="k">Ground speed</span><span class="v" id="mGround">-</span></div>
         <div class="tile" title="Measured by the IMU gyro">
           <span class="k">Turn rate</span><span class="v" id="mTurn">-</span></div>
+        <div class="tile wide" title="Stuck check: how much of what the wheels were told the lidar (driving) and IMU (turning) saw happen. A few 'not moving' in a row = stuck">
+          <span class="k">Really moving?</span><span class="v" id="mMoving">-</span></div>
       </div>
       <h2>Trip</h2>
       <div class="tiles">
@@ -240,9 +242,9 @@
       <p class="hint">Roomba turned off and on, or its battery died? Turn it on, press Reconnect, and listen
         for a beep. Mapping keeps running, so the map isn't lost.</p>
       <div class="speed">
-        <label for="speed">Speed</label>
-        <input type="range" id="speed" min="5" max="30" step="1" value="15">
-        <output id="speedVal" for="speed">15 cm/s</output>
+        <label for="speed" title="Top speed for Explore, HOME and driving by hand. It slows down by itself near walls, in doorways and when something is ahead">Top speed</label>
+        <input type="range" id="speed" min="5" max="30" step="1" value="30">
+        <output id="speedVal" for="speed">30 cm/s</output>
       </div>
       <h2 style="margin-top:14px">Autonomy</h2>
       <div class="row">
@@ -264,7 +266,7 @@
         <span></span><button data-l="-1" data-a="0" data-k="b" title="Back (S / Down)">▼</button><span></span>
       </div>
       <p class="hint"><span id="driveHint">WASD or arrow keys; hold to move. Space or Esc = STOP.</span>
-        Driving by hand during Explore or HOME stops it.</p>
+        Driving by hand during Explore or HOME pauses it; it carries on a few seconds after you let go (STOP cancels).</p>
     </section>
 
     <section class="card" id="tunesCard">
@@ -329,6 +331,7 @@
         <span><i style="background:var(--warn)"></i>Frontier</span>
         <span><i style="background:var(--ok)"></i>HOME</span>
         <span><i style="background:var(--bad)"></i>Lidar &lt; 0.3 m</span>
+        <span style="color:var(--bad);font-weight:700">! Got stuck</span>
       </div>
     </div>
 
@@ -450,7 +453,12 @@ function showMission(m) {
   if (!status.mapping) { el.textContent = 'Navigation starts with mapping.'; return; }
   if (!m) { el.textContent = 'Waiting for navigation to start (Nav2 + mission node)...'; return; }
   if (!m.nav_ready) { el.textContent = 'Nav2 is starting up...'; return; }
-  el.textContent = m.message;      // says what it's doing, e.g. "Exploring: 3 frontiers left"
+  let text = m.message;            // says what it's doing, e.g. "Exploring: 3 frontiers left"
+  if (m.mode === 'paused' && status.resume_in_s != null) {
+    const what = { explore: 'exploring', home: 'going HOME', goto: 'going there' }[m.paused_from] || 'it';
+    text += `. Back to ${what} in ${Math.ceil(status.resume_in_s)} s (STOP cancels)`;
+  }
+  el.textContent = text;
 }
 async function sendMission(body) {
   try {
@@ -510,6 +518,17 @@ function showMetrics() {
   else {
     const d = t.gyro_z * 180 / Math.PI;
     setV('mTurn', Math.abs(d) < 1 ? '0°/s' : `${Math.abs(d).toFixed(0)}°/s ${d > 0 ? 'left' : 'right'}`);
+  }
+  const mo = m && m.motion;
+  if (!mo || !mo.enabled) setV('mMoving', mo ? 'check off' : '-');
+  else {
+    const parts = [];
+    if (mo.driven != null) parts.push(`drove ${Math.round(mo.driven * 100)}%`);
+    if (mo.turned != null) parts.push(`turned ${Math.round(mo.turned * 100)}%`);
+    const detail = parts.length ? ' (' + parts.join(', ') + ')' : '';
+    if (mo.moving === false) setV('mMoving', 'NOT MOVING' + detail, 'bad');
+    else if (mo.moving === true) setV('mMoving', 'yes' + detail);
+    else setV('mMoving', '-');
   }
   setV('mDist', fmt(t.distance_m, 2, ' m'));
   setV('mTime', clock(t.trip_s));
@@ -851,23 +870,35 @@ function drawMap() {
 
   // The robot at its real size, with a tick showing forward
   const p = status && status.pose;
-  if (!p) return;
-  const [px, py] = toPx(p.x, p.y);
-  const r = Math.max(6, robotRadius() * view.scale);
-  ctx.save();
-  ctx.translate(px, py); ctx.rotate(-p.yaw);
-  ctx.fillStyle = col('accent'); ctx.globalAlpha = 0.85;
-  ctx.beginPath(); ctx.arc(0, 0, r, 0, 2 * Math.PI); ctx.fill(); ctx.globalAlpha = 1;
-  ctx.strokeStyle = '#fff'; ctx.lineWidth = 2;
-  ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(r, 0); ctx.stroke();
-  ctx.restore();
+  if (p) {
+    const [px, py] = toPx(p.x, p.y);
+    const r = Math.max(6, robotRadius() * view.scale);
+    ctx.save();
+    ctx.translate(px, py); ctx.rotate(-p.yaw);
+    ctx.fillStyle = col('accent'); ctx.globalAlpha = 0.85;
+    ctx.beginPath(); ctx.arc(0, 0, r, 0, 2 * Math.PI); ctx.fill(); ctx.globalAlpha = 1;
+    ctx.strokeStyle = '#fff'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(r, 0); ctx.stroke();
+    ctx.restore();
+  }
+
+  // Where it got stuck, on top of everything (it's usually still there)
+  if (m) {
+    ctx.font = 'bold 12px system-ui, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    for (const sp of m.stuck_spots || []) {
+      const [a, b] = toPx(sp.x, sp.y);
+      ctx.fillStyle = col('bad'); ctx.beginPath(); ctx.arc(a, b, 8, 0, 2 * Math.PI); ctx.fill();
+      ctx.fillStyle = '#fff'; ctx.fillText('!', a, b + 0.5);
+    }
+  }
 }
 // Redraw when the map area or radar changes size (window, log drawer, sidebar scrollbar)
 new ResizeObserver(() => requestDraw()).observe($('mapWrap'));
 new ResizeObserver(() => drawRadar()).observe($('radarWrap'));
 
 // ---- Drive: pad and keys (hold to move) ------------------------------------------
-// Driving by hand while the robot drives itself stops the mission (the server does that).
+// Driving by hand while the robot drives itself pauses the mission; the server
+// resumes it a few seconds after the last key press (STOP cancels).
 let held = null, driveTimer = null;
 function sendDrive(l, a) { post('/api/drive', { linear: l, angular: a }).catch(() => {}); }
 function startDrive(l, a) {

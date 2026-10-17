@@ -8,6 +8,16 @@ ROS2 node that owns the Roomba's serial port (nothing else may open it).
   recovers on its own after a wheel-drop / cliff stop (no restart needed)
 - Stops the wheels if /cmd_vel goes quiet, since the Roomba would otherwise keep
   driving at the last speed forever
+- Changes speed gradually, to spare the hardware on board (Pi, lidar, arm):
+  every 0.1 s tick moves the wheels only part of the way to the newest command
+  (motion.py's ramp_toward). Defaults: speeding up 0.3 m/s^2 (0 to 15 cm/s in
+  0.5 s), slowing down twice as fast, 0.6 m/s^2 (15 cm/s to a stop in 0.3 s,
+  about 2 cm; 30 cm/s in 0.5 s, about 8 cm); turning 1.5 rad/s^2 up, 3.0 down.
+  This covers everything that drives (Nav2, the mission node, the web page),
+  STOP and the quiet-/cmd_vel stop included. Only Reconnect and shutdown stop
+  at once. One gap: if the Roomba stops by itself (Safe mode: a cliff sensor
+  or wheel drop), nothing tells the Pi, so when the heartbeat puts it back in
+  Safe mode it resumes at the speed the ramp had reached.
 - Publishes /odom and the odom->base_link transform, estimated from the speeds
   it COMMANDS the wheels to run at, not from a sensor reading - see
   odometry.py and docs/changelogs/2026-10-09.md for why. This will drift more
@@ -53,7 +63,7 @@ from std_msgs.msg import String
 from std_srvs.srv import Trigger
 from tf2_ros import TransformBroadcaster
 
-from lucia_control.motion import twist_to_wheel_speeds
+from lucia_control.motion import ramp_toward, twist_to_wheel_speeds
 from lucia_control.odometry import Odometry
 from lucia_control.roomba_oi import RoombaOI
 from lucia_control.song import slot_start_times, slots
@@ -70,6 +80,11 @@ class RoombaBridge(Node):
         self.declare_parameter('cmd_vel_timeout_s', 0.5)
         self.declare_parameter('drive_period_s', 0.1)
         self.declare_parameter('heartbeat_period_s', 1.0)
+        # Gradual speed changes (see the module docstring)
+        self.declare_parameter('max_linear_accel', 0.3)     # m/s^2, speeding up
+        self.declare_parameter('max_linear_decel', 0.6)     # m/s^2, slowing down
+        self.declare_parameter('max_angular_accel', 1.5)    # rad/s^2
+        self.declare_parameter('max_angular_decel', 3.0)    # rad/s^2
         self.declare_parameter('odom_frame_id', 'odom')
         self.declare_parameter('base_frame_id', 'base_link')
         self.declare_parameter('publish_tf', True)
@@ -86,6 +101,10 @@ class RoombaBridge(Node):
         self._cmd_vel_timeout_s = self.get_parameter('cmd_vel_timeout_s').value
         drive_period_s = self.get_parameter('drive_period_s').value
         heartbeat_period_s = self.get_parameter('heartbeat_period_s').value
+        self._linear_accel = self.get_parameter('max_linear_accel').value
+        self._linear_decel = self.get_parameter('max_linear_decel').value
+        self._angular_accel = self.get_parameter('max_angular_accel').value
+        self._angular_decel = self.get_parameter('max_angular_decel').value
         self._odom_frame_id = self.get_parameter('odom_frame_id').value
         self._base_frame_id = self.get_parameter('base_frame_id').value
         self._publish_tf = self.get_parameter('publish_tf').value
@@ -101,9 +120,12 @@ class RoombaBridge(Node):
             raise ValueError('max_speed_mm_s must be between 0 and 500 (Roomba limit)')
         if min(self._cmd_vel_timeout_s, drive_period_s, heartbeat_period_s) <= 0:
             raise ValueError('timeout and period settings must be greater than 0')
+        if min(self._linear_accel, self._linear_decel, self._angular_accel, self._angular_decel) <= 0:
+            raise ValueError('max_*_accel / max_*_decel must be greater than 0')
 
-        self._left = 0
-        self._right = 0
+        self._drive_period_s = drive_period_s
+        self._target = (0.0, 0.0)           # newest command: forward m/s, turn rad/s
+        self._current = (0.0, 0.0)          # where the ramp has got to (what the wheels are told)
         self._last_cmd_time = None
         self._timed_out = False
         self._odom = Odometry(self._wheel_base_mm)
@@ -132,6 +154,8 @@ class RoombaBridge(Node):
         self.get_logger().info(
             f'Ready: mode={self._oi_mode}, wheel_base={self._wheel_base_mm} mm, '
             f'max_speed={self._max_speed_mm_s} mm/s, cmd_vel_timeout={self._cmd_vel_timeout_s} s, '
+            f'ramp={self._linear_accel}/{self._linear_decel} m/s^2 up/down, '
+            f'{self._angular_accel}/{self._angular_decel} rad/s^2 turning, '
             f'odom is open-loop (commanded speed, not sensor-measured) - see odometry.py, '
             f'odom->base_link transform: {"published here" if self._publish_tf else "left to robot_localization"}')
 
@@ -140,29 +164,48 @@ class RoombaBridge(Node):
     # ------------------------------------------------------------------
 
     def _on_cmd_vel(self, msg):
-        """Store the newest command. Only linear.x and angular.z are used."""
-        self._left, self._right = twist_to_wheel_speeds(
-            msg.linear.x, msg.angular.z, self._wheel_base_mm, self._max_speed_mm_s)
+        """Store the newest command (the ramp heads for it). Only linear.x and angular.z are used."""
+        linear, angular = msg.linear.x, msg.angular.z
+        if not (math.isfinite(linear) and math.isfinite(angular)):
+            linear = angular = 0.0          # garbage in: stop
+        # Capped to what the wheels can do, so the ramp never climbs past it
+        # (slowing down from an impossible 5 m/s would take seconds).
+        max_linear = self._max_speed_mm_s / 1000.0
+        max_angular = 2.0 * self._max_speed_mm_s / self._wheel_base_mm
+        self._target = (max(-max_linear, min(max_linear, linear)),
+                        max(-max_angular, min(max_angular, angular)))
         self._last_cmd_time = self.get_clock().now()
 
     def _drive_tick(self):
-        """Send the current wheel command, or zero if /cmd_vel has gone quiet."""
+        """Ramp toward the newest command (or toward a stop if /cmd_vel has gone quiet) and send it."""
+        now = self.get_clock().now()
+        dt_s = 0.0 if self._last_tick_time is None else (now - self._last_tick_time).nanoseconds / 1e9
+        self._last_tick_time = now
+
         stale = self._command_is_stale()
         if stale and not self._timed_out and self._last_cmd_time is not None:
             self.get_logger().info('No /cmd_vel recently - stopping wheels')
         self._timed_out = stale
 
-        left, right = (0, 0) if stale else (self._left, self._right)
         if self._roomba is None:
-            left, right = 0, 0
+            self._current = (0.0, 0.0)      # reconnecting: the wheels are stopped
+        else:
+            target_linear, target_angular = (0.0, 0.0) if stale else self._target
+            # A late tick (busy Pi) mustn't turn into one big jump.
+            ramp_dt_s = min(dt_s, 2 * self._drive_period_s)
+            self._current = (
+                ramp_toward(self._current[0], target_linear,
+                            self._linear_accel, self._linear_decel, ramp_dt_s),
+                ramp_toward(self._current[1], target_angular,
+                            self._angular_accel, self._angular_decel, ramp_dt_s),
+            )
+        left, right = twist_to_wheel_speeds(
+            *self._current, self._wheel_base_mm, self._max_speed_mm_s)
         self._write(lambda roomba: roomba.drive_direct(left, right))
         # Estimated from the speeds just sent above, not a sensor reading - see odometry.py.
-        self._update_and_publish_odom(left, right)
+        self._update_and_publish_odom(left, right, now, dt_s)
 
-    def _update_and_publish_odom(self, commanded_left_mm_s, commanded_right_mm_s):
-        now = self.get_clock().now()
-        dt_s = 0.0 if self._last_tick_time is None else (now - self._last_tick_time).nanoseconds / 1e9
-        self._last_tick_time = now
+    def _update_and_publish_odom(self, commanded_left_mm_s, commanded_right_mm_s, now, dt_s):
         self._odom.update(commanded_left_mm_s, commanded_right_mm_s, dt_s)
 
         x_mm, y_mm, heading_rad = self._odom.pose()
@@ -209,7 +252,7 @@ class RoombaBridge(Node):
     def _on_reconnect(self, request, response):
         """Rebuild the connection to the Roomba (see the module docstring). Takes about 5 s."""
         self.get_logger().info('Reconnecting to the Roomba: reopen port, wake, Start, mode, beep')
-        self._left = self._right = 0
+        self._target = self._current = (0.0, 0.0)
         self._last_cmd_time = None          # wheels stay stopped until a new command arrives
         old, self._roomba = self._roomba, None
         if old is not None:
