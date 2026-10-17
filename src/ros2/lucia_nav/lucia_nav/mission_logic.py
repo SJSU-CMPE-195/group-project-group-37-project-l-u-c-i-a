@@ -29,7 +29,7 @@ HOME = (0.0, 0.0, 0.0)      # x, y, yaw in the map frame
 
 
 class MissionLogic:
-    def __init__(self, min_frontier_m=0.3, clearance_m=0.25, gain=0.5,
+    def __init__(self, min_frontier_m=0.3, clearance_m=0.2, gain=0.5,
                  avoid_radius_m=0.5, goal_timeout_s=90.0, return_home_when_done=True):
         self.min_frontier_m = min_frontier_m
         self.clearance_m = clearance_m
@@ -86,6 +86,7 @@ class MissionLogic:
         self.mode = 'explore'
         self.failed = []
         self.goal = None
+        self._map_changed = True    # recompute from where the robot is now
         return self._next_frontier(now, robot_xy)
 
     def goal_finished(self, goal_id, succeeded, now, robot_xy):
@@ -105,7 +106,7 @@ class MissionLogic:
 
     def tick(self, now, robot_xy):
         """Call every few seconds."""
-        changed = self._refresh_frontiers()
+        changed = self._refresh_frontiers(robot_xy)
         if self.mode == 'explore':
             if self.goal is None:
                 return self._next_frontier(now, robot_xy)
@@ -154,11 +155,12 @@ class MissionLogic:
         self.goal = (x, y)
         return [('send', self._goal_id, x, y, yaw)]
 
-    def _refresh_frontiers(self):
-        if not self._map_changed or self._grid is None:
+    def _refresh_frontiers(self, robot_xy):
+        """Recompute frontiers if the map changed. They depend on where the robot is (reachability)."""
+        if not self._map_changed or self._grid is None or robot_xy is None:
             return False
         self._map_changed = False
-        self.frontiers = find_frontiers(self._grid, self.min_frontier_m, self.clearance_m)
+        self.frontiers = find_frontiers(self._grid, robot_xy, self.min_frontier_m, self.clearance_m)
         return True
 
     def _next_frontier(self, now, robot_xy):
@@ -166,7 +168,7 @@ class MissionLogic:
             self.goal = None
             self.message = 'Exploring: waiting for the map and the robot position'
             return []
-        self._refresh_frontiers()
+        self._refresh_frontiers(robot_xy)
         target = choose_frontier(self.frontiers, robot_xy, self.failed,
                                  self.avoid_radius_m, self.gain)
         if target is None:

@@ -4,8 +4,8 @@ import pytest
 
 from lucia_nav.commands import parse_command
 from lucia_nav.frontier import (Frontier, Grid, choose_frontier, cluster,
-                                find_frontiers, frontier_cells, has_clearance,
-                                near_any)
+                                find_frontiers, frontier_cells, near_any,
+                                near_walls, reachable_steps)
 
 U, F, X = -1, 0, 100     # unknown, free, occupied
 
@@ -30,6 +30,9 @@ def room_with_door():
     rows.append([X] * 12 + [U, U])
     assert all(len(r) == w for r in rows)
     return grid_from(rows)
+
+
+INSIDE = (0.55, 0.45)    # a spot in the middle of room_with_door (cell (5, 4))
 
 
 def test_grid_cell_world_round_trip():
@@ -69,21 +72,47 @@ def test_cluster_joins_diagonal_neighbors():
     assert sorted(len(g) for g in groups) == [1, 3]
 
 
-def test_has_clearance():
+def test_near_walls():
     g = grid_from([
         [F, F, F, F, F],
         [F, F, F, F, F],
         [F, F, F, F, X],
     ])
-    assert has_clearance(g, 0, 2, 2)
-    assert not has_clearance(g, 4, 1, 1)     # right above the wall cell
-    assert has_clearance(g, 3, 1, 1)         # diagonal is 1.4 cells away, outside radius 1
-    assert not has_clearance(g, 3, 1, 2)
+    near = near_walls(g, 1)
+    at = lambda c, r: near[r * g.width + c]     # noqa: E731
+    assert at(4, 0) and at(4, 1) and at(3, 0)   # the wall and right beside it
+    assert not at(3, 1)                         # diagonal is 1.4 cells away, outside radius 1
+    assert not at(0, 2)
+    assert near_walls(g, 2)[1 * g.width + 3]
+
+
+def test_reachable_stops_at_walls_and_unknown():
+    g = grid_from([
+        [F, F, X, F, F],
+        [F, F, X, F, F],
+        [F, F, X, U, F],
+    ])
+    steps = reachable_steps(g, (0, 0), 0)
+    at = lambda c, r: steps[r * g.width + c]    # noqa: E731
+    assert at(0, 0) == 0 and at(1, 2) == 3
+    assert at(3, 1) == -1 and at(4, 0) == -1    # behind the wall
+    assert at(2, 0) == -1                       # the wall itself
+
+
+def test_reachable_lets_the_robot_off_a_spot_near_a_wall():
+    g = grid_from([
+        [F, F, F, F, F, F],
+        [F, F, F, F, F, F],
+        [X, F, F, F, F, F],
+    ])
+    # start right next to the wall with radius 2: the start area is allowed
+    steps = reachable_steps(g, (1, 0), 2)
+    assert steps[2 * g.width + 5] > 0
 
 
 def test_door_is_the_one_frontier():
     g = room_with_door()
-    fs = find_frontiers(g, min_length_m=0.3, clearance_m=0.1)
+    fs = find_frontiers(g, INSIDE, min_length_m=0.3, clearance_m=0.1)
     assert len(fs) == 1
     f = fs[0]
     assert f.cells == 3
@@ -91,22 +120,61 @@ def test_door_is_the_one_frontier():
     # the door is the gap in the wall column (col 11), rows 3..5 from the bottom;
     # the goal is its middle cell
     assert g.to_cell(f.x, f.y) == (11, 4)
+    # driving distance from (5, 4) to (11, 4): 6 steps of 0.1 m
+    assert f.distance_m == pytest.approx(0.6)
 
 
 def test_small_frontiers_are_dropped():
     g = room_with_door()
-    assert find_frontiers(g, min_length_m=0.5, clearance_m=0.1) == []
+    assert find_frontiers(g, INSIDE, min_length_m=0.5, clearance_m=0.1) == []
 
 
 def test_frontier_too_narrow_for_the_robot_is_dropped():
     g = room_with_door()
     # 0.2 m clearance: every door cell is within 2 cells of the door frame
-    assert find_frontiers(g, min_length_m=0.3, clearance_m=0.2) == []
+    assert find_frontiers(g, INSIDE, min_length_m=0.3, clearance_m=0.2) == []
+
+
+def test_robot_off_the_map_finds_nothing():
+    assert find_frontiers(room_with_door(), (50.0, 50.0)) == []
 
 
 def test_fully_known_room_has_no_frontiers():
     g = grid_from([[X] * 5] + [[X, F, F, F, X]] * 3 + [[X] * 5])
-    assert find_frontiers(g) == []
+    assert find_frontiers(g, (0.25, 0.25)) == []
+
+
+def test_frontier_behind_a_wall_is_skipped():
+    # The robot's room (left) is closed. Through the wall, a strip of floor seen
+    # through a crack borders unknown space: close in a straight line, but
+    # there's no way to drive there. (What happened on the robot 2026-10-16.)
+    rows = [[X] * 8 + [U] * 4]
+    for _ in range(6):
+        rows.append([X] + [F] * 6 + [X] + [F, F, U, U])
+    rows.append([X] * 8 + [U] * 4)
+    g = grid_from(rows)
+    assert len(find_frontiers(g, (0.35, 0.35), min_length_m=0.3, clearance_m=0.1)) == 0
+    # The same strip with a 3-cell door in the wall is fine
+    for r in (2, 3, 4):
+        rows[r][7] = F
+    g = grid_from(rows)
+    assert len(find_frontiers(g, (0.35, 0.35), min_length_m=0.3, clearance_m=0.1)) == 1
+
+
+def test_frontier_only_reachable_through_unknown_is_skipped():
+    # Open floor on both sides, joined only by unseen space
+    rows = [[F] * 4 + [U] * 3 + [F] * 4 for _ in range(5)]
+    g = grid_from(rows)
+    fs = find_frontiers(g, (0.15, 0.25), min_length_m=0.3, clearance_m=0.0)
+    assert len(fs) == 1
+    assert g.to_cell(fs[0].x, fs[0].y)[0] == 3      # our side's edge, not the far one
+
+
+def test_choose_uses_driving_distance():
+    # b is nearer in a straight line but a long way round; a wins
+    a = Frontier(3.0, 0.0, 0.3, 6, 3.0)
+    b = Frontier(1.0, 0.0, 0.3, 6, 8.0)
+    assert choose_frontier([a, b], (0, 0)) == a
 
 
 def test_choose_prefers_near_then_long():

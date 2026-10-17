@@ -84,7 +84,7 @@ def run(logic, world, actions, reach=lambda goal_id: True, limit=60):
 
 def make_logic(**kw):
     kw.setdefault('min_frontier_m', 0.3)
-    kw.setdefault('clearance_m', 0.25)
+    kw.setdefault('clearance_m', 0.2)
     return MissionLogic(**kw)
 
 

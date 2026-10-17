@@ -132,9 +132,14 @@ Folder: `src/ros2/lucia_nav/`
   `mission_logic.py`, tested, including a full simulated two-room exploration
 - [ ] First run on the Pi (after `git pull` + `docker compose -f docker/compose.yml restart`; no image rebuild
   expected since `ros-jazzy-nav2-bringup` is already installed):
-  - [ ] Check executable names: `ros2 pkg executables nav2_controller nav2_planner nav2_behaviors nav2_bt_navigator nav2_lifecycle_manager lucia_nav lucia_bringup`
-  - [ ] Start mapping from the page; the Navigation light turns green; "Mapping output" shows the lifecycle
-    manager activating all four servers, with no plugin or parameter errors
+  - [x] Executable names right, Nav2 starts (2026-10-16): Explore was enabled and Nav2 planned a path, which
+    needs all four servers active. (To check by hand: `ros2 pkg executables <pkg>`, one package at a time)
+  - [x] First Explore (2026-10-16): **bad routes.** The planner was allowed through unknown space
+    (`allow_unknown: true`) and planned out of a gap in the wall and around the outside of the room, and the
+    frontier picker chose by straight-line distance, so it picked a frontier with no mapped way there; the
+    robot got stuck. Fixed, not yet re-run: `allow_unknown: false`, and frontiers now only count if a flood
+    from the robot over mapped floor (0.2 m from walls) reaches them, ranked by that driving distance
+  - [ ] Explore again with the fix
   - [ ] Radar: a hand in front of the robot shows at the top, a hand on its left shows on the left
   - [ ] Speed slider: the drive pad gets faster/slower
   - [ ] Click the map 0.5-1 m ahead in open floor: the robot plans (dashed line) and drives there

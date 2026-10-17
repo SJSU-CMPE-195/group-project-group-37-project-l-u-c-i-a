@@ -57,7 +57,7 @@ class Mission(Node):
         super().__init__('mission')
 
         self.declare_parameter('min_frontier_m', 0.3)       # shorter frontiers are mostly speckle
-        self.declare_parameter('clearance_m', 0.25)         # goals at least this far from walls
+        self.declare_parameter('clearance_m', 0.2)          # robot's middle stays this far from walls (radius + margin)
         self.declare_parameter('frontier_gain', 0.5)        # how much a long frontier beats a near one
         self.declare_parameter('avoid_radius_m', 0.5)       # skip frontiers this close to failed goals
         self.declare_parameter('goal_timeout_s', 90.0)
