@@ -1,7 +1,7 @@
 # ROS2 on the Raspberry Pi
 
 How the robot's software runs on the Pi 5, how to use it day to day, and how to
-update and debug it. Current as of 2026-10-16. For what changed when, see
+update and debug it. Current as of 2026-10-17. For what changed when, see
 `docs/changelogs/`. For the task list, see `TODO.md`.
 
 ---
@@ -14,40 +14,61 @@ update and debug it. Current as of 2026-10-16. For what changed when, see
 2. **Connect your laptop or phone to the WiFi `lucia-control`** (password
    `lucia-143-tomato`).
 3. **Open http://10.42.0.1:8080** in a browser.
-4. Press **Start mapping**. Within about 10 seconds the Lidar, IMU and Wheels
-   lights should turn green and the map should appear; the Navigation light
-   follows once Nav2 has started. The **Radar** shows what the lidar sees right
-   now, forward up (red under 0.3 m, amber under 0.6 m).
-5. Press **Explore**. The robot drives itself to the edges of what it has
-   mapped (orange dots on the map, "frontiers"), one after another, until
-   nothing is left, then drives back **HOME** (the green H: where it was when
-   you pressed Start mapping). The dashed line is the path it's following.
-   - **Return HOME** sends it home at any time.
-   - **STOP** (or Space / Esc) stops it where it is. On a phone a STOP button
-     floats at the bottom while the robot is driving itself.
-   - **Speed** sets how fast it drives, for Explore, HOME and the drive pad.
-   - Tick **Click the map to send the robot there** to send it to one spot.
-   Stay with it: it steers around what the lidar sees, not things lower than the
-   lidar (until the ToF safety stop is on; see `use_tof` below).
+4. Press **Start mapping** (left column). Within about 10 seconds the Lidar,
+   IMU and Wheels lights should turn green and the map should appear; the
+   Navigation light follows once Nav2 has started.
+5. Press **Explore** (top right, or in the left column). The robot drives itself
+   to the edges of what it has mapped (orange dots, "frontiers"), one after
+   another, until nothing is left, then drives back **HOME** (the green H:
+   where it was when you pressed Start mapping). Explore works on the robot
+   (2026-10-17).
+   - **HOME** sends it home at any time.
+   - **STOP** (top right, or Space / Esc) stops it where it is. On a phone a
+     STOP button also floats at the bottom while the robot drives itself.
+   - **Speed** sets how fast it drives, for Explore, HOME and driving by hand.
+   - Stay with it: it steers around what the lidar sees, not things lower than
+     the lidar (until the ToF safety stop is on; see `use_tof` below).
 6. Type a name and press **Save**. The map appears in the list underneath; click
    **download** to get the PNG. Saved maps live on the Pi in `~/maps/`.
 7. Press **Stop mapping** when done.
 
-The drive pad (hold a button; it stops when you let go) and the arrow keys /
-WASD are a test tool, and are locked while the robot drives itself.
+**The page.** Left column, top to bottom: the **Radar** (the lidar right now,
+forward up; red under 0.3 m, amber under 0.6 m), live **metrics**, the mapping
+and autonomy controls, the drive pad, Save map. The rest is the **map**:
+- Mouse wheel zooms, drag pans; **Fit** shows the whole map, **Follow** keeps
+  the robot in the middle. `#follow` or `#zoom=3` at the end of the address sets
+  the starting view.
+- Drawn on it: the robot at its real size (18 in across), its trail (grey), the
+  planned path (dashed), frontiers, HOME, the current goal, and the live lidar
+  points.
+- **Click to go**, then click the map, to send the robot to one spot.
 
-**Navigation (Explore, Return HOME, map click) has not been run on the robot
-yet** (written 2026-10-16). See TODO.md, Phase 4, for the first-run checks.
+Metrics: heading (0° = the way it faced at Start mapping, clockwise), speed the
+wheels are told, ground speed (from the map), turn rate (IMU gyro), distance
+driven, time mapping, distance from HOME, position, area mapped, frontiers,
+nearest obstacle, lidar / IMU / odom message rates, Pi CPU temperature, CPU and
+memory. Battery says n/a until the Roomba reply cable is fixed.
+
+**Logs** (the bar under the map) show what's happening on the Pi: the newest
+message plus warning / error counts. Open it for every ROS node's log (mission,
+Nav2, slam_toolbox, roomba_bridge...), with level / node / text filters, a
+**Launch output** tab (the raw `ros2 launch` text, where startup errors show
+up), and **Download** to save what's shown as a text file.
+
+**Driving by hand** (test tool): WASD or the arrow keys anywhere on the page
+except while typing in a text box, or hold a pad button; it stops when you let
+go. Only while mapping runs (the wheels driver is part of it). Driving by hand
+during Explore or HOME stops the mission first.
 
 ### What the lights mean
 
 | Light | Green when | If it stays red or yellow |
 |---|---|---|
-| Mapping | `mapping.launch.py` is running | Press Start mapping; check "Mapping output" at the bottom of the page |
+| Mapping | `mapping.launch.py` is running | Press Start mapping; open Logs → Launch output |
 | Lidar | `/scan` arrived in the last second | See "Lidar freezes after Start" under Known issues |
 | IMU | `/imu/data` arrived in the last second | Is the IMU Pico plugged in? Replug it; untick "Use IMU" to map without it |
 | Wheels | `/odom` arrived in the last second | Is the Roomba on? See "Roomba turned off and on" under Known issues |
-| Navigation | The mission node is running and Nav2 is up (yellow: mapping runs but Nav2 isn't ready yet) | Check "Mapping output" for `lifecycle_manager` or `controller_server` errors |
+| Navigation | The mission node is running and Nav2 is up (yellow: mapping runs but Nav2 isn't ready yet) | Open Logs, filter Warnings and up, look for `lifecycle_manager` or `controller_server` errors |
 | Connection | The page can reach the Pi | Are you on `lucia-control`? Is the Pi on? |
 
 Yellow means the topic has gone quiet for 1-5 seconds; red means longer, or never.

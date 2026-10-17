@@ -11,6 +11,7 @@ import os
 import signal
 import subprocess
 import threading
+import time
 
 MAPPING_COMMAND = ['ros2', 'launch', 'lucia_bringup', 'mapping.launch.py']
 
@@ -20,6 +21,7 @@ class MappingProcess:
         self._command = list(command or MAPPING_COMMAND)
         self._proc = None
         self._use_imu = None
+        self._started_at = None
         self._log = collections.deque(maxlen=log_lines)
         self._lock = threading.Lock()
 
@@ -31,6 +33,11 @@ class MappingProcess:
     @property
     def use_imu(self):
         return self._use_imu if self.running else None
+
+    @property
+    def uptime_s(self):
+        """Seconds since mapping started, or None if it isn't running."""
+        return time.monotonic() - self._started_at if self.running else None
 
     def log_tail(self, count=40):
         with self._lock:
@@ -48,6 +55,7 @@ class MappingProcess:
                 args, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                 text=True, bufsize=1, start_new_session=True)
             self._use_imu = use_imu
+            self._started_at = time.monotonic()
             proc = self._proc
         threading.Thread(target=self._read_output, args=(proc,), daemon=True).start()
         return True

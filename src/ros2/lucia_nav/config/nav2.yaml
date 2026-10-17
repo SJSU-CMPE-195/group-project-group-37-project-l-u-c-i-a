@@ -6,8 +6,11 @@
 # action that ties them together). No velocity smoother: the controller
 # publishes /cmd_vel straight to roomba_bridge.
 #
-# Based on Nav2 Jazzy's nav2_params.yaml, cut down and slowed down. Values
-# marked MEASURE are guesses until checked on the robot.
+# Based on Nav2 Jazzy's nav2_params.yaml, cut down and slowed down.
+#
+# Robot size: 18 in (0.46 m) edge to edge with the arm and Pi drawer, measured
+# 2026-10-17, so robot_radius 0.23. The same size is also in the mission node's
+# clearance_m (lucia_nav/mission.py) and web_ui's robot_radius_m (the drawing).
 #
 # Speed: desired_linear_vel is only the default. The web page's speed slider
 # overrides it through Nav2's speed_limit topic (lucia_web/web_ui.py).
@@ -133,7 +136,7 @@ local_costmap:
       width: 3
       height: 3
       resolution: 0.05
-      robot_radius: 0.18            # MEASURE: Roomba is ~0.17; anything sticking out (arm, drawer) adds to it
+      robot_radius: 0.23            # 18 in across, measured 2026-10-17
       transform_tolerance: 0.3
       plugins: ["obstacle_layer", "inflation_layer"]
       obstacle_layer:
@@ -152,7 +155,7 @@ local_costmap:
           raytrace_min_range: 0.0
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
-        inflation_radius: 0.35
+        inflation_radius: 0.45        # robot radius + ~0.2 m where paths get more expensive
         cost_scaling_factor: 3.0
       always_send_full_costmap: true
 
@@ -164,7 +167,7 @@ global_costmap:
       publish_frequency: 1.0
       global_frame: map
       robot_base_frame: base_link
-      robot_radius: 0.18            # MEASURE: same as the local costmap
+      robot_radius: 0.23            # same as the local costmap
       resolution: 0.05
       track_unknown_space: true
       transform_tolerance: 0.3
@@ -188,6 +191,6 @@ global_costmap:
           raytrace_min_range: 0.0
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
-        inflation_radius: 0.35
+        inflation_radius: 0.45        # robot radius + ~0.2 m where paths get more expensive
         cost_scaling_factor: 3.0
       always_send_full_costmap: true

@@ -50,3 +50,15 @@ def test_stop_ends_the_process():
 
 def test_stop_when_not_running():
     assert not MappingProcess(FAKE_LAUNCH).stop()
+
+
+def test_uptime_counts_while_running():
+    m = MappingProcess(FAKE_LAUNCH)
+    assert m.uptime_s is None
+    try:
+        m.start()
+        time.sleep(0.2)
+        assert 0.1 < m.uptime_s < 5.0
+    finally:
+        m.stop()
+    assert m.uptime_s is None

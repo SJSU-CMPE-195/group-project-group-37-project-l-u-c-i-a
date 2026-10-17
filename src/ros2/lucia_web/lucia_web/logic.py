@@ -5,7 +5,9 @@ Pure helpers for the web UI, kept free of ROS so they can be tested anywhere.
 """
 
 import math
+import os
 import re
+from collections import deque
 
 MAP_NAME_PATTERN = re.compile(r'^[A-Za-z0-9_-]{1,40}$')
 
@@ -146,3 +148,154 @@ def thin_path(points, max_points=120):
         return points
     step = (len(points) - 1) / (max_points - 1)
     return [points[round(i * step)] for i in range(max_points)]
+
+
+# ----------------------------------------------------------------------
+# Metrics for the page's sidebar
+# ----------------------------------------------------------------------
+
+FREE_MAX = 25               # OccupancyGrid values 0..25 count as open floor (as in map_saver_cli)
+LOG_LEVELS = {10: 'DEBUG', 20: 'INFO', 30: 'WARN', 40: 'ERROR', 50: 'FATAL'}
+
+
+class RateMeter:
+    """How many messages per second arrived over the last window_s seconds."""
+
+    def __init__(self, window_s=2.0):
+        self._window_s = window_s
+        self._times = deque()
+
+    def tick(self, now):
+        self._times.append(now)
+        self._trim(now)
+
+    def hz(self, now):
+        self._trim(now)
+        return len(self._times) / self._window_s
+
+    def _trim(self, now):
+        while self._times and now - self._times[0] > self._window_s:
+            self._times.popleft()
+
+
+class Trail:
+    """
+    Where the robot has been (map frame), how far it has driven, and how fast
+    it's going over the ground.
+
+    A point is added when the robot is at least min_step_m from the last one.
+    Steps faster than max_speed_mps aren't counted as driving: those are
+    slam_toolbox correcting the robot's position, not the robot moving.
+    Over max_points, every other point is dropped; that, like reset(), changes
+    `session`, which tells the page to fetch the whole trail again.
+    """
+
+    def __init__(self, min_step_m=0.05, max_speed_mps=1.0, max_points=3000):
+        self.min_step_m = min_step_m
+        self.max_speed_mps = max_speed_mps
+        self.max_points = max_points
+        self._run = os.urandom(3).hex()     # differs after a web_ui restart
+        self._count = 0
+        self.reset()
+
+    def reset(self):
+        self._count += 1
+        self.session = f'{self._run}-{self._count}'
+        self.points = []
+        self.distance_m = 0.0
+        self._last = None                   # (x, y, t) of the last point added
+        self._recent = deque(maxlen=8)      # (x, y, t) of the last few positions, for speed
+
+    def add(self, x, y, t):
+        self._recent.append((x, y, t))
+        if self._last is None:
+            self.points.append((x, y))
+            self._last = (x, y, t)
+            return
+        lx, ly, lt = self._last
+        step = math.hypot(x - lx, y - ly)
+        if step < self.min_step_m:
+            return
+        if t > lt and step / (t - lt) <= self.max_speed_mps:
+            self.distance_m += step
+        self.points.append((x, y))
+        self._last = (x, y, t)
+        if len(self.points) > self.max_points:
+            self.points = self.points[::2] + ([self.points[-1]] if len(self.points) % 2 == 0 else [])
+            self._count += 1
+            self.session = f'{self._run}-{self._count}'
+
+    def ground_speed(self):
+        """m/s over the last second or so of positions; None if unknown or a position jump."""
+        if len(self._recent) < 2:
+            return None
+        dt = self._recent[-1][2] - self._recent[0][2]
+        if dt < 0.5:
+            return None
+        pts = list(self._recent)
+        length = sum(math.hypot(b[0] - a[0], b[1] - a[1]) for a, b in zip(pts, pts[1:]))
+        speed = length / dt
+        return speed if speed <= self.max_speed_mps else None
+
+
+def mapped_area_m2(data, resolution):
+    """Open floor in the map, in square meters."""
+    return sum(1 for v in data if 0 <= v <= FREE_MAX) * resolution * resolution
+
+
+def parse_temp(text):
+    """CPU temperature in deg C from /sys/class/thermal/thermal_zone0/temp (millidegrees)."""
+    try:
+        return int(text.strip()) / 1000.0
+    except (AttributeError, ValueError):
+        return None
+
+
+def parse_loadavg(text):
+    """1-minute load average from /proc/loadavg."""
+    try:
+        return float(text.split()[0])
+    except (AttributeError, IndexError, ValueError):
+        return None
+
+
+def parse_meminfo(text):
+    """Memory in use, in percent, from /proc/meminfo."""
+    try:
+        values = {}
+        for line in text.splitlines():
+            key, _, rest = line.partition(':')
+            if key in ('MemTotal', 'MemAvailable'):
+                values[key] = int(rest.split()[0])
+        total, available = values['MemTotal'], values['MemAvailable']
+        return 100.0 * (total - available) / total
+    except (AttributeError, KeyError, IndexError, ValueError, ZeroDivisionError):
+        return None
+
+
+def cpu_times(text):
+    """(idle, total) jiffies from the first line of /proc/stat."""
+    try:
+        line = text.splitlines()[0].split()
+        if line[0] != 'cpu':
+            return None
+        fields = [int(v) for v in line[1:9]]
+        return fields[3] + fields[4], sum(fields)      # idle + iowait, everything
+    except (AttributeError, IndexError, ValueError):
+        return None
+
+
+def cpu_percent(previous, current):
+    """CPU in use, in percent, between two cpu_times() readings."""
+    if previous is None or current is None:
+        return None
+    idle = current[0] - previous[0]
+    total = current[1] - previous[1]
+    if total <= 0:
+        return None
+    return 100.0 * (1.0 - idle / total)
+
+
+def log_level_name(level):
+    """rcl_interfaces/msg/Log level number as a word."""
+    return LOG_LEVELS.get(level, str(level))

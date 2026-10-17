@@ -5,10 +5,12 @@ import math
 
 import pytest
 
-from lucia_web.logic import (clamp_speed, drive_to_twist, encode_grid,
-                             mission_text, radar_nearest, scan_to_radar,
-                             thin_path, topic_status, valid_map_name,
-                             yaw_from_quaternion)
+from lucia_web.logic import (RateMeter, Trail, clamp_speed, cpu_percent,
+                             cpu_times, drive_to_twist, encode_grid,
+                             log_level_name, mapped_area_m2, mission_text,
+                             parse_loadavg, parse_meminfo, parse_temp,
+                             radar_nearest, scan_to_radar, thin_path,
+                             topic_status, valid_map_name, yaw_from_quaternion)
 
 
 def test_drive_scales_to_max_speeds():
@@ -128,3 +130,78 @@ def test_thin_path():
     assert len(out) == 100
     assert out[0] == (0, 0) and out[-1] == (999, 0)
     assert thin_path(pts[:5], 100) == pts[:5]
+
+
+def test_rate_meter():
+    m = RateMeter(window_s=2.0)
+    for i in range(40):                 # 20 Hz for 2 s
+        m.tick(i * 0.05)
+    assert m.hz(1.95) == pytest.approx(20, abs=1)
+    assert m.hz(10.0) == 0.0            # gone quiet
+
+
+def test_trail_adds_points_and_distance():
+    t = Trail(min_step_m=0.05)
+    t.add(0.0, 0.0, 0.0)
+    t.add(0.02, 0.0, 0.2)               # too small a step: no new point
+    t.add(0.10, 0.0, 0.4)
+    t.add(0.20, 0.0, 0.6)
+    assert t.points == [(0.0, 0.0), (0.10, 0.0), (0.20, 0.0)]
+    assert t.distance_m == pytest.approx(0.20)
+
+
+def test_trail_ignores_position_jumps_for_distance():
+    t = Trail(max_speed_mps=1.0)
+    t.add(0.0, 0.0, 0.0)
+    t.add(2.0, 0.0, 0.2)                # 10 m/s: slam_toolbox correction, not driving
+    assert t.distance_m == 0.0
+    assert len(t.points) == 2
+
+
+def test_trail_reset_and_thinning_change_session():
+    t = Trail(min_step_m=0.01, max_points=10)
+    first = t.session
+    for i in range(11):
+        t.add(i * 0.1, 0.0, i * 1.0)
+    assert len(t.points) <= 10 and t.points[-1] == (1.0, 0.0)
+    assert t.session != first
+    s = t.session
+    t.reset()
+    assert t.session != s and t.points == [] and t.distance_m == 0.0
+
+
+def test_trail_ground_speed():
+    t = Trail()
+    assert t.ground_speed() is None
+    for i in range(6):
+        t.add(i * 0.03, 0.0, i * 0.2)   # 0.15 m/s
+    assert t.ground_speed() == pytest.approx(0.15)
+
+
+def test_mapped_area():
+    assert mapped_area_m2([-1, 0, 10, 25, 26, 100], 0.05) == pytest.approx(3 * 0.0025)
+
+
+def test_proc_parsers():
+    assert parse_temp('46000\n') == 46.0
+    assert parse_temp('') is None and parse_temp(None) is None
+    assert parse_loadavg('1.11 1.04 0.89 1/1703 88071\n') == 1.11
+    assert parse_loadavg('') is None
+    mem = 'MemTotal:       1000 kB\nMemFree:  100 kB\nMemAvailable:    250 kB\n'
+    assert parse_meminfo(mem) == pytest.approx(75.0)
+    assert parse_meminfo('nothing') is None
+
+
+def test_cpu_percent():
+    a = cpu_times('cpu  100 0 100 800 0 0 0 0 0 0\ncpu0 1 2 3\n')
+    b = cpu_times('cpu  150 0 150 900 0 0 0 0 0 0\n')
+    assert a == (800, 1000) and b == (900, 1200)
+    assert cpu_percent(a, b) == pytest.approx(50.0)
+    assert cpu_percent(None, b) is None and cpu_percent(b, b) is None
+    assert cpu_times('garbage') is None
+
+
+def test_log_level_name():
+    assert log_level_name(20) == 'INFO'
+    assert log_level_name(40) == 'ERROR'
+    assert log_level_name(7) == '7'

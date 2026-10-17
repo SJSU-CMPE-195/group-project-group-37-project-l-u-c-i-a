@@ -21,9 +21,10 @@ then the web control page: power on, join `lucia-control`, open http://10.42.0.1
 Decided 2026-10-16: SWEEP mode first; frontier exploration is a later feature.
 **Changed the same evening, at Christian's request:** frontier exploration, return HOME, a live
 radar and a speed control on the web page, built on Nav2 (already in the Docker image). All
-written and tested on the laptop (pure-Python tests + the page against a simulated robot);
-**none of it has run on the robot yet.** Next: the first-run checks in Phase 4 below.
-The ToF safety gate is written too (`use_tof`, off until the sensors are mounted).
+written and tested on the laptop (pure-Python tests + the page against a simulated robot).
+**2026-10-17: Explore works on the robot** after fixing its routes (Phase 4). Then the web page v2
+(big map, radar + metrics sidebar, on-screen logs, working keys; Phase 5), laptop-tested, not yet on
+the Pi. The ToF safety gate is written too (`use_tof`, off until the sensors are mounted).
 
 ---
 
@@ -139,14 +140,18 @@ Folder: `src/ros2/lucia_nav/`
     frontier picker chose by straight-line distance, so it picked a frontier with no mapped way there; the
     robot got stuck. Fixed, not yet re-run: `allow_unknown: false`, and frontiers now only count if a flood
     from the robot over mapped floor (0.2 m from walls) reaches them, ranked by that driving distance
-  - [ ] Explore again with the fix
+  - [x] Explore again with the fix (2026-10-17): works ("working beautifully")
   - [ ] Radar: a hand in front of the robot shows at the top, a hand on its left shows on the left
   - [ ] Speed slider: the drive pad gets faster/slower
   - [ ] Click the map 0.5-1 m ahead in open floor: the robot plans (dashed line) and drives there
   - [ ] Return HOME from about 1 m away
   - [ ] Explore one room, staying next to it with STOP ready. Watch for: getting stuck without noticing
     (open-loop `/odom`), spinning in place too long, goals too close to walls
-  - [ ] Measure the robot's real footprint (arm, Pi drawer) and set `robot_radius` in `nav2.yaml`
+  - [x] Robot's real footprint (2026-10-17): 18 in (0.46 m) across with the arm and Pi drawer, so
+    `robot_radius: 0.23` in `nav2.yaml` (inflation 0.45), mission `clearance_m` 0.25, web_ui `robot_radius_m`
+    0.23. Not yet re-run: check Explore still fits through the room's doorway (needs > 0.5 m clear)
+  - [ ] Measure where the lidar sits relative to the Roomba's center and set the `laser_tf` x/y in
+    `lucia_lidar/launch/lidar_and_map.launch.py` (0, 0 today)
 - [ ] Later: real encoder `/odom` (Phase 1, Step B) should make Nav2 noticeably more precise
 
 **SWEEP mode** (last semester's bounce-around logic). Not started; may not be needed if Explore works
@@ -182,6 +187,20 @@ Folder: `src/ros2/lucia_bringup/`, `src/ros2/lucia_web/`, `docker/compose.yml`
     click-the-map go-to. The map shows frontiers, the current goal, HOME and Nav2's planned path.
     The drive pad is locked while the robot drives itself
   - Navigation light in the header
+- [x] Web page v2 (2026-10-17, laptop-tested with scripted browser checks against the simulated robot, not yet on
+  the Pi):
+  - Layout: left column (about 1/5) with the radar at the top, live metrics under it, then the controls; the map
+    fills the rest. Explore / HOME / STOP also in the header so they're always on screen
+  - Metrics: heading + compass, wheel speed, ground speed, turn rate (IMU gyro), distance driven, time, distance
+    from HOME, position, area mapped, frontiers, nearest obstacle, lidar/IMU/odom Hz, Pi CPU temp / CPU / memory
+  - Map: wheel zoom, drag pan, Fit, Follow; robot trail and live lidar points drawn on it; robot at its real size
+  - Logs drawer under the map: every node's `/rosout` log with level/node/text filters, launch output tab,
+    Download as .txt
+  - Keys fixed: they used to stop working once the speed slider or a checkbox had focus (and Space/Esc STOP did
+    nothing then). Now they work anywhere except while typing in a text box, capitals included
+  - Driving by hand during Explore/HOME stops the mission and takes over
+- [ ] On the Pi: Pi-health metrics show numbers (container reads `/sys` thermal), logs drawer shows Nav2/mission
+  lines, keys + takeover on the real robot
 
 ---
 

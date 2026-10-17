@@ -13,7 +13,11 @@ From the page you can:
 - explore on its own (frontier exploration), return home, or click the map to
   send the robot somewhere: these go to lucia_nav's mission node on
   /mission/command, and its /mission/state and Nav2's /plan are drawn on the map
-- drive with an on-screen pad or the arrow keys (testing tool, like teleop)
+- drive with an on-screen pad or WASD / arrow keys (testing tool, like teleop).
+  Driving by hand while the robot drives itself stops the mission first.
+- see live metrics: heading, speed, turn rate (IMU), distance driven, area
+  mapped, sensor message rates, the Pi's CPU temperature / load / memory
+- read every node's log (/rosout) and the launch output in a drawer under the map
 - save the map and download the PNG
 
 Driving is hold-to-move: the page sends a command every 100 ms while a button
@@ -29,6 +33,7 @@ Usage:
 """
 
 import base64
+import collections
 import json
 import os
 import subprocess
@@ -41,6 +46,7 @@ from ament_index_python.packages import get_package_share_directory
 from geometry_msgs.msg import Twist
 from nav2_msgs.msg import SpeedLimit
 from nav_msgs.msg import OccupancyGrid, Odometry, Path
+from rcl_interfaces.msg import Log
 from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 from rclpy.qos import (DurabilityPolicy, QoSProfile, ReliabilityPolicy,
@@ -50,15 +56,21 @@ from sensor_msgs.msg import Imu, LaserScan
 from std_msgs.msg import String
 from tf2_ros import Buffer, TransformException, TransformListener
 
-from lucia_web.logic import (clamp_speed, drive_to_twist, encode_grid,
-                             mission_text, radar_nearest, scan_to_radar,
-                             thin_path, topic_status, valid_map_name,
-                             yaw_from_quaternion)
+from lucia_web.logic import (RateMeter, Trail, clamp_speed, cpu_percent,
+                             cpu_times, drive_to_twist, encode_grid,
+                             log_level_name, mapped_area_m2, mission_text,
+                             parse_loadavg, parse_meminfo, parse_temp,
+                             radar_nearest, scan_to_radar, thin_path,
+                             topic_status, valid_map_name, yaw_from_quaternion)
 from lucia_web.mapping_process import MappingProcess
 
 MAP_FILE_EXTENSIONS = ('.png', '.yaml')
 MISSION_FRESH_S = 3.0       # mission node publishes its state twice a second
 PLAN_FRESH_S = 5.0
+CMD_FRESH_S = 1.0           # roomba_bridge stops the wheels after 0.5 s without a command
+LOG_KEEP = 2000             # /rosout entries kept for the page
+LOG_SEND_MAX = 500          # most entries sent in one /api/logs reply
+LOG_MSG_MAX = 500           # characters kept per log message
 
 
 class WebUi(Node):
@@ -73,6 +85,7 @@ class WebUi(Node):
         self.declare_parameter('turn_rate_ratio', 4.0)      # rad/s of turning per m/s of speed (0.15 -> 0.6)
         self.declare_parameter('drive_timeout_s', 0.3)
         self.declare_parameter('radar_slices', 180)         # 2 degrees each
+        self.declare_parameter('robot_radius_m', 0.23)      # for drawing; 18 in across (nav2.yaml has the same)
 
         self._http_port = self.get_parameter('http_port').value
         self.maps_dir = self.get_parameter('maps_dir').value
@@ -81,6 +94,7 @@ class WebUi(Node):
         self._turn_rate_ratio = self.get_parameter('turn_rate_ratio').value
         self._drive_timeout_s = self.get_parameter('drive_timeout_s').value
         self._radar_slices = self.get_parameter('radar_slices').value
+        self._robot_radius = self.get_parameter('robot_radius_m').value
 
         self.static_dir = os.path.join(get_package_share_directory('lucia_web'), 'static')
         self.mapping = MappingProcess()
@@ -100,15 +114,28 @@ class WebUi(Node):
         self._laser_yaw = {}        # scan frame_id -> its yaw on the robot, from TF
         self._mission = None        # (time, state dict) from /mission/state
         self._plan = None           # (time, [(x, y), ...]) from Nav2's /plan
+        self._rates = {name: RateMeter() for name in self._last_seen}
+        self._gyro = None           # (time, rad/s) turn rate measured by the IMU
+        self._cmd = None            # (time, m/s, rad/s) last command to the wheels (/cmd_vel_safe)
+        self._trail = Trail()
+        self._area_m2 = None
+        self._pi = {}               # Pi health: temp_c, load1, cpu_pct, mem_pct, cpus
+        self._cpu_prev = None
+        self._logs = collections.deque(maxlen=LOG_KEEP)
+        self._log_seq = 0
 
         self.create_subscription(LaserScan, 'scan', self._on_scan, qos_profile_sensor_data)
-        self.create_subscription(Imu, 'imu/data', lambda _: self._seen('imu'), 10)
+        self.create_subscription(Imu, 'imu/data', self._on_imu, 10)
         self.create_subscription(Odometry, 'odom', lambda _: self._seen('wheels'), 10)
         map_qos = QoSProfile(depth=1, reliability=ReliabilityPolicy.RELIABLE,
                              durability=DurabilityPolicy.TRANSIENT_LOCAL)
         self.create_subscription(OccupancyGrid, 'map', self._on_map, map_qos)
         self.create_subscription(String, 'mission/state', self._on_mission, 10)
         self.create_subscription(Path, 'plan', self._on_plan, 1)
+        self.create_subscription(Twist, 'cmd_vel_safe', self._on_cmd_safe, 10)
+        rosout_qos = QoSProfile(depth=200, reliability=ReliabilityPolicy.RELIABLE,
+                                durability=DurabilityPolicy.TRANSIENT_LOCAL)
+        self.create_subscription(Log, 'rosout', self._on_log, rosout_qos)
 
         self._cmd_pub = self.create_publisher(Twist, 'cmd_vel', 10)
         self._mission_pub = self.create_publisher(String, 'mission/command', 10)
@@ -119,6 +146,7 @@ class WebUi(Node):
         self.create_timer(0.1, self._drive_tick)
         self.create_timer(0.2, self._update_pose)
         self.create_timer(1.0, self._publish_speed_limit)
+        self.create_timer(2.0, self._read_pi_health)
 
         handler = type('Handler', (_Handler,), {'ui': self})
         self._server = ThreadingHTTPServer(('0.0.0.0', self._http_port), handler)
@@ -133,8 +161,61 @@ class WebUi(Node):
     # ------------------------------------------------------------------
 
     def _seen(self, name):
+        now = time.monotonic()
         with self._lock:
-            self._last_seen[name] = time.monotonic()
+            self._last_seen[name] = now
+            self._rates[name].tick(now)
+
+    def _on_imu(self, msg):
+        self._seen('imu')
+        with self._lock:
+            self._gyro = (time.monotonic(), msg.angular_velocity.z)
+
+    def _on_cmd_safe(self, msg):
+        with self._lock:
+            self._cmd = (time.monotonic(), msg.linear.x, msg.angular.z)
+
+    def _on_log(self, msg):
+        entry = {
+            't': msg.stamp.sec + msg.stamp.nanosec * 1e-9,
+            'level': log_level_name(msg.level),
+            'node': msg.name,
+            'msg': msg.msg[:LOG_MSG_MAX],
+        }
+        with self._lock:
+            self._log_seq += 1
+            entry['seq'] = self._log_seq
+            self._logs.append(entry)
+
+    def _read_pi_health(self):
+        def read(path):
+            try:
+                with open(path) as f:
+                    return f.read()
+            except OSError:
+                return None
+        cpu_now = cpu_times(read('/proc/stat'))
+        pi = {
+            'temp_c': parse_temp(read('/sys/class/thermal/thermal_zone0/temp')),
+            'load1': parse_loadavg(read('/proc/loadavg')),
+            'cpu_pct': cpu_percent(self._cpu_prev, cpu_now),
+            'mem_pct': parse_meminfo(read('/proc/meminfo')),
+            'cpus': os.cpu_count(),
+        }
+        self._cpu_prev = cpu_now
+        with self._lock:
+            self._pi = pi
+
+    def _robot_pose_at(self, stamp):
+        """Robot pose in the map at a message's time, else the latest; None if there's no map yet."""
+        for when in (Time.from_msg(stamp), Time()):
+            try:
+                t = self._tf_buffer.lookup_transform('map', 'base_link', when)
+            except TransformException:
+                continue
+            tr, q = t.transform.translation, t.transform.rotation
+            return {'x': tr.x, 'y': tr.y, 'yaw': yaw_from_quaternion(q.x, q.y, q.z, q.w)}
+        return None
 
     def _on_scan(self, msg):
         self._seen('lidar')
@@ -150,7 +231,9 @@ class WebUi(Node):
         slices = scan_to_radar(msg.ranges, msg.angle_min, msg.angle_increment,
                                msg.range_min, msg.range_max,
                                self._laser_yaw[frame], self._radar_slices)
-        radar = {'slices_cm': slices, 'nearest': radar_nearest(slices)}
+        # The pose the scan was taken from, so the page can draw it on the map too.
+        radar = {'slices_cm': slices, 'nearest': radar_nearest(slices),
+                 'pose': self._robot_pose_at(msg.header.stamp)}
         with self._lock:
             self._radar_seq += 1
             radar['seq'] = self._radar_seq
@@ -166,7 +249,9 @@ class WebUi(Node):
             'origin_y': info.origin.position.y,
             'data': base64.b64encode(encode_grid(msg.data)).decode('ascii'),
         }
+        area = mapped_area_m2(msg.data, info.resolution)
         with self._lock:
+            self._area_m2 = area
             self._map_version += 1
             page_map['version'] = self._map_version
             self._map = page_map
@@ -211,6 +296,8 @@ class WebUi(Node):
         tr, q = t.transform.translation, t.transform.rotation
         with self._lock:
             self._pose = (tr.x, tr.y, yaw_from_quaternion(q.x, q.y, q.z, q.w))
+            if self.mapping.running:
+                self._trail.add(tr.x, tr.y, time.monotonic())
 
     def _drive_tick(self):
         with self._lock:
@@ -230,15 +317,45 @@ class WebUi(Node):
     # ------------------------------------------------------------------
 
     def set_drive(self, linear_frac, angular_frac):
+        takeover = False
         with self._lock:
+            twist = drive_to_twist(linear_frac, angular_frac,
+                                   self._speed, self._speed * self._turn_rate_ratio)
             mission = self._mission_state()
             if mission and mission.get('mode') != 'idle':
-                return False    # the robot is driving itself; STOP first
-            speed = self._speed
-            self._drive = drive_to_twist(linear_frac, angular_frac,
-                                         speed, speed * self._turn_rate_ratio)
+                if twist == (0.0, 0.0):
+                    return True     # a key let go: don't interrupt the mission with stops
+                # Driving by hand takes over: stop the mission, then drive. Mark it
+                # idle here so the next presses go through before its next update.
+                takeover = True
+                self._mission = (self._mission[0],
+                                 dict(mission, mode='idle', goal=None, message='Stopped: driving by hand'))
+            self._drive = twist
             self._drive_time = time.monotonic()
+        if takeover:
+            self._mission_pub.publish(String(data='stop'))
+            self.get_logger().info('Driving by hand: stopped the mission')
         return True
+
+    def start_mapping(self, use_imu):
+        with self._lock:
+            self._trail.reset()
+        return self.mapping.start(use_imu=use_imu)
+
+    def logs_after(self, seq):
+        with self._lock:
+            entries = [e for e in self._logs if seq is None or e['seq'] > seq]
+            last = self._log_seq
+        return {'entries': entries[-LOG_SEND_MAX:], 'last': last}
+
+    def trail_since(self, session, start):
+        with self._lock:
+            points = self._trail.points
+            current = self._trail.session
+            if session != current or start is None or start > len(points):
+                start = 0
+            new = [(round(x, 3), round(y, 3)) for x, y in points[start:]]
+        return {'session': current, 'from': start, 'points': new}
 
     def send_mission(self, body):
         text = mission_text(body)
@@ -282,6 +399,21 @@ class WebUi(Node):
             if (mission and mission.get('mode') != 'idle' and self._plan is not None
                     and now - self._plan[0] < PLAN_FRESH_S):
                 plan = self._plan[1]
+            cmd = None
+            if self._cmd is not None:
+                fresh = now - self._cmd[0] < CMD_FRESH_S
+                cmd = {'linear': self._cmd[1] if fresh else 0.0, 'angular': self._cmd[2] if fresh else 0.0}
+            telemetry = {
+                'cmd': cmd,
+                'gyro_z': self._gyro[1] if self._gyro and now - self._gyro[0] < CMD_FRESH_S else None,
+                'ground_speed': self._trail.ground_speed(),
+                'distance_m': self._trail.distance_m,
+                'trip_s': self.mapping.uptime_s,
+                'area_m2': self._area_m2,
+                'rates': {name: round(m.hz(now), 1) for name, m in self._rates.items()},
+                'pi': self._pi,
+            }
+            trail = {'session': self._trail.session, 'len': len(self._trail.points)}
         return {
             'mapping': self.mapping.running,
             'use_imu': self.mapping.use_imu,
@@ -291,7 +423,9 @@ class WebUi(Node):
             'speed': {'mps': speed, 'min': self._min_speed, 'max': self._max_speed},
             'mission': mission,
             'plan': plan,
-            'log': self.mapping.log_tail(),
+            'telemetry': telemetry,
+            'trail': trail,
+            'robot_radius_m': self._robot_radius,
         }
 
     def map_if_newer(self, version):
@@ -363,6 +497,12 @@ class _Handler(BaseHTTPRequestHandler):
                 self.end_headers()
             else:
                 self._send_json(radar)
+        elif path == '/api/logs':
+            self._send_json(self.ui.logs_after(_query_int(query, 'after')))
+        elif path == '/api/launchlog':
+            self._send_json({'lines': self.ui.mapping.log_tail(200)})
+        elif path == '/api/trail':
+            self._send_json(self.ui.trail_since(_query_str(query, 'session'), _query_int(query, 'from')))
         elif path == '/api/maps':
             self._send_json({'maps': self.ui.list_maps()})
         elif path.startswith('/maps/'):
@@ -393,7 +533,7 @@ class _Handler(BaseHTTPRequestHandler):
             ok, message = self.ui.set_speed(body.get('mps'))
             self._send_json({'ok': ok, 'message': message})
         elif self.path == '/api/mapping/start':
-            started = self.ui.mapping.start(use_imu=bool(body.get('use_imu', True)))
+            started = self.ui.start_mapping(use_imu=bool(body.get('use_imu', True)))
             self._send_json({'ok': started, 'message': 'Mapping started' if started else 'Already running'})
         elif self.path == '/api/mapping/stop':
             stopped = self.ui.mapping.stop()
@@ -437,15 +577,20 @@ class _Handler(BaseHTTPRequestHandler):
         self.wfile.write(data)
 
 
-def _query_int(query, key):
+def _query_str(query, key):
     for part in query.split('&'):
         k, _, v = part.partition('=')
         if k == key:
-            try:
-                return int(v)
-            except ValueError:
-                return None
+            return v
     return None
+
+
+def _query_int(query, key):
+    v = _query_str(query, key)
+    try:
+        return int(v)
+    except (TypeError, ValueError):
+        return None
 
 
 def main(args=None):

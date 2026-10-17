@@ -29,7 +29,7 @@ HOME = (0.0, 0.0, 0.0)      # x, y, yaw in the map frame
 
 
 class MissionLogic:
-    def __init__(self, min_frontier_m=0.3, clearance_m=0.2, gain=0.5,
+    def __init__(self, min_frontier_m=0.3, clearance_m=0.25, gain=0.5,
                  avoid_radius_m=0.5, goal_timeout_s=90.0, return_home_when_done=True):
         self.min_frontier_m = min_frontier_m
         self.clearance_m = clearance_m
