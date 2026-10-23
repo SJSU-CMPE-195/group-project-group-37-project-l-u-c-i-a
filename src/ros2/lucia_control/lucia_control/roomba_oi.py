@@ -96,9 +96,9 @@ class RoombaOI:
         Call this before start() if the Roomba may be asleep.
         Requires the USB-serial adapter's DTR line wired to the Mini-DIN BRC pin.
         """
-        self.ser.dtr = False   # pull BRC low
+        self.ser.dtr = True   # pull BRC low
         time.sleep(1)
-        self.ser.dtr = True    # release
+        self.ser.dtr = False    # release
         time.sleep(2)          # allow Roomba to fully wake
 
     def start(self):
