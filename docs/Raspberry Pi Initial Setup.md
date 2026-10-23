@@ -17,7 +17,7 @@ runs. For day-to-day use (switching to another WiFi for internet and back), see
 | Component    | Value                      |
 |--------------|----------------------------|
 | SSID         | lucia-control              |
-| Password     | lucia-143-tomato           |
+| Password     | Kept off GitHub (ask Christian) |
 | Interface    | wlan0                      |
 | Pi IP        | 10.42.0.1                  |
 | DHCP Range   | 10.42.0.10 – 10.42.0.100   |
@@ -57,7 +57,7 @@ sudo nmcli connection modify pi-ap 802-11-wireless.channel 6
 
 ```bash
 sudo nmcli connection modify pi-ap wifi-sec.key-mgmt wpa-psk
-sudo nmcli connection modify pi-ap wifi-sec.psk "lucia-143-tomato"
+sudo nmcli connection modify pi-ap wifi-sec.psk "<hotspot password>"
 ```
 
 ## Configure Static IP

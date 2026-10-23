@@ -112,6 +112,6 @@ for the choices made during setup.
 ## Result
 
 - Fresh Ubuntu 18.04.5 / L4T R32.7.1 / JetPack 4.6.1
-- Login: `lucia` / `lucia-143-tomato`
+- Login: `lucia` (password kept off GitHub; ask Ethan)
 - Hostname: `lucia-jetson`
 - SSH accessible at `192.168.55.1` (USB device mode)

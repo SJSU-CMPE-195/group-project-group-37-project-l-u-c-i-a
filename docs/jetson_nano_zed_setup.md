@@ -394,7 +394,7 @@ Paused:
 
 
 ## Personal notes
-- Updated Password from `lucia-143-tomato` -> `lucia-tomato`
+- Changed the Jetson's password (the old and new ones are kept off GitHub)
     * This was due to issues of password not working at home setup, but working within school computers
         * May be due to compatibility issues?
     * Issue solved: Password and compatibility are ok, issue was keyboard itself

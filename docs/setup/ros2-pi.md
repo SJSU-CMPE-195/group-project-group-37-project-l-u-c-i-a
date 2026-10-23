@@ -11,8 +11,8 @@ update and debug it. Current as of 2026-10-17. For what changed when, see
 1. **Turn on the Roomba and the Pi.** At boot the Pi brings up its own WiFi
    hotspot and starts the software container, which serves the control page.
    Give it a minute or so.
-2. **Connect your laptop or phone to the WiFi `lucia-control`** (password
-   `lucia-143-tomato`).
+2. **Connect your laptop or phone to the WiFi `lucia-control`** (the password is
+   kept off GitHub: ask Christian).
 3. **Open http://10.42.0.1:8080** in a browser.
 4. Press **Start mapping** (left column). Within about 10 seconds the Lidar,
    IMU and Wheels lights should turn green and the map should appear; the

@@ -53,7 +53,7 @@ screen /dev/ttyACM0 115200
 | Hostname | `lucia-jetson` |
 | Nvpmodel mode | MAXN (full performance) |
 | Username | `lucia` |
-| Password | `lucia-143-tomato` |
+| Password | Kept off GitHub (ask Ethan) |
 
 ---
 

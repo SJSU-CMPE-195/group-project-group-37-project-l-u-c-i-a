@@ -26,7 +26,7 @@ own WiFi.
   the robot as of 2026-10-17.
 - **Builds a 2D map** with the lidar (slam_toolbox), with heading from an IMU (BNO08X) fused
   in, which removed the drift of the first maps.
-- **Web control page** at http://10.42.0.1:8080: start mapping, Explore / Return HOME / STOP,
+- **Web control page**, served by the robot over its own WiFi: start mapping, Explore / Return HOME / STOP,
   a live radar of the lidar, live metrics (heading, speed, distance, area mapped, Pi
   health), every node's log, Reconnect Roomba (after it was turned off and on, without
   losing the map), a horn and tunes on the Roomba's speaker (including melodies imported
@@ -75,7 +75,7 @@ flowchart TB
   lidar["RPLidar A2M8"] -->|USB| rplidar
   imu["BNO08X IMU<br/>on a Pico 2"] -->|USB| imu_bridge
   roomba_bridge -->|serial| roomba["Roomba 650<br/>(wheels, speaker)"]
-  browser["Laptop or phone"] <-->|"WiFi hotspot, port 8080"| web_ui
+  browser["Laptop or phone"] <-->|"robot's WiFi hotspot"| web_ui
 ```
 
 How a run works:
@@ -129,7 +129,7 @@ setup"):
 ```bash
 # 1. Docker, usable without sudo (log out and back in afterwards)
 curl -fsSL https://get.docker.com | sh
-sudo usermod -aG docker lucia
+sudo usermod -aG docker $USER
 
 # 2. The code (the robot runs the dev branch)
 mkdir -p ~/repos && cd ~/repos
@@ -140,13 +140,13 @@ git checkout dev && git submodule update --init
 # 3. The ROS 2 image (needs internet, about 8 minutes)
 docker build -t lucia/ros2:latest docker/
 
-# 4. Start it now and at every boot (builds the code, then serves the page on port 8080)
+# 4. Start it now and at every boot (builds the code, then serves the control page)
 mkdir -p ~/maps
 docker compose -f docker/compose.yml up -d
 ```
 
 Then, once:
-- **Hotspot** (`lucia-control`, so the robot needs no other network):
+- **Hotspot** (the robot's own WiFi, so it needs no other network):
   [`docs/Raspberry Pi Initial Setup.md`](docs/Raspberry%20Pi%20Initial%20Setup.md)
 - **Fixed device names** (`/dev/roomba`, `/dev/rplidar`, `/dev/imu`):
   [`docs/setup/udev-rules.md`](docs/setup/udev-rules.md)
@@ -161,8 +161,9 @@ unless `docker/Dockerfile` changed.
 
 1. Turn on the Roomba and the Pi. Give it about a minute: the Pi brings up its WiFi
    hotspot and starts the control page by itself.
-2. Join the WiFi **`lucia-control`** (password `lucia-143-tomato`).
-3. Open **http://10.42.0.1:8080**.
+2. Join the robot's WiFi hotspot with a laptop or phone.
+3. Open the control page in a browser. (The team shares the WiFi details and the page
+   address privately; they're not kept in this README.)
 4. Press **Start mapping**. Wait for the Lidar, IMU, Wheels and Navigation lights to turn green.
 5. Press **Explore**. Stay near it: it steers around what the lidar sees, not things lower
    than the lidar. **STOP** (top right, or Space / Esc) stops it. Driving with the keys
@@ -172,20 +173,19 @@ unless `docker/Dockerfile` changed.
 
 If the Roomba was turned off and on (or its battery died), turn it on and press
 **Reconnect Roomba**; it beeps when it's listening again. **Horn** (or the H key) honks.
-To turn everything off, `sudo poweroff` over SSH, or the Pi's power button (twice on the
-desktop OS; not tried yet), rather than pulling the plug.
+To turn everything off, shut the Pi down properly (its power button, pressed twice) rather
+than pulling the plug.
 
 The full how-to (what each light means, the logs, updating the code, switching the Pi to
 another WiFi for internet, debugging): **[`docs/setup/ros2-pi.md`](docs/setup/ros2-pi.md)**.
 
 ## Network
 
-| | |
-|---|---|
-| Hotspot (at every boot) | SSID `lucia-control`, password `lucia-143-tomato` |
-| Pi's address on the hotspot | `10.42.0.1` (page on port 8080, SSH `ssh lucia@10.42.0.1`) |
-| Laptops / phones on the hotspot | get `10.42.0.10`–`10.42.0.100` |
-| Internet | Not on the hotspot. To update the code, switch the Pi to a WiFi with internet: see "Network modes" in [`ros2-pi.md`](docs/setup/ros2-pi.md). Rebooting brings the hotspot back. |
+The robot brings up its own password-protected WiFi hotspot at every boot, so it needs no
+other network: laptops and phones join it to reach the control page. The hotspot has no
+internet; to update the code, the Pi is switched to a WiFi with internet for a while, and
+a reboot brings the hotspot back (see "Network modes" in
+[`ros2-pi.md`](docs/setup/ros2-pi.md)).
 
 First-time hotspot setup on a fresh Pi: [`docs/Raspberry Pi Initial Setup.md`](docs/Raspberry%20Pi%20Initial%20Setup.md).
 
@@ -225,7 +225,7 @@ Not yet tried on the robot: the stuck check.
 
 What a live demo shows, in about five minutes:
 
-1. **Power on.** Nothing else is plugged in. A phone joins `lucia-control` and opens the
+1. **Power on.** Nothing else is plugged in. A phone joins the robot's WiFi and opens the
    page.
 2. **Start mapping.** The status lights turn green, and the radar shows the lidar live.
 3. **Explore.** The robot drives itself. On the page, the map grows, frontiers (orange
