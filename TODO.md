@@ -27,11 +27,14 @@ History: 2026-10-16 first maps by keyboard, then IMU fused in, then the web page
 planned first; frontier exploration was moved ahead of it that evening at Christian's request.
 2026-10-17: Explore fixed and working, page v2, README and network docs checked against the Pi.
 
-Written 2026-10-17, **not yet tried on the robot**: clean container stop (`compose.yml`, needs
-`up -d` once), Reconnect Roomba, tunes and MIDI import (the horn played on the robot), the 0.23 m
-footprint; later that day, on `195B-Christian`: gradual speed changes, the stuck check, and
-driving by hand pausing Explore (it carries on 3 s after the last key press). Written earlier and
-waiting on hardware: the ToF safety gate (`use_tof`, off until the sensors are mounted).
+On the robot 2026-10-23: gradual speed changes and carrying on after driving by hand work; tight
+spaces slow it down (slowest speed then raised to 10 cm/s).
+
+**Not yet tried on the robot**: from 2026-10-17, clean container stop (`compose.yml`, needs `up -d`
+once), Reconnect Roomba, tunes and MIDI import (the horn played), the 0.23 m footprint, the stuck
+check; from 2026-10-23, the new page layout and the settings menu at Start mapping (Phase 5), and the
+tight-space fixes (ramp keeps the curve, Nav2 look-ahead scales with speed; Phase 4). Written earlier
+and waiting on hardware: the ToF safety gate (`use_tof`, off until the sensors are mounted).
 Next: those first tries (see Phases 1, 4, 5 and "Setup on the Pi"), then the ToF stop.
 
 ---
@@ -180,6 +183,13 @@ Folder: `src/ros2/lucia_nav/`
   - [ ] Measure where the lidar sits relative to the Roomba's center and set the `laser_tf` x/y in
     `lucia_lidar/launch/lidar_and_map.launch.py` (0, 0 today)
 - [ ] Later: real encoder `/odom` (Phase 1, Step B) should make Nav2 noticeably more precise
+- [ ] **Tight spaces stutter, then it figures it out** (Christian, 2026-10-23). Changed the same day, not yet
+  tried: the speed ramp now changes forward speed and turning together (eased separately, a stop on a curve ran
+  ~4 cm straight past it, toward the door frame), and Nav2 looks ahead 1.5 s of travel (0.25 m when slow in a
+  tight space, was a fixed 0.4 m: less corner cutting, and its collision check stops flagging frames it would
+  pass). If it still stutters: the Logs (Warnings and up) from one tight spot would show whether Nav2's recovery
+  steps are running (clear the map, spin 90°, wait 5 s, back up 30 cm); if so, a faster recovery (no 5 s wait)
+  is the next change
 - [ ] Explore stutters a bit over uneven ground (seen 2026-10-17), smooth elsewhere. Not explained
   yet. Either the Roomba stops itself (Safe mode: a cliff sensor or wheel drop on a bump drops it to
   Passive until the 1 s heartbeat restarts it; the Pi can't see that) or Nav2's commands jump (lidar
@@ -262,29 +272,23 @@ Folder: `src/ros2/lucia_bringup/`, `src/ros2/lucia_web/`, `docker/compose.yml`
   the Roomba allows that; a short gap every 16 notes)
 - [x] Trail drawn brighter (2026-10-23, Christian's request): violet (`--trail`), thicker, with a white edge so it
   shows on floor, unknown and walls alike (was thin, semi-transparent grey). Checked in a browser, both themes
-- [ ] **Next session: page layout** (Christian, 2026-10-17; asked to note it, not build it yet). Downloading the
-  map image and the on-screen drive pad (arrow buttons) are only reachable by scrolling down the left column,
-  which he doesn't like. Idea: a Download button at the top of the page (header) instead. Ask what else he wants
-  changed before starting
-- [ ] **Next session: settings menu** (Christian, 2026-10-17; note only, not started). The values that are fixed in
-  code today should be editable on the page: a small menu that opens on **Start mapping**, filled with the current
-  values as defaults (plus a way back to the defaults). Inventory of what's fixed today:
-  - Speed: top speed 0.30 / min 0.05 (`web_ui`), wheel cap `max_speed_mm_s` 300 (`roomba_bridge`), Nav2
-    `desired_linear_vel` 0.30, keyboard turn rate `turn_rate_ratio` 4
-  - Acceleration: `roomba_bridge` `max_linear_accel` / `decel` 0.3 / 0.6, `max_angular_accel` / `decel` 1.5 / 3.0
-  - Tight spaces ("doorway" slowdown): `safety_gate` `min_speed_mps` 0.10, and the room thresholds in
-    `safety_logic.tight_space_cap` (`near_slow` / `near_fast` 0.05 / 0.35 m, `ahead_slow` / `ahead_fast` 0.2 / 0.8 m),
-    which are function defaults, not node parameters yet
-  - Robot size 0.23 m radius: in four places (`nav2.yaml` both costmaps + inflation 0.45, mission `clearance_m` 0.25
-    and `robot_radius_m`, `safety_gate`, `web_ui` drawing); one setting should feed all of them
-  - Stuck check / recovery: mission `stuck_checks` 3, `max_stuck` 3, `backup_m` 0.15, `backup_speed_mps` 0.08; the
-    check's own thresholds (`MotionCheck` window 3 s, min travel 0.12 m, etc.) are constructor defaults
-  - Explore: `goal_timeout_s` 90, `min_frontier_m` 0.3, `frontier_gain` 0.5, `avoid_radius_m` 0.5,
-    `return_home_when_done`; driving by hand `resume_after_s` 3
-  - Maybe: slam_toolbox `occupancy_threshold` (how fast moved objects fade from the map), `resolution`
-  - How it could work: `web_ui` saves the settings (like `tunes.json`, in `~/maps/`) and passes them to
-    `mapping.launch.py` at Start mapping (launch arguments, or a generated params file), so they apply from the next
-    Start mapping. Nodes only read parameters at startup today; the speed slider is the one live setting
+- [x] **Page layout** (Christian's list, 2026-10-23; browser-checked against a stand-in robot, not yet on the Pi):
+  the left column doesn't scroll (checked at 1366x768 and 1920x1080): the radar, pinned at the top and taking
+  the height that's left, with the drive arrows on its edges; six key metrics (the full set moved to a Metrics tab
+  in the drawer, now **Logs & metrics**); Mapping (Start / Stop, Reconnect, Top speed, status). **Horn (H) ▾** in the
+  top bar opens the tunes: Horn, Charge!, saved ones, and MIDI import (the notes editor, La Cucaracha and Mass
+  Destruction went). **Save map ▾** in the map toolbar, with the saved maps to download. On a phone the column goes
+  under the map and scrolls, as before
+- [x] **Settings menu** (2026-10-23, same checks): Start mapping… opens 20 settings in 6 groups (driving, robot,
+  tight spaces, Explore, stuck check, driving by hand), each with help and its default; Reset to defaults; changed
+  ones are marked. `lucia_web/settings.py` checks them (ranges, and that they agree), saves them in
+  `~/maps/settings.json`, and writes a ROS 2 parameters file that `mapping.launch.py settings_file:=` hands to
+  roomba_bridge, safety_gate, the mission node and Nav2 (costmap robot size), each value typed as its node declared
+  it. `web_ui` applies the speed limit (slider), robot size (drawing) and resume delay itself. The tight-space
+  distances are now `safety_gate` parameters. Not in it (yet): slam_toolbox's settings, the stuck check's own
+  thresholds, keyboard turn rate
+- [ ] On the Pi: Start mapping with the settings dialog; the nodes start (Logs → Launch output shows
+  `settings_file:=`); changing the speed limit or the slowest tight-space speed shows on the robot
 - [ ] On the Pi: Pi-health metrics show numbers (container reads `/sys` thermal), logs drawer shows Nav2/mission
   lines, keys + takeover on the real robot
 

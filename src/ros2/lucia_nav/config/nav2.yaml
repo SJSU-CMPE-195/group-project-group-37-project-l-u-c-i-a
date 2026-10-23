@@ -70,11 +70,17 @@ controller_server:
     FollowPath:
       plugin: "nav2_regulated_pure_pursuit_controller::RegulatedPurePursuitController"
       desired_linear_vel: 0.30      # top speed; safety_gate slows it in tight spaces
+      # Look ahead 1.5 s of travel, kept between 0.25 and 0.7 m (lookahead_dist
+      # is only used when scaling is off). Slow in a tight space (safety_gate),
+      # it aims 0.25 m ahead: it cuts corners less, and the collision check
+      # below, which looks no further than that point, stops flagging a door
+      # frame it would pass. At 30 cm/s in the open: 0.45 m. Was a fixed 0.4 m
+      # until 2026-10-23, when tight spaces stuttered.
       lookahead_dist: 0.4
       min_lookahead_dist: 0.25
       max_lookahead_dist: 0.7
       lookahead_time: 1.5
-      use_velocity_scaled_lookahead_dist: false
+      use_velocity_scaled_lookahead_dist: true
       transform_tolerance: 0.3
       min_approach_linear_velocity: 0.05
       approach_velocity_scaling_dist: 0.4

@@ -31,6 +31,12 @@ The IMU transform is identity: mount the board flat, chip side up. Which way it
 points doesn't matter - only heading and turn rate are used, and the EKF treats
 its heading at startup as 0 (imu0_relative in ekf.yaml).
 
+settings_file:=<params.yaml>: the web page's settings menu (lucia_web
+settings.py), as a ROS 2 parameters file. Every node that has settings there
+gets it after its own (roomba_bridge, safety_gate, and through
+navigation.launch.py the mission node and Nav2), so it overrides them. Default:
+config/no_settings.yaml, which changes nothing.
+
 Runs on the Pi: mapping since 2026-10-16, with Nav2 + Explore since 2026-10-17.
 use_tof:=true is not yet tried (the ToF sensors aren't mounted).
 """
@@ -55,6 +61,7 @@ def generate_launch_description():
 
     use_imu = LaunchConfiguration('use_imu')
     with_imu = IfCondition(use_imu)
+    settings = LaunchConfiguration('settings_file')     # last in each list: overrides the rest
 
     return LaunchDescription([
         DeclareLaunchArgument('use_imu', default_value='true',
@@ -65,6 +72,8 @@ def generate_launch_description():
                               description='ToF safety stop: block forward driving while tof/near is true'),
         DeclareLaunchArgument('roomba_port', default_value='/dev/roomba'),
         DeclareLaunchArgument('imu_port', default_value='/dev/imu'),
+        DeclareLaunchArgument('settings_file', default_value=os.path.join(bringup_config, 'no_settings.yaml'),
+                              description="Parameters file from the web page's settings menu"),
 
         Node(
             package='lucia_control',
@@ -73,7 +82,7 @@ def generate_launch_description():
             parameters=[{
                 'port': LaunchConfiguration('roomba_port'),
                 'publish_tf': NotSubstitution(use_imu),   # the EKF publishes it instead
-            }],
+            }, settings],
             remappings=[('cmd_vel', 'cmd_vel_safe')],      # every drive command goes through safety_gate
             output='screen',
         ),
@@ -82,7 +91,7 @@ def generate_launch_description():
             package='lucia_bringup',
             executable='safety_gate',
             name='safety_gate',
-            parameters=[{'use_tof': LaunchConfiguration('use_tof')}],
+            parameters=[{'use_tof': LaunchConfiguration('use_tof')}, settings],
             output='screen',
         ),
 
@@ -115,5 +124,6 @@ def generate_launch_description():
         IncludeLaunchDescription(PythonLaunchDescriptionSource(lidar_launch)),
 
         IncludeLaunchDescription(PythonLaunchDescriptionSource(nav_launch),
+                                 launch_arguments={'settings_file': settings}.items(),
                                  condition=IfCondition(LaunchConfiguration('use_nav'))),
     ])

@@ -41,25 +41,44 @@ def twist_to_wheel_speeds(linear_mps, angular_rad_s, wheel_base_mm, max_speed_mm
     return int(round(left)), int(round(right))
 
 
-def ramp_toward(current, target, accel, decel, dt_s):
+def ramp_twist(current, target, limits, dt_s):
     """
-    One step of a gradual speed change: move current toward target by at most
-    accel * dt_s when speeding up, or decel * dt_s when slowing down, so the
-    robot never jolts. Works for forward speed (m/s, accel in m/s^2) and turn
-    rate (rad/s, accel in rad/s^2) alike.
+    One step of a gradual change of several speeds at once (forward speed and
+    turn rate), so the robot never jolts. Each speed may change by at most its
+    accel * dt_s when speeding up, or decel * dt_s when slowing down, and all of
+    them move the same share of the way to their targets. That keeps the robot
+    on the curve it was told to follow while it speeds up or slows down: eased
+    separately, the turn rate (which changes faster) would stop before the
+    forward speed does, and the robot would run straight past the curve.
 
-    Speeding up = moving away from zero; anything toward zero is slowing down.
-    Reversing direction slows down to exactly 0 first (one step can't cross
-    zero), then speeds up the other way.
+    current, target: tuples of speeds (m/s, rad/s); limits: one (accel, decel)
+    per speed. Speeding up = moving away from zero; anything toward zero is
+    slowing down. A speed that reverses stops at exactly 0 first (one step
+    can't cross zero), then speeds up the other way. Returns a tuple.
     """
-    if not math.isfinite(target):
-        target = 0.0
+    target = tuple(t if math.isfinite(t) else 0.0 for t in target)
     if dt_s <= 0:
-        return current
-    speeding_up = current * target >= 0 and abs(target) > abs(current)
-    limit = (accel if speeding_up else decel) * dt_s
-    step = max(-limit, min(limit, target - current))
-    new = current + step
-    if current * new < 0:
-        return 0.0
-    return new
+        return tuple(current)
+    share = 1.0
+    for c, t, (accel, decel) in zip(current, target, limits):
+        change = abs(t - c)
+        if change == 0:
+            continue
+        speeding_up = c * t >= 0 and abs(t) > abs(c)
+        share = min(share, (accel if speeding_up else decel) * dt_s / change)
+        if c * t < 0:                       # reversing: reach 0 this step at the latest
+            share = min(share, abs(c) / change)
+    if share >= 1.0 - 1e-9:
+        return target
+    new = []
+    for c, t in zip(current, target):
+        n = c + share * (t - c)
+        if c * n < 0 or abs(n) < 1e-12:     # rounding just past zero
+            n = 0.0
+        new.append(n)
+    return tuple(new)
+
+
+def ramp_toward(current, target, accel, decel, dt_s):
+    """ramp_twist for a single speed: one step from current toward target."""
+    return ramp_twist((current,), (target,), ((accel, decel),), dt_s)[0]

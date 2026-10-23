@@ -30,6 +30,15 @@ def test_start_runs_and_captures_output():
         m.stop()
 
 
+def test_settings_file_goes_to_the_launch():
+    m = MappingProcess(FAKE_LAUNCH)
+    try:
+        assert m.start(use_imu=True, settings_file='/tmp/lucia_settings.yaml')
+        assert wait_for(lambda: any("settings_file:=/tmp/lucia_settings.yaml" in line for line in m.log_tail()))
+    finally:
+        m.stop()
+
+
 def test_cannot_start_twice():
     m = MappingProcess(FAKE_LAUNCH)
     try:

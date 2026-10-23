@@ -6,7 +6,12 @@ ROS2 node that serves the LUCIA control page: open http://<pi>:8080
 
 From the page you can:
 - see whether the lidar, IMU and wheels (/scan, /imu/data, /odom) are alive
-- start/stop mapping (runs `ros2 launch lucia_bringup mapping.launch.py`)
+- start/stop mapping (runs `ros2 launch lucia_bringup mapping.launch.py`), with a
+  settings menu first (speed, acceleration, the tight-space slowdown, robot
+  size, Explore, the stuck check: settings.py). They're saved next to the maps
+  (settings.json) and handed to the nodes as a parameters file; this node uses
+  three itself (speed limit for the slider, robot size, carrying on after
+  driving by hand), which override its own parameters below
 - watch the map build live, with the robot's position on it
 - watch the lidar live as a radar around the robot (forward is up)
 - set the driving speed (the drive pad, and Nav2 through its speed_limit topic)
@@ -45,6 +50,7 @@ import collections
 import json
 import os
 import subprocess
+import tempfile
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -71,6 +77,7 @@ from lucia_web.logic import (AutoResume, RateMeter, Trail, clamp_speed, cpu_perc
                              parse_loadavg, parse_meminfo, parse_temp,
                              radar_nearest, scan_to_radar, thin_path,
                              topic_status, valid_map_name, yaw_from_quaternion)
+from lucia_web import settings as page_settings
 from lucia_web.mapping_process import MappingProcess
 from lucia_web.tunes import (BUILTIN, guess_melody_part, load_library,
                              melody, parse_midi, parse_tune_text, save_library,
@@ -160,6 +167,9 @@ class WebUi(Node):
         self._song_pub = self.create_publisher(String, 'roomba_bridge/song', 10)
         self._tunes_path = os.path.join(self.maps_dir, 'tunes.json')
         self._tunes_lock = threading.Lock()
+        self._settings_path = os.path.join(self.maps_dir, 'settings.json')
+        self._settings = page_settings.load(self._settings_path)
+        self._apply_settings(self._settings)
         self._reconnecting = threading.Lock()
         self._tf_buffer = Buffer()
         self._tf_listener = TransformListener(self._tf_buffer, self)
@@ -493,10 +503,51 @@ class WebUi(Node):
             'seconds': round(tune_seconds(tune), 1), 'info': info,
         }
 
-    def start_mapping(self, use_imu):
+    def settings_info(self):
+        """The settings menu: every setting, with its saved value."""
+        return {'settings': [dict(s, value=self._settings[s['key']]) for s in page_settings.describe()]}
+
+    def start_mapping(self, body):
+        """
+        Start mapping with the settings from the page's menu (body['settings']),
+        or the saved ones. Returns (ok, message).
+        """
+        if self.mapping.running:
+            return False, 'Already running'
+        values = body.get('settings') if isinstance(body.get('settings'), dict) else dict(self._settings)
+        if 'use_imu' in body and 'settings' not in body:
+            values['use_imu'] = bool(body['use_imu'])
+        settings, errors = page_settings.clean(values)
+        if errors:
+            return False, 'Settings: ' + '; '.join(errors)
+        params_path = os.path.join(tempfile.gettempdir(), 'lucia_settings.yaml')
+        try:
+            with open(params_path, 'w') as f:
+                f.write(page_settings.params_yaml(settings))
+        except OSError as exc:
+            return False, f'Could not write the settings for the launch: {exc}'
+        try:
+            page_settings.save(self._settings_path, settings)
+        except OSError as exc:      # still start; they just won't be there next time
+            self.get_logger().warning(f'Could not save the settings to {self._settings_path}: {exc}')
+        self._settings = settings
+        self._apply_settings(settings)
         with self._lock:
             self._trail.reset()
-        return self.mapping.start(use_imu=use_imu)
+        if not self.mapping.start(use_imu=settings['use_imu'], settings_file=params_path):
+            return False, 'Already running'
+        return True, 'Mapping started'
+
+    def _apply_settings(self, settings):
+        """The settings this node uses itself: speed limit (the slider), robot size, carrying on."""
+        with self._lock:
+            old_max = self._max_speed
+            self._max_speed = settings['top_speed']
+            # A slider at the top stays at the top; otherwise it only comes down if it must
+            at_top = self._speed is not None and self._speed >= old_max - 1e-6
+            self._speed = self._max_speed if at_top else min(self._speed, self._max_speed)
+            self._robot_radius = settings['robot_radius']
+            self._resume.after_s = settings['resume_after']
 
     def logs_after(self, seq):
         with self._lock:
@@ -667,6 +718,8 @@ class _Handler(BaseHTTPRequestHandler):
             self._send_json(self.ui.tunes_list())
         elif path == '/api/maps':
             self._send_json({'maps': self.ui.list_maps()})
+        elif path == '/api/settings':
+            self._send_json(self.ui.settings_info())
         elif path.startswith('/maps/'):
             name = path[len('/maps/'):]
             base, ext = os.path.splitext(name)
@@ -718,8 +771,8 @@ class _Handler(BaseHTTPRequestHandler):
             ok, message = self.ui.reconnect_roomba()
             self._send_json({'ok': ok, 'message': message})
         elif self.path == '/api/mapping/start':
-            started = self.ui.start_mapping(use_imu=bool(body.get('use_imu', True)))
-            self._send_json({'ok': started, 'message': 'Mapping started' if started else 'Already running'})
+            ok, message = self.ui.start_mapping(body)
+            self._send_json({'ok': ok, 'message': message})
         elif self.path == '/api/mapping/stop':
             stopped = self.ui.mapping.stop()
             self._send_json({'ok': stopped, 'message': 'Mapping stopped' if stopped else 'Not running'})
