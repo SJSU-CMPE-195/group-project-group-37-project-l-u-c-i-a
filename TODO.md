@@ -12,8 +12,9 @@
 frontier exploration), builds the map as it goes, comes back HOME, and you save the map at the end. Driving by keyboard is only
 a test tool for checking one piece at a time; it is not how the robot is meant to run.
 
-**Next goal (2026-10-22): follow me.** Someone gives a hand sign, the Jetson's camera sees it, and the
-robot follows them until they give the stop sign (Phase 6).
+**Next goal (2026-10-22): follow me.** Explore stays the main mode; if the Jetson's camera sees the follow
+sign, the robot follows that person until they give the cancel sign, then goes back to Explore (Phase 6). First step: the
+camera's view on the web page.
 
 ## Right now
 
@@ -300,6 +301,31 @@ Folder: `src/ros2/lucia_bringup/`, `src/ros2/lucia_web/`, `docker/compose.yml`
 Jetson sees it, and the robot follows that person; another sign stops it. The Nano side builds on Ethan's work
 (`docs/jetson_nano_zed_setup.md`: ZED 2, SDK 3.8.2 and Python 3.6 on the Nano, object detection working
 2026-10-16); the Pi side builds on the mission node.
+**Explore stays the main thing** (Christian, 2026-10-23): the robot explores on its own; if the Jetson sees the
+follow sign it switches to following that person, until the cancel sign, then goes back to Explore. Future work, after the camera view below.
+
+**2026-10-23: the link works.** Ethan's `docs/jetson-deployment/follow_sender.py` (body tracking, arm signs,
+UDP JSON) sent to `udp_listen.py` on the Pi over home WiFi (Jetson → Pi port 5005), ~10 Hz, stable
+person IDs, sensible positions. Signs not yet seen firing (`"sign"` was always null in that run).
+
+**Camera view on the page** (Christian, 2026-10-23): see what the Jetson camera and the model see, on the
+same web page.
+- [x] Jetson (Ethan, 2026-10-23): MJPEG stream on port 8080 at `/stream.mjpg` (or `/`): `zed_stream.py` plain,
+  `follow_sender.py --stream` with the skeletons and the sign drawn on. Measured: 1280×720, about 4 frames/s,
+  about 42 KB each (165 KB/s). Smaller frames (640×360) would cut that by about 4 if the WiFi struggles
+- [x] Pi: `web_ui` relays it at `/api/camera.mjpg`, so the browser only talks to the Pi (2026-10-23). The
+  Jetson's address is typed in the camera panel and saved on the Pi (`~/maps/camera.json`), not in git. The
+  relay runs only while the panel is open; it drops a camera that's quiet for 5 s and the page retries.
+  Checked with the real Jetson stream through `web_ui` on the laptop (picture, live / no-picture states,
+  wrong address, recovery); not yet on the Pi
+- [x] Page: **Camera** in the map toolbar opens the camera over the map's corner (bigger / smaller, address,
+  close). Overlay on/off = which script runs on the Jetson
+- [ ] Page: a Jetson light in the header (messages arriving), people as dots on the radar (needs the UDP
+  detections into `web_ui`)
+- [ ] On the robot: the Jetson reachable from the Pi (the Ethernet link, or the hotspot), and the stream
+  smooth over the hotspot
+- [ ] Sign test: does a raised hand at 1.5-2 m stay in view and fire `follow`?
+
 Flow: ZED 2 → Nano (finds people, reads the sign) → network → Pi node (`/person`, `/gesture`) → mission `follow`
 → `safety_gate` → wheels
 

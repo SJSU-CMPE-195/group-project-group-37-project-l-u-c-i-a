@@ -76,6 +76,17 @@ driven, time mapping, distance from HOME, position, area mapped, frontiers,
 nearest obstacle, lidar / IMU / odom message rates, Pi CPU temperature, CPU and
 memory. Battery says n/a until the Roomba reply cable is fixed.
 
+**Jetson camera:** **Camera** in the map toolbar opens what the Jetson's camera
+sees, over the map's corner (**⤢** bigger / smaller, **×** closes it). The Pi relays
+the Jetson's video stream, so the browser only talks to the Pi. The first time,
+type the Jetson's address under **⚙** (for example `<jetson address>:8080`; the
+`http://` and `/stream.mjpg` are filled in); it's saved on the Pi in
+`~/maps/camera.json`. The Jetson must be running `zed_stream.py` (plain picture)
+or `follow_sender.py --stream` (with the skeletons and the sign drawn on), both
+in `docs/jetson-deployment/Scripts/`. The video runs only while the panel is
+open (about 165 KB/s at 1280×720, 4 frames a second). With no picture, the
+panel says why and keeps retrying.
+
 **Logs & metrics** (the bar under the map) shows what's happening on the Pi: the
 newest message plus warning / error counts. Open it for every ROS node's log
 (mission, Nav2, slam_toolbox, roomba_bridge...), with level / node / text

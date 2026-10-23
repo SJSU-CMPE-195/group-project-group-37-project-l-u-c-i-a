@@ -7,6 +7,7 @@ Pure helpers for the web UI, kept free of ROS so they can be tested anywhere.
 import math
 import os
 import re
+import urllib.parse
 from collections import deque
 
 MAP_NAME_PATTERN = re.compile(r'^[A-Za-z0-9_-]{1,40}$')
@@ -139,6 +140,42 @@ def mission_text(body):
         if all(math.isfinite(v) and abs(v) < MAP_LIMIT_M for v in (x, y)):
             return f'goto {x:.3f} {y:.3f}'
     return None
+
+
+CAMERA_DEFAULT_PATH = '/stream.mjpg'   # what the Jetson's scripts serve (zed_stream.py, follow_sender.py --stream)
+
+
+def camera_url(text):
+    """
+    The Jetson camera's stream address from what someone typed: a full
+    'http://host:port/path', or just 'host:port' (http:// and /stream.mjpg are
+    added). '' (no camera) for an empty box. Only plain http:// with no user name
+    or password: the Pi relays whatever this points at, so it's kept to that.
+    Raises ValueError with a reason.
+    """
+    if not isinstance(text, str):
+        raise ValueError("Type the camera's address")
+    text = text.strip()
+    if not text:
+        return ''
+    if len(text) > 200:
+        raise ValueError('That address is too long')
+    if '://' not in text:
+        text = 'http://' + text
+    parts = urllib.parse.urlsplit(text)
+    if parts.scheme != 'http':
+        raise ValueError('Use an http:// address (what the Jetson serves)')
+    if parts.username or parts.password:
+        raise ValueError('No user name or password in the address')
+    try:
+        port = parts.port
+    except ValueError:
+        raise ValueError('The port must be a number from 1 to 65535') from None
+    host = parts.hostname
+    if not host or not re.fullmatch(r'[A-Za-z0-9.-]+', host):
+        raise ValueError("That doesn't look like an address, e.g. 192.168.1.20:8080")
+    netloc = host + (f':{port}' if port else '')
+    return urllib.parse.urlunsplit(('http', netloc, parts.path or CAMERA_DEFAULT_PATH, parts.query, ''))
 
 
 DRIVING_MODES = ('explore', 'home', 'goto')     # mission modes where it drives itself

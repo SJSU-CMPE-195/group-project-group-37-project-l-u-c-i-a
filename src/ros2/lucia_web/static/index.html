@@ -19,6 +19,7 @@
     }
   }
   * { box-sizing: border-box; }
+  [hidden] { display: none !important; }   /* even on elements given their own display (flex, grid) */
   html, body { height: 100%; }
   body { margin: 0; background: var(--bg); color: var(--text); display: flex; flex-direction: column;
          font: 14px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; overflow: hidden; }
@@ -122,6 +123,23 @@
   #midiInfo.err { color: var(--bad); }
   #savePanel { top: 48px; right: 10px; width: 280px; }
 
+  /* ---- Jetson camera: a panel over the map's top-left corner, under the map buttons ---- */
+  .campanel { position: absolute; top: 52px; left: 10px; z-index: 15; width: min(380px, calc(100% - 20px));
+              background: var(--card); border: 1px solid var(--line); border-radius: 10px; overflow: hidden;
+              box-shadow: 0 6px 24px rgba(0,0,0,.22); }
+  .campanel.large { width: min(72%, 1000px); }
+  .camhead { display: flex; align-items: center; gap: 6px; padding: 5px 6px 5px 10px; }
+  .camhead b { font-size: 12px; text-transform: uppercase; letter-spacing: .07em; color: var(--muted); }
+  .camhead .grow { flex: 1; }
+  .camhead button { padding: 2px 8px; font-size: 12px; }
+  #camState { font-size: 12px; color: var(--muted); }
+  #camState.live { color: var(--ok); } #camState.bad { color: var(--bad); }
+  .cambody { position: relative; aspect-ratio: 16 / 9; background: #000; }
+  #camImg { width: 100%; height: 100%; object-fit: contain; display: block; }
+  #camMsg { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; text-align: center;
+            padding: 14px; color: #ddd; font-size: 13px; }
+  #camAddr { padding: 6px 8px; border-top: 1px solid var(--line); flex-wrap: nowrap; }
+
   /* ---- Settings (opens on Start mapping) ---- */
   dialog#settingsDlg { width: min(640px, 94vw); max-height: 88vh; padding: 0; border: 1px solid var(--line); border-radius: 12px;
                        background: var(--card); color: var(--text); }
@@ -204,6 +222,8 @@
     .radarBox { container-type: normal; }
     #radarWrap { width: 100%; max-width: 420px; height: auto; aspect-ratio: 1; }
     #hornMenu { right: auto; left: 0; width: min(300px, calc(100vw - 32px)); }
+    .campanel { top: 96px; }                     /* the map buttons take two rows here */
+    .campanel.large { width: calc(100% - 20px); }
     #message { margin-left: 0; flex-basis: 100%; }
     body.busy #haltFloat { display: block; }
     body.busy { padding-bottom: 80px; }
@@ -329,7 +349,21 @@
         <button id="fit" title="Show the whole map">Fit</button>
         <button id="follow" title="Keep the robot in the middle">Follow</button>
         <button id="clickGo" title="Then click the map to send the robot there">Click to go</button>
+        <button id="cameraBtn" title="What the Jetson's camera sees (relayed through the Pi)">Camera</button>
         <button id="saveMapBtn" title="Save the map, or download a saved one">Save map ▾</button>
+      </div>
+      <div id="cameraPanel" class="campanel" hidden>
+        <div class="camhead">
+          <b>Jetson camera</b><span id="camState"></span><span class="grow"></span>
+          <button id="camSize" title="Bigger / smaller">⤢</button>
+          <button id="camEdit" title="The camera's address">⚙</button>
+          <button id="camClose" title="Close (stops the video)">×</button>
+        </div>
+        <div class="cambody"><img id="camImg" alt="What the Jetson's camera sees"><div id="camMsg"></div></div>
+        <div id="camAddr" class="row" hidden>
+          <input type="text" id="camUrl" placeholder="Jetson address, e.g. 192.168.1.20:8080" style="flex:1">
+          <button id="camSave" class="primary">Save</button>
+        </div>
       </div>
       <div id="savePanel" class="popover" hidden>
         <h3>Save the map</h3>
@@ -488,6 +522,7 @@ async function pollStatus() {
   $('radarEmpty').style.display = lidarGone ? '' : 'none';
   if (lidarGone && radar) { radar = null; drawRadar(); }
   showMetrics();
+  showCamera(status.camera);
   if (status.map_version !== mapVersion) pollMap();
   if (status.trail && (status.trail.session !== trail.session || status.trail.len > trail.points.length)) pollTrail();
   requestDraw();
@@ -1175,6 +1210,53 @@ $('midiPreview').onclick = async () => {
   if (r.ok) playPreview(r.tune); else setMidiInfo(r.message, false);
 };
 
+// ---- Jetson camera ------------------------------------------------------------
+// The Pi relays the Jetson's MJPEG stream (/api/camera.mjpg), so the browser only
+// talks to the Pi. It runs only while the panel is open: closing it ends the
+// stream, and the WiFi traffic with it. The status poll says whether pictures
+// are arriving; with none, the panel says why and reconnects every few seconds.
+let camOpen = false, camUrl = '', camTried = 0;
+function camShow(msg) { $('camMsg').textContent = msg; $('camMsg').hidden = !msg; }
+function camConnect() {
+  camTried = Date.now();
+  if (!camUrl) { camShow("Type the Jetson's stream address below."); $('camAddr').hidden = false; return; }
+  $('camImg').src = '/api/camera.mjpg?t=' + camTried;
+}
+function setCamera(open) {
+  camOpen = open;
+  $('cameraPanel').hidden = !open;
+  $('cameraBtn').classList.toggle('on', open);
+  if (open) { camShow('Connecting...'); $('camState').textContent = ''; camConnect(); }
+  else $('camImg').removeAttribute('src');
+}
+$('cameraBtn').onclick = () => setCamera(!camOpen);
+$('camClose').onclick = () => setCamera(false);
+$('camSize').onclick = () => $('cameraPanel').classList.toggle('large');
+$('camEdit').onclick = () => { $('camAddr').hidden = !$('camAddr').hidden; if (!$('camAddr').hidden) $('camUrl').focus(); };
+$('camSave').onclick = async () => {
+  const r = await post('/api/camera', { url: $('camUrl').value });
+  say(r.message, r.ok);
+  if (!r.ok) return;
+  camUrl = r.url; $('camUrl').value = r.url;
+  $('camAddr').hidden = !!r.url;
+  if (camOpen) { camShow('Connecting...'); camConnect(); }
+};
+$('camUrl').addEventListener('keydown', e => { if (e.key === 'Enter') $('camSave').click(); });
+function showCamera(c) {
+  if (!camOpen || !c) return;
+  const live = c.viewers > 0 && c.age_s != null && c.age_s < 3;
+  $('camState').textContent = live ? '● live' : camUrl ? 'no picture' : '';
+  $('camState').className = live ? 'live' : 'bad';
+  if (live) { camShow(''); return; }
+  if (!camUrl) return;
+  camShow(c.error ? `No picture from ${camUrl} (${c.error}). Trying again...` : 'Connecting...');
+  if (Date.now() - camTried > 4000) camConnect();
+}
+async function loadCamera() {
+  try { camUrl = (await (await fetch('/api/camera')).json()).url || ''; } catch (e) { return; }
+  $('camUrl').value = camUrl;
+}
+
 // ---- Popovers: the horn menu and Save map -------------------------------------
 const POPS = [['hornMenuBtn', 'hornMenu'], ['saveMapBtn', 'savePanel']];
 function closePops() {
@@ -1387,7 +1469,7 @@ $('settingsStart').onclick = async () => {
 };
 
 // ---- Start ---------------------------------------------------------------
-pollStatus(); loadMaps(); drawRadar(); pollLogs(); loadTunes();
+pollStatus(); loadMaps(); drawRadar(); pollLogs(); loadTunes(); loadCamera();
 setInterval(pollStatus, 1000);
 setInterval(pollScan, 200);
 setInterval(pollMap, 2000);

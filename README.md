@@ -35,7 +35,8 @@ own WiFi.
 - **Starts by itself:** power on and the Pi brings up its hotspot and the page; no screen,
   keyboard or other network needed.
 - **In progress:** a time-of-flight safety stop for things below the lidar (Noel), object
-  recognition with a ZED 2i camera on a Jetson Nano (Ethan). Not working yet: battery and
+  recognition with a ZED 2i camera on a Jetson Nano (Ethan), whose camera view (with the
+  people it tracks drawn on) already shows on the control page, relayed by the Pi. Not working yet: battery and
   wheel encoder readings (the Roomba's serial replies don't reach the Pi).
 
 ![First maps: wheels only vs. wheels + IMU](media/maps/2026-10-16_room1_vs_room2.png)

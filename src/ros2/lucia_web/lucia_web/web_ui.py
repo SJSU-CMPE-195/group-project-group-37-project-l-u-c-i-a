@@ -32,6 +32,11 @@ From the page you can:
   topic): built-in ones, saved ones (tunes.json next to the saved maps), typed
   ones, and melodies taken from MIDI files (tunes.py)
 - save the map and download the PNG
+- see what the Jetson's camera sees: this node relays the Jetson's MJPEG video
+  stream (/api/camera.mjpg), so the browser only talks to the Pi (on the robot
+  the Jetson is on the Pi's network, not the laptop's). The stream's address is
+  typed on the page and saved next to the maps (camera.json), not in git. The
+  relay runs only while someone has the camera panel open
 
 Driving is hold-to-move: the page sends a command every 100 ms while a button
 or key is held. If commands stop arriving for drive_timeout_s (button
@@ -47,12 +52,14 @@ Usage:
 
 import base64
 import collections
+import http.client
 import json
 import os
 import subprocess
 import tempfile
 import threading
 import time
+import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import rclpy
@@ -71,7 +78,7 @@ from std_msgs.msg import String
 from std_srvs.srv import Trigger
 from tf2_ros import Buffer, TransformException, TransformListener
 
-from lucia_web.logic import (AutoResume, RateMeter, Trail, clamp_speed, cpu_percent,
+from lucia_web.logic import (AutoResume, RateMeter, Trail, camera_url, clamp_speed, cpu_percent,
                              cpu_times, drive_to_twist, encode_grid,
                              log_level_name, mapped_area_m2, mission_text,
                              parse_loadavg, parse_meminfo, parse_temp,
@@ -92,6 +99,8 @@ LOG_SEND_MAX = 500          # most entries sent in one /api/logs reply
 LOG_MSG_MAX = 500           # characters kept per log message
 RECONNECT_TIMEOUT_S = 20.0  # roomba_bridge's reconnect takes about 5 s
 MIDI_MAX_BYTES = 2_000_000
+CAMERA_TIMEOUT_S = 5.0      # the relay gives up on a camera that sends nothing for this long
+CAMERA_TYPES = ('multipart/x-mixed-replace', 'image/jpeg')     # what the relay passes on
 
 
 class WebUi(Node):
@@ -167,6 +176,11 @@ class WebUi(Node):
         self._song_pub = self.create_publisher(String, 'roomba_bridge/song', 10)
         self._tunes_path = os.path.join(self.maps_dir, 'tunes.json')
         self._tunes_lock = threading.Lock()
+        self._camera_path = os.path.join(self.maps_dir, 'camera.json')
+        self._camera_url = self._load_camera_url()
+        self._camera_viewers = 0
+        self._camera_data_time = None   # last bytes from the camera (time.monotonic())
+        self._camera_error = None
         self._settings_path = os.path.join(self.maps_dir, 'settings.json')
         self._settings = page_settings.load(self._settings_path)
         self._apply_settings(self._settings)
@@ -410,6 +424,54 @@ class WebUi(Node):
         finally:
             self._reconnecting.release()
 
+    # ---- Jetson camera -------------------------------------------------
+
+    def _load_camera_url(self):
+        try:
+            with open(self._camera_path) as f:
+                return camera_url(json.load(f).get('url', ''))
+        except (OSError, ValueError, AttributeError):
+            return ''
+
+    @property
+    def camera_address(self):
+        return self._camera_url
+
+    def set_camera_url(self, text):
+        try:
+            url = camera_url(text)
+        except ValueError as exc:
+            return False, str(exc), self._camera_url
+        try:
+            tmp = self._camera_path + '.tmp'
+            with open(tmp, 'w') as f:
+                json.dump({'url': url}, f)
+            os.replace(tmp, self._camera_path)
+        except OSError as exc:
+            return False, f'Could not save the address: {exc}', self._camera_url
+        with self._lock:
+            self._camera_url = url
+            self._camera_error = None
+        return True, ('Camera address saved' if url else 'Camera address cleared'), url
+
+    def camera_event(self, viewer=0, data=False, error=None):
+        """Bookkeeping from the relay: a viewer came or went, bytes arrived, or it failed."""
+        with self._lock:
+            self._camera_viewers += viewer
+            if data:
+                self._camera_data_time = time.monotonic()
+                self._camera_error = None
+            if error:
+                self._camera_error = error
+
+    def camera_state(self):
+        """For the page: is an address set, how many are watching, how fresh the picture is, the last problem."""
+        now = time.monotonic()
+        with self._lock:
+            age = None if self._camera_data_time is None else round(now - self._camera_data_time, 1)
+            return {'url': self._camera_url, 'viewers': self._camera_viewers,
+                    'age_s': age, 'error': self._camera_error}
+
     # ---- Tunes ---------------------------------------------------------
 
     def tunes_list(self):
@@ -637,6 +699,7 @@ class WebUi(Node):
             'telemetry': telemetry,
             'trail': trail,
             'robot_radius_m': self._robot_radius,
+            'camera': self.camera_state(),
         }
 
     def map_if_newer(self, version):
@@ -720,6 +783,10 @@ class _Handler(BaseHTTPRequestHandler):
             self._send_json({'maps': self.ui.list_maps()})
         elif path == '/api/settings':
             self._send_json(self.ui.settings_info())
+        elif path == '/api/camera':
+            self._send_json(self.ui.camera_state())
+        elif path == '/api/camera.mjpg':
+            self._relay_camera()
         elif path.startswith('/maps/'):
             name = path[len('/maps/'):]
             base, ext = os.path.splitext(name)
@@ -767,6 +834,9 @@ class _Handler(BaseHTTPRequestHandler):
         elif self.path == '/api/tunes/delete':
             ok, message = self.ui.delete_tune(body)
             self._send_json({'ok': ok, 'message': message})
+        elif self.path == '/api/camera':
+            ok, message, url = self.ui.set_camera_url(body.get('url', ''))
+            self._send_json({'ok': ok, 'message': message, 'url': url})
         elif self.path == '/api/roomba/reconnect':
             ok, message = self.ui.reconnect_roomba()
             self._send_json({'ok': ok, 'message': message})
@@ -781,6 +851,53 @@ class _Handler(BaseHTTPRequestHandler):
             self._send_json({'ok': ok, 'message': message})
         else:
             self._send_json({'error': 'not found'}, 404)
+
+    # Camera relay ------------------------------------------------------
+
+    def _relay_camera(self):
+        """
+        Pass the Jetson's MJPEG stream through to this browser, as it comes, for
+        as long as the browser keeps the connection (the page closes it when the
+        camera panel closes). One connection to the Jetson per viewer; its
+        scripts serve several at once.
+        """
+        url = self.ui.camera_address
+        if not url:
+            self._send_json({'ok': False, 'message': 'No camera address yet'}, 404)
+            return
+        try:
+            upstream = urllib.request.urlopen(url, timeout=CAMERA_TIMEOUT_S)
+        except (OSError, ValueError, http.client.HTTPException) as exc:
+            self.ui.camera_event(error=str(getattr(exc, 'reason', exc)))
+            self._send_json({'ok': False, 'message': 'Camera not reachable'}, 502)
+            return
+        with upstream:
+            kind = upstream.headers.get('Content-Type', '')
+            if not kind.startswith(CAMERA_TYPES):
+                self.ui.camera_event(error=f'not a camera stream ({kind or "no type"})')
+                self._send_json({'ok': False, 'message': 'Not a camera stream'}, 502)
+                return
+            self.send_response(200)
+            self.send_header('Content-Type', kind)
+            self.send_header('Cache-Control', 'no-store')
+            self.end_headers()
+            self.ui.camera_event(viewer=1)
+            try:
+                while True:
+                    try:
+                        chunk = upstream.read1(65536)
+                    except (OSError, http.client.HTTPException) as exc:     # the camera went quiet or away
+                        self.ui.camera_event(error='stopped sending' if isinstance(exc, TimeoutError) else str(exc))
+                        break
+                    if not chunk:
+                        self.ui.camera_event(error='the stream ended')
+                        break
+                    self.wfile.write(chunk)         # OSError here = the browser closed it
+                    self.ui.camera_event(data=True)
+            except OSError:
+                pass
+            finally:
+                self.ui.camera_event(viewer=-1)
 
     # Helpers -----------------------------------------------------------
 
