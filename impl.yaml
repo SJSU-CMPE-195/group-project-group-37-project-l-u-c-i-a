@@ -1,0 +1,37 @@
+project_name: "Project L.U.C.I.A."
+project_type: "hardware"          # web | mobile | api | ml | hardware | iot | embedded | hybrid
+
+impl_claim: "Powered on with no other network, the Roomba-based robot serves a control page over its own WiFi; pressing Explore makes it map an unknown room with lidar + IMU (slam_toolbox), drive to frontiers until none are reachable, return to where it started, and save the map as a downloadable PNG."
+
+languages: ["python", "micropython", "c++"]
+hardware_required: true
+
+setup:
+  - "pip install pytest pyserial"
+
+build:
+  - "python3 -m compileall -q src/ros2 src/imu src/tof_pico"
+
+test:
+  - "cd src/ros2/lucia_control && python3 -m pytest test -v"
+  - "cd src/ros2/lucia_imu && python3 -m pytest test -v"
+  - "cd src/ros2/lucia_bringup && python3 -m pytest test -v"
+  - "cd src/ros2/lucia_nav && python3 -m pytest test -v"
+  - "cd src/ros2/lucia_web && python3 -m pytest test -v"
+
+run:                              # on the robot's Raspberry Pi, from the repo root
+  - "docker build -t lucia/ros2:latest docker/"
+  - "docker compose -f docker/compose.yml up -d"
+
+mock_mode:                        # how a grader runs it WITHOUT the robot
+  available: true
+  commands:
+    - "cd src/ros2/lucia_nav && python3 -m pytest test/test_mission_logic.py -v"   # full simulated exploration of two rooms, then return HOME
+    - "cd src/ros2/lucia_nav && python3 -m pytest test/test_motion_check.py -v"    # stuck detection against a simulated lidar in a room and a hallway
+    - "cd src/ros2/lucia_control && python3 -m pytest test -v"                    # Roomba serial protocol against a fake serial port
+
+demo:
+  video: "https://youtu.be/..."
+  screenshots: ["media/maps/2026-10-16_room1_vs_room2.png"]
+
+notes: "The full system runs on a Raspberry Pi 5 with a Roomba 650, an RPLidar A2M8 and a BNO08X IMU on a Pico 2; the run commands need that hardware and internet for the image build. The ROS 2 Jazzy workspace builds inside docker/Dockerfile with colcon (lucia_vision is skipped there; it needs CUDA on the Jetson). Pico code is MicroPython and is not compiled. All decision logic (frontier exploration, mission, safety gate, motion, odometry, IMU parsing, web page logic) is in plain-Python modules that the tests exercise without ROS or hardware; test_mission_logic.py runs a complete simulated exploration end to end. Tests use POSIX signals and are meant for Linux/macOS."
