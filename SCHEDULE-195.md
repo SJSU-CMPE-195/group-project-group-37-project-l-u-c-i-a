@@ -51,6 +51,7 @@
 | 10/9/2026 | 5 hours | In-person | Christian, Ling, Ethan, Noel | Hardware Testing | 
 | 10/12/2026 | 3 hours | In-person | Ling, Ethan | IMU and Nano Setup |
 | 10/16/2026 | 5 hours | In-person | Christian, Ling, Ethan, Noel | IMU and TOF Implementation | 
+| 10/23/2026 | 5 hours | In-person | Christian, Ling, Ethan, Noel | Camera Compatibility and Assignment Work | 
 
 ---
 ## Meeting Notes
@@ -472,3 +473,19 @@ Christian, Ling, Ethan, Noel
 - Work on Frontier Mode
 - Create a return to Home feature
 - Have Jetson communicate with Pi (and screen)
+
+### 10/23/2026 - Team Meeting
+
+**Attendees:**
+Christian, Ling, Ethan, Noel
+
+**Discussion:**
+- Assembled ToF drawer into Roomba
+- Redesigned Pi/Jetson Drawer into V3.1
+- Got object detection up and running as well as streamed over network
+- Worked on 195B Assignment Implementation 2 requirements
+
+**Decisions:**
+- Narrate recording for demo video
+- Finalize branch for 195B Assignment
+- Print out new parts at Makerspace
