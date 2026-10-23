@@ -1,11 +1,8 @@
 # Project L.U.C.I.A.
 
-An indoor robot that maps a room on its own. Built on a Roomba 650: turn it on, and it
-explores the room by itself, builds a map with its lidar, and drives back to where it
-started. A Raspberry Pi 5 runs everything and serves a control page over the robot's
-own WiFi.
-
 SJSU CMPE 195A/B senior design, team 37. **Advisor:** Professor Wencen Wu
+
+## Team
 
 | Name | GitHub | Email |
 |------|--------|-------|
@@ -14,7 +11,15 @@ SJSU CMPE 195A/B senior design, team 37. **Advisor:** Professor Wencen Wu
 | Ethanael Grimares | [@Memekushi](https://github.com/Memekushi) | ethanael.grimares@sjsu.edu |
 | Noel Temores | [@noel-tem](https://github.com/noel-tem) | noel.temores@sjsu.edu |
 
-## Where it stands (October 2026)
+
+## Project Description
+
+An indoor robot that maps a room on its own. Built on a Roomba 650: turn it on, and it
+explores the room by itself, builds a map with its lidar, and drives back to where it
+started. A Raspberry Pi 5 runs everything and serves a control page over the robot's
+own WiFi.
+
+## Prototype Scope (October 2026)
 
 - **Explores on its own.** Frontier exploration: it drives to the edges of what it has
   mapped, one after another, until nothing reachable is left, then returns HOME. Works on
@@ -34,7 +39,16 @@ SJSU CMPE 195A/B senior design, team 37. **Advisor:** Professor Wencen Wu
 
 ![First maps: wheels only vs. wheels + IMU](media/maps/2026-10-16_room1_vs_room2.png)
 
-## Using the robot
+## System Architecture
+
+
+## Prerequisites
+
+
+## Installation 
+
+
+## Running the Prototype
 
 1. Turn on the Roomba and the Pi. Give it about a minute: the Pi brings up its WiFi
    hotspot and starts the control page by itself.
@@ -64,7 +78,13 @@ another WiFi for internet, debugging): **[`docs/setup/ros2-pi.md`](docs/setup/ro
 
 First-time hotspot setup on a fresh Pi: [`docs/Raspberry Pi Initial Setup.md`](docs/Raspberry%20Pi%20Initial%20Setup.md).
 
-## How it's built
+## Testing
+
+
+## Demo
+
+
+## Technical Stack
 
 **Hardware:** Roomba 650 base · Raspberry Pi 5 (256 GB microSD, 5 A UPS) · RPLidar A2M8 ·
 BNO08X IMU on a Raspberry Pi Pico 2 · VL53L5CX time-of-flight sensors on a Pico 2 (in
