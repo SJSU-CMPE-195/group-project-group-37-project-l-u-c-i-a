@@ -253,6 +253,24 @@ For this Nano's SDK version, keep these compatibility details in place:
 
 - Do not call `set_object_detection_runtime_parameters`; pass `object_runtime` to `zed.retrieve_objects(...)`.
 
+## Network video streaming
+
+The working `follow_sender.py` was extended to serve the annotated ZED 2 video feed over HTTP while continuing to send detection data to the Raspberry Pi.
+
+- Detection JSON remains on UDP port `5005`.
+- Video is served as an MJPEG stream over TCP port `8080`.
+- The stream can be opened from another device on the same subnet at:
+
+```text
+http://192.168.10.42:8080/
+```
+
+- The stream was successfully opened from a phone and other devices on the local network.
+- The Nano's `192.168.10.42` address is the usable LAN address. The `172.17.0.1` address is a Docker bridge address and should not be used by other devices.
+- The stream is produced by the same process as object detection, so the ZED camera is opened only once.
+
+Use `--stream --stream-port 8080` when launching `follow_sender.py`. Do not replace the detection `--port 5005` value with `8080`; they serve different protocols and purposes.
+
 ## Camera compatibility
 
 The current combination is compatible for the planned project:
@@ -267,6 +285,7 @@ The current combination is compatible for the planned project:
 | Depth and 3D position | Supported by the ZED 2 and SDK |
 | Raspberry Pi communication | Confirmed working over the local network with UDP messages |
 | Person detection and tracking | Confirmed; people are being detected and associated with tracked IDs |
+| Network video stream | Confirmed working as an annotated MJPEG stream over TCP port `8080` |
 
 The original ZED 1 is not compatible with the ZED SDK object-detection module. The identified camera is a ZED 2, so it is suitable for object detection, depth, 3D position, and tracking.
 
@@ -291,12 +310,12 @@ Completed:
 - Nano and Raspberry Pi communication is working over the local network using UDP messages.
 - The Nano is successfully sending detection data to the Pi.
 - Person detection and tracking are working; detected people are being associated with tracked IDs.
+- The integrated `follow_sender.py` serves the annotated video feed over HTTP/TCP port `8080`.
+- The video feed has been confirmed from a phone and other devices on the same subnet.
 
 Paused:
 
 - The follow/stop behavior and ROS2 command integration on the Raspberry Pi still need to be validated.
-- Optional video streaming to the Raspberry Pi has not yet been configured.
-- The Windows dual-boot and partition work is paused.
 
 ## Next planned steps
 
@@ -304,7 +323,7 @@ Paused:
 2. Test the follow and stop sign logic with real people and confirm that the hold-time and repeat-suppression behavior is reliable.
 3. Convert the Raspberry Pi's received detection messages into ROS2 follow/stop commands.
 4. Add a heartbeat timeout or other failsafe so the Pi stops safely if Nano messages stop arriving.
-5. Add an optional compressed video stream for reference.
+5. Evaluate a more bandwidth-efficient H.264/RTP stream later if MJPEG becomes too bandwidth-intensive.
 6. Return to the Windows installation USB and repair the Windows NTFS partition before attempting to resize it for dual boot.
 
 ## Useful references
