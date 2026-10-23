@@ -18,9 +18,9 @@ Tight spaces (tight_space, on by default): full speed in the open, slower close
 to things. From each lidar scan it measures the room around the robot's front
 half and the free run straight ahead (safety_logic.clearances) and caps forward
 speed between max_speed_mps (0.30, roomba_bridge's own limit: 0.35 m of room
-around it and 0.8 m clear ahead) and min_speed_mps (0.06: within 5 cm, or 0.2 m
-ahead). In a 0.7 m doorway that's about 12 cm/s; 20 cm from a wall about
-18 cm/s. Turning is slowed in proportion so the robot keeps to its curve;
+around it and 0.8 m clear ahead) and min_speed_mps (0.10: within 5 cm, or 0.2 m
+ahead; was 0.06 until 2026-10-23, too slow on the robot). In a 0.7 m doorway
+that's about 13 cm/s; 20 cm from a wall about 19 cm/s. Turning is slowed in proportion so the robot keeps to its curve;
 backing up and turning in place aren't touched. It never stops the robot. With
 no fresh scan it allows only min_speed_mps (can't see: creep).
 
@@ -57,7 +57,7 @@ class SafetyGate(Node):
         self.declare_parameter('stale_s', 0.5)      # lucia_tof sends tof/near at least 10 Hz
         self.declare_parameter('tight_space', True)
         self.declare_parameter('max_speed_mps', 0.30)
-        self.declare_parameter('min_speed_mps', 0.06)
+        self.declare_parameter('min_speed_mps', 0.10)      # 0.06 was too slow on the robot (2026-10-23)
         self.declare_parameter('robot_radius_m', 0.23)     # 18 in across (nav2.yaml has the same)
         self.declare_parameter('scan_stale_s', 0.5)        # the lidar sends ~12 scans a second
 

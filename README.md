@@ -215,9 +215,11 @@ checklists in [`TODO.md`](TODO.md); the results are written up in
 - IMU: 50 readings a second; a quarter turn by hand read +94.7°
 - Mapping by keyboard, with and without the IMU (the maps above, 2026-10-16)
 - Explore: mapped a room on its own and came back HOME (2026-10-17)
+- Gradual speed changes, and Explore carrying on 3 s after driving by hand (2026-10-23)
+- Slowing down in tight spaces (2026-10-23): it was too slow, so its slowest speed went from
+  6 to 10 cm/s (not yet re-tried)
 
-Written but not yet tried on the robot (2026-10-17): gradual speed changes, the stuck
-check, pausing Explore while driving by hand, and slowing down in tight spaces.
+Not yet tried on the robot: the stuck check.
 
 ## Demo
 
@@ -231,9 +233,6 @@ What a live demo shows, in about five minutes:
 4. **Take over** with the arrow keys, then let go: after 3 s it carries on exploring.
 5. **Back HOME.** Save the map and download it as a PNG.
 6. **Horn and tunes** on the Roomba's speaker.
-
-Two things in steps 3 and 4 were written on 2026-10-17 and are still to be tried on the
-robot: slowing down through doorways, and carrying on after a takeover (see Testing).
 
 Media so far: the first maps (above, 2026-10-16) and last semester's demo (below). A video
 of a full Explore run is still to be recorded.

@@ -27,8 +27,8 @@ update and debug it. Current as of 2026-10-17. For what changed when, see
      STOP button also floats at the bottom while the robot drives itself.
    - **Top speed** (starts at the maximum, 30 cm/s) is how fast it drives in the
      open, for Explore, HOME and driving by hand. It slows down by itself in
-     tight spaces, from the lidar: about 20 cm/s nearing a doorway, 10 cm/s in
-     a 0.7 m doorway, and toward 6 cm/s with something within 5 cm of its side
+     tight spaces, from the lidar: about 21 cm/s nearing a doorway, 13 cm/s in
+     a 0.7 m doorway, and down to 10 cm/s with something within 5 cm of its side
      or 20 cm ahead. It never stops on its own account; backing up and turning
      in place aren't slowed. (`safety_gate`, `tight_space:=false` turns it off.)
    - Stay with it: it steers around what the lidar sees, not things lower than
@@ -51,7 +51,7 @@ and autonomy controls, the drive pad, Save map. The rest is the **map**:
 - Mouse wheel zooms, drag pans; **Fit** shows the whole map, **Follow** keeps
   the robot in the middle. `#follow` or `#zoom=3` at the end of the address sets
   the starting view.
-- Drawn on it: the robot at its real size (18 in across), its trail (grey), the
+- Drawn on it: the robot at its real size (18 in across), its trail (violet), the
   planned path (dashed), frontiers, HOME, the current goal, and the live lidar
   points.
 - **Click to go**, then click the map, to send the robot to one spot.

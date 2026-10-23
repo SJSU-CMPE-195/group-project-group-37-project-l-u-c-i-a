@@ -8,6 +8,9 @@
   :root {
     --bg: #f4f5f7; --card: #ffffff; --text: #1d2330; --muted: #667085; --line: #dde1e7;
     --accent: #2f6fde; --ok: #1f9d55; --warn: #d98e04; --bad: #d64545; --pad: #eef1f6;
+    /* Where the robot has driven. One value for both themes: the map image itself is
+       always light (white floor, grey unknown, black walls). */
+    --trail: #8b2cf5;
   }
   @media (prefers-color-scheme: dark) {
     :root {
@@ -327,7 +330,7 @@
       <div class="legend">
         <span><i style="background:var(--accent)"></i>Robot / goal</span>
         <span><i class="line" style="background:var(--accent)"></i>Planned path</span>
-        <span><i class="line" style="background:var(--muted)"></i>Trail</span>
+        <span><i class="line" style="background:var(--trail)"></i>Trail</span>
         <span><i style="background:var(--warn)"></i>Frontier</span>
         <span><i style="background:var(--ok)"></i>HOME</span>
         <span><i style="background:var(--bad)"></i>Lidar &lt; 0.3 m</span>
@@ -825,8 +828,11 @@ function drawMap() {
   ctx.imageSmoothingEnabled = false;
   ctx.drawImage(mapCanvas, ix, iy, mapData.width * res * view.scale, mapData.height * res * view.scale);
 
-  // Where it has driven, then where it plans to go
-  ctx.globalAlpha = 0.7; line(trail.points, col('muted'), 2); ctx.globalAlpha = 1;
+  // Where it has driven (bright, with a white edge so it shows on floor, unknown and walls),
+  // then where it plans to go
+  ctx.lineJoin = ctx.lineCap = 'round';
+  line(trail.points, '#fff', 6); line(trail.points, col('trail'), 3.5);
+  ctx.lineJoin = 'miter'; ctx.lineCap = 'butt';
   if (status && status.plan) line(status.plan, col('accent'), 2, [6, 4]);
 
   if (m) {

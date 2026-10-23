@@ -34,7 +34,7 @@ def test_gate_blocks_forward_only():
 # ---- Tight spaces ----------------------------------------------------------
 
 R = 0.23                    # robot radius
-MIN, MAX = 0.06, 0.30
+MIN, MAX = 0.10, 0.30          # safety_gate's defaults
 
 
 def cap_for(points):
@@ -56,7 +56,7 @@ def test_doorway_is_slow():
     # 0.7 m doorway, the robot in the middle of it
     jambs = wall(-0.1, 0.35, 0.1, 0.35) + wall(-0.1, -0.35, 0.1, -0.35)
     assert cap_for(jambs) == pytest.approx(MIN + (MAX - MIN) * (0.12 - 0.05) / 0.30)
-    assert cap_for(jambs) < 0.13
+    assert cap_for(jambs) < 0.16
 
 
 def test_hugging_a_wall_is_in_between():

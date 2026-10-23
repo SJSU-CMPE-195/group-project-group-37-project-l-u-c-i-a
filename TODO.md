@@ -12,6 +12,9 @@
 frontier exploration), builds the map as it goes, comes back HOME, and you save the map at the end. Driving by keyboard is only
 a test tool for checking one piece at a time; it is not how the robot is meant to run.
 
+**Next goal (2026-10-22): follow me.** Someone gives a hand sign, the Jetson's camera sees it, and the
+robot follows them until they give the stop sign (Phase 6).
+
 ## Right now
 
 **The robot maps a room by itself** (as of 2026-10-17): power on, join `lucia-control`, open
@@ -57,13 +60,14 @@ Folder: `src/ros2/lucia_control/`
   `roomba_bridge` ramps toward each command instead of jumping (`motion.ramp_toward`, tested).
   0 to 15 cm/s in 0.5 s, 15 cm/s to a stop in 0.3 s (about 2 cm); 30 cm/s takes 1 s up, 0.5 s
   (about 8 cm) down. Every driver and every stop goes through it, STOP included
-- [ ] On the robot: starts and stops are smooth, and STOP still stops within a few cm
+- [x] On the robot: the speed ramp works (Christian, 2026-10-23)
 - [x] Top speed in the open, slower in tight spaces (2026-10-17, laptop-tested, not yet on the robot):
   the speed slider and Nav2 start at 0.30 m/s; `safety_gate` caps forward speed from the lidar (room
-  around the front half, free run ahead): 0.30 in the open, ~0.20 nearing a doorway, ~0.10 in a 0.7 m
-  doorway, 0.06 at the closest. Never stops; backing up and turning in place untouched; no lidar = 0.06
-- [ ] On the robot: Explore at top speed. Does it slow in the doorway and near furniture, and is the map
-  still clean at 30 cm/s?
+  around the front half, free run ahead): 0.30 in the open, ~0.21 nearing a doorway, ~0.13 in a 0.7 m
+  doorway, 0.10 at the closest. Never stops; backing up and turning in place untouched; no lidar = 0.10
+- [x] On the robot (2026-10-23): it slows down in tight spaces, but too much. The slowest speed
+  (`safety_gate` `min_speed_mps`) went from 0.06 to 0.10 m/s the same day (doorway ~0.10 → ~0.13)
+- [ ] On the robot: the 0.10 minimum feels right in tight spaces; the map is still clean at 30 cm/s
 
 **Step B — Position tracking and battery**
 - [x] Checked 2026-09-18: **the Roomba's replies don't reach the Pi.** Battery voltage reads 0, encoders read 0. Driving still works, so the Pi-to-Roomba direction is fine.
@@ -248,7 +252,7 @@ Folder: `src/ros2/lucia_bringup/`, `src/ros2/lucia_web/`, `docker/compose.yml`
   against the stub, not yet on the robot): mission `pause` / `resume`; `web_ui` resumes `resume_after_s`
   (3 s) after the last key press, with a countdown on the page; STOP cancels. Explore keeps its failed
   frontiers and stuck spots. Letting go of a key while paused stops the wheels at once
-- [ ] On the robot: take over during Explore, let go, it carries on after about 3 s
+- [x] On the robot: take over during Explore, let go, it carries on after about 3 s (works, Christian, 2026-10-23)
 - [x] Horn and tunes (2026-10-17; the horn played on the robot, tunes and MIDI import not yet): Horn button + H key; built-in tunes (Horn,
   Charge!, La Cucaracha, Mass Destruction); type/edit notes; preview in the browser; import a MIDI file's melody
   (pick the part, start time, octave); saved tunes in `~/maps/tunes.json` on the Pi. Played by `roomba_bridge`'s
@@ -256,6 +260,8 @@ Folder: `src/ros2/lucia_bringup/`, `src/ros2/lucia_web/`, `docker/compose.yml`
   committed to the repo)
 - [ ] Later: tunes longer than 64 notes, by refilling the Roomba's song slots while it plays (untested whether
   the Roomba allows that; a short gap every 16 notes)
+- [x] Trail drawn brighter (2026-10-23, Christian's request): violet (`--trail`), thicker, with a white edge so it
+  shows on floor, unknown and walls alike (was thin, semi-transparent grey). Checked in a browser, both themes
 - [ ] **Next session: page layout** (Christian, 2026-10-17; asked to note it, not build it yet). Downloading the
   map image and the on-screen drive pad (arrow buttons) are only reachable by scrolling down the left column,
   which he doesn't like. Idea: a Download button at the top of the page (header) instead. Ask what else he wants
@@ -266,7 +272,7 @@ Folder: `src/ros2/lucia_bringup/`, `src/ros2/lucia_web/`, `docker/compose.yml`
   - Speed: top speed 0.30 / min 0.05 (`web_ui`), wheel cap `max_speed_mm_s` 300 (`roomba_bridge`), Nav2
     `desired_linear_vel` 0.30, keyboard turn rate `turn_rate_ratio` 4
   - Acceleration: `roomba_bridge` `max_linear_accel` / `decel` 0.3 / 0.6, `max_angular_accel` / `decel` 1.5 / 3.0
-  - Tight spaces ("doorway" slowdown): `safety_gate` `min_speed_mps` 0.06, and the room thresholds in
+  - Tight spaces ("doorway" slowdown): `safety_gate` `min_speed_mps` 0.10, and the room thresholds in
     `safety_logic.tight_space_cap` (`near_slow` / `near_fast` 0.05 / 0.35 m, `ahead_slow` / `ahead_fast` 0.2 / 0.8 m),
     which are function defaults, not node parameters yet
   - Robot size 0.23 m radius: in four places (`nav2.yaml` both costmaps + inflation 0.45, mission `clearance_m` 0.25
@@ -281,6 +287,56 @@ Folder: `src/ros2/lucia_bringup/`, `src/ros2/lucia_web/`, `docker/compose.yml`
     Start mapping. Nodes only read parameters at startup today; the speed slider is the one live setting
 - [ ] On the Pi: Pi-health metrics show numbers (container reads `/sys` thermal), logs drawer shows Nav2/mission
   lines, keys + takeover on the real robot
+
+---
+
+## Phase 6 — Follow me (Jetson + ZED 2, hand signs)
+
+**End goal** (Christian, 2026-10-22; on the agenda, not started): a person gives the robot a hand sign, the
+Jetson sees it, and the robot follows that person; another sign stops it. The Nano side builds on Ethan's work
+(`docs/jetson_nano_zed_setup.md`: ZED 2, SDK 3.8.2 and Python 3.6 on the Nano, object detection working
+2026-10-16); the Pi side builds on the mission node.
+Flow: ZED 2 → Nano (finds people, reads the sign) → network → Pi node (`/person`, `/gesture`) → mission `follow`
+→ `safety_gate` → wheels
+
+Decide first:
+- [ ] **Which signs.** The ZED's body tracking (same SDK, `HUMAN_BODY_*` models) gives each person a skeleton
+  (shoulders, elbows, wrists, no fingers), a 3D position and an ID that stays with them, which is everything
+  following needs. It can read arm signals, e.g. one hand above the head for 1 s = follow me, both hands up = stop.
+  Finger signs (thumbs up, open palm, peace) need a second, hand-pose model on the Nano (e.g. NVIDIA's
+  `trt_pose_hand`, made for the Nano, needs PyTorch): more work and more load. Suggested: arm signals first,
+  finger signs later if wanted
+- [ ] **How the Nano talks to the Pi.** The Nano's Ubuntu 18.04 (JetPack 4.6) can't run ROS2 directly.
+  `lucia_vision` (`zed_publisher.cpp`, May 2026) runs ROS2 Humble in a dustynv container, but the Pi runs Jazzy,
+  and two ROS2 versions talking to each other isn't officially supported. Suggested: Ethan's Python script sends a
+  small JSON message over UDP about 10 times a second (person ID, position in meters, gesture), and a node on the Pi
+  turns it into ROS2 topics. The Nano stays plain Python and the Pi side can be tested on the laptop
+- [ ] **The link.** A short Ethernet cable Nano ↔ Pi with fixed addresses (the Pi's Ethernet port is free while it
+  runs the hotspot), or the Nano joins `lucia-control` (needs WiFi on the Nano; check the Waveshare board)
+
+Nano side (Ethan's area):
+- [ ] Body tracking runs on the Nano fast enough (aim for 10 Hz or more). Check whether SDK 3.8.2 can run it
+  together with the multi-class detector or only one model at a time
+- [ ] Sign check: the sign has to be held about 1 s, so a passing wave doesn't count; reports which person (ID) gave it
+- [ ] Sender: person ID, x/y/z, confidence, gesture, time → UDP to the Pi
+- [ ] The Nano's script in the repo (today it's only written out in the setup doc)
+- [ ] Power on the robot: 5 V 4 A for the Nano (it shuts off with the camera on a weaker supply), e.g. a buck
+  converter from the Roomba battery rated for that
+- [ ] Camera mount: height and tilt so a raised hand stays in view 1-2 m away (the robot is low, so tilt up).
+  Measure its offset from the robot's center for the Pi side
+
+Pi side:
+- [ ] Receiver node (in `lucia_nav` or its own package; not in `lucia_vision`, which is the Jetson build the Pi
+  skips): checks each message, converts camera position → robot frame (`base_link`), publishes `/person` and
+  `/gesture`, drops anything older than about 0.3 s
+- [ ] Mission `follow` mode: on the follow sign, lock onto that person's ID; turn to face them and stay about 1 m
+  away, with the usual speed caps, through `safety_gate`. Stop sign, STOP on the page (Space/Esc), or the person
+  out of sight for about 1 s → stop and wait. Driving by hand pauses it like Explore. Simplest first: steer straight
+  at the person; if things in between get in the way, Nav2's follow-a-moving-point setup (keeps a distance, plans
+  around obstacles) is the upgrade
+- [ ] Page: follow state (waiting for a sign / following #ID / lost), the person shown on the radar and map
+- [ ] Bonus: with mapping running, walking the robot around by following builds the map too
+- [ ] Later, if wanted: the camera's video on the page (compressed stream from the Nano)
 
 ---
 
@@ -322,4 +378,4 @@ Folder: `src/ros2/lucia_bringup/`, `src/ros2/lucia_web/`, `docker/compose.yml`
 
 - (Frontier exploration moved up to Phase 4 on 2026-10-16. It runs on today's open-loop
   `/odom` + IMU heading; real encoders would make it more precise.)
-- Camera and Jetson: start from scratch when the time comes
+- Camera and Jetson: now Phase 6 (follow me with hand signs, 2026-10-22)
