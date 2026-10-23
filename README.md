@@ -148,7 +148,7 @@ docker compose -f docker/compose.yml up -d
 Then, once:
 - **Hotspot** (the robot's own WiFi, so it needs no other network):
   [`docs/Raspberry Pi Initial Setup.md`](docs/Raspberry%20Pi%20Initial%20Setup.md)
-- **Fixed device names** (`/dev/roomba`, `/dev/rplidar`, `/dev/imu`):
+- **Fixed device names** (`/main/roomba`, `/main/rplidar`, `/main/imu`):
   [`docs/setup/udev-rules.md`](docs/setup/udev-rules.md)
 - **IMU Pico:** load `src/imu/stream_main.py` onto it as `main.py` (see "The IMU Pico" in
   [`ros2-pi.md`](docs/setup/ros2-pi.md))
