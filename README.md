@@ -295,12 +295,14 @@ Latest version of each printed part; earlier versions are in
 
 | | |
 |---|---|
-| Pi drawer V4 | ![Pi Drawer V4](media/CAD_Drawings/PiDrawer_V4_Drawing.png) |
-| Jetson drawer V3 | ![Jetson Drawer V3](media/CAD_Drawings/JetsonDrawer_V3_Drawing.png) |
-| Pi + Jetson assembly V2 | ![Pi and Jetson Assembly V2](media/CAD_Drawings/PiJetson_V2_Assembly_Drawing.png) |
+| Pi drawer V4.1 | ![Pi Drawer V4](media/CAD_Drawings/PiDrawer_V4.1_Drawing.png) |
+| Jetson drawer V3.1 | ![Jetson Drawer V3](media/CAD_Drawings/JetsonDrawer_V3.1_Drawing.png) |
+| Pi + Jetson assembly V3 | ![Pi and Jetson Assembly V2](media/CAD_Drawings/PiJetson_V3_Assembly_Drawing.png) |
 | Arm V1 | ![Arm V1](media/CAD_Drawings/Arm_V1_Drawing.png) |
 | Arm drawer V2 | ![Arm Drawer V2](media/CAD_Drawings/Arm_Drawer_V2_Drawing.png) |
 | Lidar mount V1 | ![Lidar Mount V1](media/CAD_Drawings/LIDAR_Mount_V1_Drawing.png) |
+| Pi + Jetson door V1 | ![Door V1](media/CAD_Drawings/Door_V1_Drawing.png) |
+
 
 ## What's next
 
