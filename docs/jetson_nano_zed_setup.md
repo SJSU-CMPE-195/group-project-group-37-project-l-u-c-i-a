@@ -324,7 +324,6 @@ Paused:
 3. Convert the Raspberry Pi's received detection messages into ROS2 follow/stop commands.
 4. Add a heartbeat timeout or other failsafe so the Pi stops safely if Nano messages stop arriving.
 5. Evaluate a more bandwidth-efficient H.264/RTP stream later if MJPEG becomes too bandwidth-intensive.
-6. Return to the Windows installation USB and repair the Windows NTFS partition before attempting to resize it for dual boot.
 
 ## Useful references
 
