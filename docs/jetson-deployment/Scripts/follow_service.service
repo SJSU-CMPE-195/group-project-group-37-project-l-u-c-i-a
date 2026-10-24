@@ -1,0 +1,18 @@
+[Unit]
+Description=Jetson ZED Follow Sender and Video Stream
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=lucia
+WorkingDirectory=/home/lucia
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/usr/bin/python3 /home/lucia/follow_sender.py --host <PI_IP> --port 5005 --stream --stream-port 8080
+Restart=on-failure
+RestartSec=5
+TimeoutStartSec=0
+SupplementaryGroups=video
+
+[Install]
+WantedBy=multi-user.target

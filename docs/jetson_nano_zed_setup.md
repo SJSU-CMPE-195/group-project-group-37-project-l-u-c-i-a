@@ -271,6 +271,31 @@ http://192.168.10.42:8080/
 
 Use `--stream --stream-port 8080` when launching `follow_sender.py`. Do not replace the detection `--port 5005` value with `8080`; they serve different protocols and purposes.
 
+## Headless startup
+
+The Nano can run the vision and video services without an interactive Ubuntu desktop login. A systemd service can start `follow_sender.py` automatically during boot as user `lucia`.
+
+Enable the service with:
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable --now follow_sender.service
+```
+
+Confirm that it is configured to start automatically:
+
+```bash
+systemctl is-enabled follow_sender.service
+```
+
+The expected result is `enabled`. After powering on the Nano, allow roughly 30–60 seconds for the network, camera, and detection model to initialize. The service can then be checked with:
+
+```bash
+systemctl is-active follow_sender.service
+```
+
+When it reports `active`, the video feed should be available at `http://192.168.10.42:8080/` without signing into the desktop. The no-login boot behavior still needs to be verified as a final headless test.
+
 ## Camera compatibility
 
 The current combination is compatible for the planned project:
@@ -312,10 +337,12 @@ Completed:
 - Person detection and tracking are working; detected people are being associated with tracked IDs.
 - The integrated `follow_sender.py` serves the annotated video feed over HTTP/TCP port `8080`.
 - The video feed has been confirmed from a phone and other devices on the same subnet.
+- The systemd boot-service configuration has been prepared for automatic startup without a monitor or interactive login.
 
 Paused:
 
 - The follow/stop behavior and ROS2 command integration on the Raspberry Pi still need to be validated.
+- The final headless reboot test, with the stream accessed before signing into Ubuntu, still needs to be completed.
 
 ## Next planned steps
 
@@ -334,8 +361,4 @@ Paused:
 
 ## Personal notes
 - Changed the Jetson's password (the old and new ones are kept off GitHub)
-    * This was due to issues of password not working at home setup, but working within school computers
-        * May be due to compatibility issues?
-    * Issue solved: Password and compatibility are ok, issue was keyboard itself
-
 - Make sure to use a power adapter with at least 5V 4A or Nano will turn off 
