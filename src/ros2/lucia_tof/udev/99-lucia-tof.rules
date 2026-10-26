@@ -1,0 +1,10 @@
+# Gives the ToF Pico a stable name, /dev/lucia_tof.
+# 2e8a:0005 is MicroPython's USB serial on any Pico. If another MicroPython
+# board is plugged in, also match its serial number, from
+#   udevadm info -a -n /dev/ttyACM0 | grep serial
+# e.g. add: ATTRS{serial}=="E6614C311B7A1234"
+#
+# Install:
+#   sudo cp 99-lucia-tof.rules /etc/udev/rules.d/
+#   sudo udevadm control --reload-rules && sudo udevadm trigger
+SUBSYSTEM=="tty", ATTRS{idVendor}=="2e8a", ATTRS{idProduct}=="0005", SYMLINK+="lucia_tof", MODE="0666"
