@@ -296,6 +296,9 @@ The lidar and camera were new to the team and were first tried out then.
 ### Robot (May 8)
 ![Robot 05/08/26](media/0508_robot.png)
 
+### 10/25 Demo
+![Demo 10/25/26](https://youtu.be/YugvvpbwuFU)
+
 ## CAD drawings
 
 Latest version of each printed part; earlier versions are in
