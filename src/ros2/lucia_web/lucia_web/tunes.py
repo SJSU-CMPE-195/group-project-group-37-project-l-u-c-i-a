@@ -40,18 +40,9 @@ TUNE_NAME_RE = re.compile(r"^[\w ()'!&.,+-]{1,40}$")
 BUILTIN = {
     'Horn': [(67, 10), (REST, 5), (67, 26)],
     'Charge!': [(67, 10), (72, 10), (76, 10), (79, 20), (76, 10), (79, 40)],
-    # From last semester's src/scripts/song.py
-    'La Cucaracha': [
-        (64, 16), (64, 16), (64, 16), (60, 12), (64, 12), (67, 24),
-        (67, 16), (67, 16), (65, 16), (64, 16), (62, 16), (60, 24),
-        (64, 16), (64, 16), (64, 16), (60, 12),
-        (64, 12), (67, 24), (67, 16), (66, 16), (65, 16), (64, 16), (67, 16), (60, 32),
-    ],
-    'Mass Destruction (Persona 3)': [
-        (71, 16), (68, 16), (68, 24), (66, 16), (63, 16),
-        (61, 16), (61, 24), (71, 16), (61, 16), (63, 32),
-    ],
 }
+# La Cucaracha and Mass Destruction (Persona 3) were built in until 2026-10-23;
+# more tunes come from MIDI files (saved in tunes.json on the Pi).
 
 # ----------------------------------------------------------------------
 # Checking and text format

@@ -26,15 +26,17 @@ own WiFi.
   the robot as of 2026-10-17.
 - **Builds a 2D map** with the lidar (slam_toolbox), with heading from an IMU (BNO08X) fused
   in, which removed the drift of the first maps.
-- **Web control page**, served by the robot over its own WiFi: start mapping, Explore / Return HOME / STOP,
-  a live radar of the lidar, live metrics (heading, speed, distance, area mapped, Pi
-  health), every node's log, Reconnect Roomba (after it was turned off and on, without
+- **Web control page**, served by the robot over its own WiFi: start mapping (with a settings
+  menu for speed, acceleration, tight-space slowdown, robot size, Explore and the stuck check),
+  Explore / Return HOME / STOP, a live radar of the lidar with drive arrows, live metrics
+  (heading, speed, distance, area mapped, Pi health), every node's log, Reconnect Roomba (after it was turned off and on, without
   losing the map), a horn and tunes on the Roomba's speaker (including melodies imported
   from MIDI files), drive by keyboard for testing, save and download maps.
 - **Starts by itself:** power on and the Pi brings up its hotspot and the page; no screen,
   keyboard or other network needed.
 - **In progress:** a time-of-flight safety stop for things below the lidar (Noel), object
-  recognition with a ZED 2i camera on a Jetson Nano (Ethan). Not working yet: battery and
+  recognition with a ZED 2i camera on a Jetson Nano (Ethan), whose camera view (with the
+  people it tracks drawn on) already shows on the control page, relayed by the Pi. Not working yet: battery and
   wheel encoder readings (the Roomba's serial replies don't reach the Pi).
 
 ![First maps: wheels only vs. wheels + IMU](media/maps/2026-10-16_room1_vs_room2.png)
@@ -164,15 +166,18 @@ unless `docker/Dockerfile` changed.
 2. Join the robot's WiFi hotspot with a laptop or phone.
 3. Open the control page in a browser. (The team shares the WiFi details and the page
    address privately; they're not kept in this README.)
-4. Press **Start mapping**. Wait for the Lidar, IMU, Wheels and Navigation lights to turn green.
+4. Press **Start mapping…**, check the settings, then **Start mapping**. Wait for the Lidar, IMU,
+   Wheels and Navigation lights to turn green.
 5. Press **Explore**. Stay near it: it steers around what the lidar sees, not things lower
    than the lidar. **STOP** (top right, or Space / Esc) stops it. Driving with the keys
    takes over; it carries on exploring 3 s after you let go. If it gets stuck, it backs
    up and tries elsewhere; stuck 3 times in a row, it stops and plays a tune for help.
-6. When it's back HOME, type a name and press **Save**; download the PNG from the list.
+6. When it's back HOME, open **Save map ▾** (top right of the map), type a name and press
+   **Save**; download the PNG from the list.
 
 If the Roomba was turned off and on (or its battery died), turn it on and press
-**Reconnect Roomba**; it beeps when it's listening again. **Horn** (or the H key) honks.
+**Reconnect Roomba**; it beeps when it's listening again. **Horn (H)** honks; its **▾** plays
+tunes, including ones imported from MIDI files.
 To turn everything off, shut the Pi down properly (its power button, pressed twice) rather
 than pulling the plug.
 
@@ -202,11 +207,11 @@ python3 -m pytest test
 
 | Package | What the tests cover | Tests |
 |---|---|---|
-| `lucia_control` | Wheel-speed math, gradual speed changes, position estimate, Roomba Open Interface commands, tunes | 45 |
+| `lucia_control` | Wheel-speed math, gradual speed changes (keeping the robot on its curve), position estimate, Roomba Open Interface commands, tunes | 51 |
 | `lucia_imu` | Reading the IMU Pico's output: valid lines, half-received lines, garbage, heading math | 13 |
 | `lucia_nav` | Finding frontiers, the mission's decisions (Explore, HOME, stuck, pause and resume), a full simulated exploration of two rooms, the stuck check against a simulated lidar in a room and a hallway | 87 |
 | `lucia_bringup` | The safety gate: time-of-flight block, slowing down in tight spaces | 12 |
-| `lucia_web` | The control page's logic (drive commands, map encoding, metrics, resuming after driving by hand), starting and stopping mapping, tunes and MIDI import | 105 |
+| `lucia_web` | The control page's logic (drive commands, map encoding, metrics, resuming after driving by hand), the settings menu (checking values, the parameters file it writes), starting and stopping mapping, tunes and MIDI import | 117 |
 
 **On the robot.** Anything that needs ROS 2 is checked on the robot itself, following the
 checklists in [`TODO.md`](TODO.md); the results are written up in
@@ -219,7 +224,9 @@ checklists in [`TODO.md`](TODO.md); the results are written up in
 - Slowing down in tight spaces (2026-10-23): it was too slow, so its slowest speed went from
   6 to 10 cm/s (not yet re-tried)
 
-Not yet tried on the robot: the stuck check.
+Not yet tried on the robot: the stuck check; and from 2026-10-23, the settings menu, the new
+page layout, and two changes to make tight spaces quicker (speed and turning ease together,
+and Nav2 looks less far ahead when slow).
 
 ## Demo
 
@@ -227,7 +234,8 @@ What a live demo shows, in about five minutes:
 
 1. **Power on.** Nothing else is plugged in. A phone joins the robot's WiFi and opens the
    page.
-2. **Start mapping.** The status lights turn green, and the radar shows the lidar live.
+2. **Start mapping.** The settings show what can be tuned; then the status lights turn green,
+   and the radar shows the lidar live.
 3. **Explore.** The robot drives itself. On the page, the map grows, frontiers (orange
    dots) get used up, and the robot slows down through doorways.
 4. **Take over** with the arrow keys, then let go: after 3 s it carries on exploring.

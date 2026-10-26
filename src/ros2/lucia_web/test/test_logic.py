@@ -5,7 +5,7 @@ import math
 
 import pytest
 
-from lucia_web.logic import (AutoResume, RateMeter, Trail, clamp_speed, cpu_percent,
+from lucia_web.logic import (AutoResume, RateMeter, Trail, camera_url, clamp_speed, cpu_percent,
                              cpu_times, drive_to_twist, encode_grid,
                              log_level_name, mapped_area_m2, mission_text,
                              parse_loadavg, parse_meminfo, parse_temp,
@@ -252,3 +252,32 @@ def test_auto_resume_off():
     r = AutoResume(0.0)
     assert r.drive('explore', moving=True, now=1.0) == 'pause'
     assert r.at is None and not r.due('paused', 100.0)
+
+
+# ---- camera_url (the Jetson's stream address, typed on the page) ----------------
+
+@pytest.mark.parametrize('typed, url', [
+    ('192.168.1.20:8080', 'http://192.168.1.20:8080/stream.mjpg'),
+    ('  http://192.168.1.20:8080/stream.mjpg ', 'http://192.168.1.20:8080/stream.mjpg'),
+    ('http://jetson.local:8080/', 'http://jetson.local:8080/'),
+    ('jetson.local', 'http://jetson.local/stream.mjpg'),
+    ('http://10.0.0.5:8080/stream.mjpg?overlay=1', 'http://10.0.0.5:8080/stream.mjpg?overlay=1'),
+    ('', ''),
+])
+def test_camera_url_fills_in_the_rest(typed, url):
+    assert camera_url(typed) == url
+
+
+@pytest.mark.parametrize('typed, says', [
+    ('https://10.0.0.5:8080/', 'http://'),
+    ('file:///etc/passwd', 'http://'),
+    ('http://user:pw@10.0.0.5:8080/', 'password'),
+    ('10.0.0.5:99999', 'port'),
+    ('10.0.0.5:abc', 'port'),
+    ('http://exa mple:8080/', 'address'),
+    ('x' * 201, 'too long'),
+])
+def test_camera_url_refuses(typed, says):
+    with pytest.raises(ValueError) as e:
+        camera_url(typed)
+    assert says in str(e.value)

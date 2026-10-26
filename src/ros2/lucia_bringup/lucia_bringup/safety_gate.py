@@ -60,6 +60,12 @@ class SafetyGate(Node):
         self.declare_parameter('min_speed_mps', 0.10)      # 0.06 was too slow on the robot (2026-10-23)
         self.declare_parameter('robot_radius_m', 0.23)     # 18 in across (nav2.yaml has the same)
         self.declare_parameter('scan_stale_s', 0.5)        # the lidar sends ~12 scans a second
+        # Room (from the robot's edge) for the slowest and for full speed (safety_logic.tight_space_cap);
+        # the web page's settings can change them
+        self.declare_parameter('near_slow_m', 0.05)
+        self.declare_parameter('near_fast_m', 0.35)
+        self.declare_parameter('ahead_slow_m', 0.2)
+        self.declare_parameter('ahead_fast_m', 0.8)
 
         self._use_tof = self.get_parameter('use_tof').value
         self._stale_s = self.get_parameter('stale_s').value
@@ -68,6 +74,8 @@ class SafetyGate(Node):
         self._min_speed = self.get_parameter('min_speed_mps').value
         self._robot_radius = self.get_parameter('robot_radius_m').value
         self._scan_stale_s = self.get_parameter('scan_stale_s').value
+        self._room = {name: self.get_parameter(name + '_m').value
+                      for name in ('near_slow', 'near_fast', 'ahead_slow', 'ahead_fast')}
         self._cap = None                        # (time, m/s) from the newest scan
         self._laser_pose = None                 # where the lidar sits on the robot, from TF
         self._blind = False
@@ -121,7 +129,8 @@ class SafetyGate(Node):
                                 math.atan2(2.0 * (q.w * q.z + q.x * q.y), 1.0 - 2.0 * (q.y * q.y + q.z * q.z)))
         points = scan_points(msg.ranges, msg.angle_min, msg.angle_increment, self._laser_pose,
                              min_range=msg.range_min)
-        cap = tight_space_cap(*clearances(points, self._robot_radius), self._min_speed, self._max_speed)
+        cap = tight_space_cap(*clearances(points, self._robot_radius), self._min_speed, self._max_speed,
+                              **self._room)
         self._cap = (time.monotonic(), cap)
 
     def _speed_cap(self):

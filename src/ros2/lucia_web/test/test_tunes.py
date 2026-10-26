@@ -83,7 +83,7 @@ def test_builtins_are_valid_and_short():
     for name, notes in BUILTIN.items():
         assert clean_tune(notes) == notes, name
         assert valid_tune_name(name)
-    assert len(BUILTIN['La Cucaracha']) == 24
+    assert list(BUILTIN) == ['Horn', 'Charge!']
     assert tune_seconds(BUILTIN['Horn']) < 1
 
 

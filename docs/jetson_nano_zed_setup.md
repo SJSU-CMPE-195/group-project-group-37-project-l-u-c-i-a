@@ -8,8 +8,8 @@ Planned data flow:
 
 ```text
 ZED 2 camera → Jetson Nano → network → Raspberry Pi
-                    ├─ object detection and depth processing
-                    └─ optional video/reference stream
+                    ├─ object detection and depth processing
+                    └─ optional video/reference stream
 ```
 
 ## Hardware and software identified
@@ -241,100 +241,60 @@ zed.retrieve_objects(objects, object_runtime)
 
 After these changes, the object-detection script ran successfully.
 
-## Working object-detection code
+## Working code location
 
-The following is the SDK 3.8.2-compatible version of `zed_detect.py` reconstructed from the working detector setup. It displays the ZED 2 video feed, draws 2D detection boxes, prints detected objects, and exits when `q` is pressed.
-
-```python
-import cv2
-import pyzed.sl as sl
-
-
-zed = sl.Camera()
-
-init_params = sl.InitParameters()
-init_params.camera_resolution = sl.RESOLUTION.HD720
-init_params.camera_fps = 30
-init_params.depth_mode = sl.DEPTH_MODE.PERFORMANCE
-
-err = zed.open(init_params)
-if err != sl.ERROR_CODE.SUCCESS:
-    print("Camera open failed:", err)
-    raise SystemExit(1)
-
-object_params = sl.ObjectDetectionParameters()
-object_params.enable_tracking = False
-object_params.detection_model = sl.DETECTION_MODEL.MULTI_CLASS_BOX
-
-err = zed.enable_object_detection(object_params)
-if err != sl.ERROR_CODE.SUCCESS:
-    print("Object detection failed:", err)
-    zed.close()
-    raise SystemExit(1)
-
-objects = sl.Objects()
-object_runtime = sl.ObjectDetectionRuntimeParameters()
-object_runtime.detection_confidence_threshold = 40
-
-image = sl.Mat()
-
-try:
-    while True:
-        if zed.grab() == sl.ERROR_CODE.SUCCESS:
-            # SDK 3.8.2 takes runtime parameters here, during retrieval.
-            zed.retrieve_objects(objects, object_runtime)
-            zed.retrieve_image(image, sl.VIEW.LEFT)
-
-            frame = image.get_data()
-            frame = cv2.cvtColor(frame, cv2.COLOR_RGBA2BGR)
-
-            if objects.is_new:
-                for obj in objects.object_list:
-                    bbox = obj.bounding_box_2d
-                    x1 = int(bbox[0][0])
-                    y1 = int(bbox[0][1])
-                    x2 = int(bbox[2][0])
-                    y2 = int(bbox[2][1])
-
-                    cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
-
-                    label = "{} {:.1f}%".format(obj.label, obj.confidence)
-                    cv2.putText(
-                        frame,
-                        label,
-                        (x1, max(y1 - 10, 20)),
-                        cv2.FONT_HERSHEY_SIMPLEX,
-                        0.6,
-                        (0, 255, 0),
-                        2,
-                    )
-
-                    print(
-                        "{} | confidence: {:.1f}% | position: {}".format(
-                            obj.label, obj.confidence, obj.position
-                        )
-                    )
-
-            cv2.imshow("ZED 2 Object Detection", frame)
-            if cv2.waitKey(1) & 0xFF == ord("q"):
-                break
-finally:
-    zed.disable_object_detection()
-    zed.close()
-    cv2.destroyAllWindows()
-```
-
-To keep a backup before making future edits:
-
-```bash
-cp zed_detect.py zed_detect_working.py
-```
+The working detector and Nano-to-Pi sender code are maintained separately, so the full source is intentionally not duplicated in this setup document. This Markdown remains focused on the hardware, software versions, compatibility findings, and verified milestones.
 
 For this Nano's SDK version, keep these compatibility details in place:
 
 - Use `sl.DETECTION_MODEL.MULTI_CLASS_BOX`.
+
 - Do not use `enable_segmentation`.
+
 - Do not call `set_object_detection_runtime_parameters`; pass `object_runtime` to `zed.retrieve_objects(...)`.
+
+## Network video streaming
+
+The working `follow_sender.py` was extended to serve the annotated ZED 2 video feed over HTTP while continuing to send detection data to the Raspberry Pi.
+
+- Detection JSON remains on UDP port `5005`.
+- Video is served as an MJPEG stream over TCP port `8080`.
+- The stream can be opened from another device on the same subnet at:
+
+```text
+http://192.168.10.42:8080/
+```
+
+- The stream was successfully opened from a phone and other devices on the local network.
+- The Nano's `192.168.10.42` address is the usable LAN address. The `172.17.0.1` address is a Docker bridge address and should not be used by other devices.
+- The stream is produced by the same process as object detection, so the ZED camera is opened only once.
+
+Use `--stream --stream-port 8080` when launching `follow_sender.py`. Do not replace the detection `--port 5005` value with `8080`; they serve different protocols and purposes.
+
+## Headless startup
+
+The Nano can run the vision and video services without an interactive Ubuntu desktop login. A systemd service can start `follow_sender.py` automatically during boot as user `lucia`.
+
+Enable the service with:
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable --now follow_sender.service
+```
+
+Confirm that it is configured to start automatically:
+
+```bash
+systemctl is-enabled follow_sender.service
+```
+
+The expected result is `enabled`. After powering on the Nano, allow roughly 30–60 seconds for the network, camera, and detection model to initialize. The service can then be checked with:
+
+```bash
+systemctl is-active follow_sender.service
+```
+
+When it reports `active`, the video feed should be available at `http://192.168.10.42:8080/` without signing into the desktop. The no-login boot behavior still needs to be verified as a final headless test.
 
 ## Camera compatibility
 
@@ -348,7 +308,9 @@ The current combination is compatible for the planned project:
 | Python/OpenCV display | Confirmed working with the detection program |
 | ZED 2 object detection | Confirmed working after TensorRT/cuDNN setup and model optimization |
 | Depth and 3D position | Supported by the ZED 2 and SDK |
-| Raspberry Pi communication | Not started; Pi is not currently available |
+| Raspberry Pi communication | Confirmed working over the local network with UDP messages |
+| Person detection and tracking | Confirmed; people are being detected and associated with tracked IDs |
+| Network video stream | Confirmed working as an annotated MJPEG stream over TCP port `8080` |
 
 The original ZED 1 is not compatible with the ZED SDK object-detection module. The identified camera is a ZED 2, so it is suitable for object detection, depth, 3D position, and tracking.
 
@@ -370,21 +332,25 @@ Completed:
 - TensorRT 8.2.1 and the required cuDNN/TensorRT libraries are available.
 - The ZED multi-class object-detection model has been downloaded and optimized.
 - The Python object-detection script runs successfully with the SDK 3.8.2-compatible API.
+- Nano and Raspberry Pi communication is working over the local network using UDP messages.
+- The Nano is successfully sending detection data to the Pi.
+- Person detection and tracking are working; detected people are being associated with tracked IDs.
+- The integrated `follow_sender.py` serves the annotated video feed over HTTP/TCP port `8080`.
+- The video feed has been confirmed from a phone and other devices on the same subnet.
+- The systemd boot-service configuration has been prepared for automatic startup without a monitor or interactive login.
 
 Paused:
 
-- Sending object-detection data to the Raspberry Pi has not yet been configured.
-- Optional video streaming to the Raspberry Pi has not yet been configured.
-- Nano-to-Raspberry-Pi networking has not yet been configured.
-- The Windows dual-boot and partition work is paused.
+- The follow/stop behavior and ROS2 command integration on the Raspberry Pi still need to be validated.
+- The final headless reboot test, with the stream accessed before signing into Ubuntu, still needs to be completed.
 
 ## Next planned steps
 
-1. Add or verify on-screen labels, confidence values, and 3D positions for each detected object.
-2. Save and document the working object-detection script.
-3. Send lightweight detection messages—label, confidence, distance, and position—from the Nano to the Raspberry Pi.
-4. Add an optional compressed video stream for reference.
-5. Return to the Windows installation USB and repair the Windows NTFS partition before attempting to resize it for dual boot.
+1. Verify the UDP message fields, tracked IDs, confidence values, and camera-frame 3D positions on both devices.
+2. Test the follow and stop sign logic with real people and confirm that the hold-time and repeat-suppression behavior is reliable.
+3. Convert the Raspberry Pi's received detection messages into ROS2 follow/stop commands.
+4. Add a heartbeat timeout or other failsafe so the Pi stops safely if Nano messages stop arriving.
+5. Evaluate a more bandwidth-efficient H.264/RTP stream later if MJPEG becomes too bandwidth-intensive.
 
 ## Useful references
 
@@ -395,8 +361,4 @@ Paused:
 
 ## Personal notes
 - Changed the Jetson's password (the old and new ones are kept off GitHub)
-    * This was due to issues of password not working at home setup, but working within school computers
-        * May be due to compatibility issues?
-    * Issue solved: Password and compatibility are ok, issue was keyboard itself
- 
 - Make sure to use a power adapter with at least 5V 4A or Nano will turn off 

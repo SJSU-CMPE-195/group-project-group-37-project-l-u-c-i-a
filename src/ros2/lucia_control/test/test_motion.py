@@ -2,7 +2,7 @@
 
 import pytest
 
-from lucia_control.motion import ramp_toward, twist_to_wheel_speeds
+from lucia_control.motion import ramp_toward, ramp_twist, twist_to_wheel_speeds
 
 WHEEL_BASE = 235.0
 MAX_SPEED = 300.0
@@ -120,3 +120,56 @@ def test_bad_target_ramps_down_to_stop():
 
 def test_no_time_passed_no_change():
     assert ramp_toward(0.1, 0.3, ACCEL, DECEL, 0.0) == 0.1
+
+
+# ---- ramp_twist: forward speed and turn rate together ------------------------
+
+LIMITS = ((0.3, 0.6), (1.5, 3.0))       # bridge defaults: (accel, decel) m/s^2, rad/s^2
+
+
+def run_twist(current, target, ticks):
+    out = []
+    for _ in range(ticks):
+        current = ramp_twist(current, target, LIMITS, DT)
+        out.append(current)
+    return out
+
+
+def test_stopping_from_a_curve_keeps_the_curve():
+    # A 0.5 m radius arc, then stop: every step on the way down is still on that arc
+    steps = run_twist((0.30, 0.6), (0.0, 0.0), 10)
+    assert steps[-1] == (0.0, 0.0)
+    for v, w in steps:
+        if w:
+            assert v / w == pytest.approx(0.5)
+
+
+def test_starting_into_a_curve_keeps_the_curve():
+    steps = run_twist((0.0, 0.0), (0.2, 0.4), 20)
+    assert steps[-1] == (0.2, 0.4)
+    for v, w in steps:
+        assert v / w == pytest.approx(0.5)
+
+
+def test_slowest_speed_sets_the_pace():
+    # Forward speed limits this one (0.03 m/s per step), so the turn takes as many steps
+    v, w = ramp_twist((0.0, 0.0), (0.3, 0.3), LIMITS, DT)
+    assert v == pytest.approx(0.03) and w == pytest.approx(0.03)
+
+
+def test_turn_in_place_reverses_through_zero():
+    v, w = ramp_twist((0.0, 0.6), (0.0, -0.6), LIMITS, DT)
+    assert (v, w) == (0.0, pytest.approx(0.3))          # slowing down at 3 rad/s^2
+    v, w = ramp_twist((0.0, 0.2), (0.0, -0.6), LIMITS, DT)
+    assert (v, w) == (0.0, 0.0)                         # stops at 0 first
+    v, w = ramp_twist((0.0, 0.0), (0.0, -0.6), LIMITS, DT)
+    assert w == pytest.approx(-0.15)                    # then speeds up the other way
+
+
+def test_reaches_the_target_exactly():
+    assert ramp_twist((0.29, 0.1), (0.3, 0.1), LIMITS, DT) == (0.3, 0.1)
+
+
+def test_bad_target_means_stop():
+    v, w = ramp_twist((0.3, 0.0), (float('nan'), float('inf')), LIMITS, DT)
+    assert v == pytest.approx(0.24) and w == 0.0

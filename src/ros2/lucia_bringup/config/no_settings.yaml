@@ -1,0 +1,8 @@
+# No setting overrides: the default `settings_file` when mapping is started
+# without the web page (by hand: `ros2 launch lucia_bringup mapping.launch.py`).
+# The page writes its own file from the settings menu and passes it instead.
+# A parameters file needs at least one entry; this node doesn't exist, so
+# nothing reads it.
+lucia_no_settings:
+  ros__parameters:
+    unused: true

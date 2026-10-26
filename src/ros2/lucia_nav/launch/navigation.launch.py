@@ -17,6 +17,10 @@ start the rest either.
 Usage:
     ros2 launch lucia_nav navigation.launch.py
 
+settings_file:=<params.yaml>: the web page's settings (see lucia_bringup's
+mapping.launch.py), given to Nav2 and the mission node after their own
+parameters. Default: config/no_settings.yaml, which changes nothing.
+
 Runs on the Pi: Explore worked on the robot 2026-10-17.
 """
 
@@ -24,6 +28,8 @@ import os
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
+from launch.actions import DeclareLaunchArgument
+from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 
 NAV2_NODES = [
@@ -36,10 +42,15 @@ NAV2_NODES = [
 
 
 def generate_launch_description():
-    nav2_params = os.path.join(get_package_share_directory('lucia_nav'), 'config', 'nav2.yaml')
+    config = os.path.join(get_package_share_directory('lucia_nav'), 'config')
+    nav2_params = os.path.join(config, 'nav2.yaml')
+    settings = LaunchConfiguration('settings_file')     # last in each list: overrides the rest
+    settings_arg = DeclareLaunchArgument(
+        'settings_file', default_value=os.path.join(config, 'no_settings.yaml'),
+        description="Parameters file from the web page's settings menu")
 
     nav2 = [
-        Node(package=pkg, executable=exe, name=name, parameters=[nav2_params], output='screen')
+        Node(package=pkg, executable=exe, name=name, parameters=[nav2_params, settings], output='screen')
         for pkg, exe, name in NAV2_NODES
     ]
 
@@ -61,7 +72,8 @@ def generate_launch_description():
         package='lucia_nav',
         executable='mission',
         name='mission',
+        parameters=[settings],
         output='screen',
     )
 
-    return LaunchDescription(nav2 + [lifecycle, mission])
+    return LaunchDescription([settings_arg] + nav2 + [lifecycle, mission])

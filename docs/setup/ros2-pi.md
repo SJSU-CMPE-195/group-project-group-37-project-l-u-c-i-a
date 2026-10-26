@@ -14,10 +14,11 @@ update and debug it. Current as of 2026-10-17. For what changed when, see
 2. **Connect your laptop or phone to the WiFi `lucia-control`** (the password is
    kept off GitHub: ask Christian).
 3. **Open http://10.42.0.1:8080** in a browser.
-4. Press **Start mapping** (left column). Within about 10 seconds the Lidar,
-   IMU and Wheels lights should turn green and the map should appear; the
-   Navigation light follows once Nav2 has started.
-5. Press **Explore** (top right, or in the left column). The robot drives itself
+4. Press **Start mapping…** (left column). The settings open (see **Settings**
+   below); change what you want and press **Start mapping**. Within about 10
+   seconds the Lidar, IMU and Wheels lights should turn green and the map should
+   appear; the Navigation light follows once Nav2 has started.
+5. Press **Explore** (top right). The robot drives itself
    to the edges of what it has mapped (orange dots, "frontiers"), one after
    another, until nothing is left, then drives back **HOME** (the green H:
    where it was when you pressed Start mapping). Explore works on the robot
@@ -25,12 +26,14 @@ update and debug it. Current as of 2026-10-17. For what changed when, see
    - **HOME** sends it home at any time.
    - **STOP** (top right, or Space / Esc) stops it where it is. On a phone a
      STOP button also floats at the bottom while the robot drives itself.
-   - **Top speed** (starts at the maximum, 30 cm/s) is how fast it drives in the
-     open, for Explore, HOME and driving by hand. It slows down by itself in
+   - **Top speed** (starts at the speed limit, 30 cm/s unless changed in the
+     settings) is how fast it drives in the open, for Explore, HOME and driving
+     by hand. It slows down by itself in
      tight spaces, from the lidar: about 21 cm/s nearing a doorway, 13 cm/s in
      a 0.7 m doorway, and down to 10 cm/s with something within 5 cm of its side
      or 20 cm ahead. It never stops on its own account; backing up and turning
-     in place aren't slowed. (`safety_gate`, `tight_space:=false` turns it off.)
+     in place aren't slowed. (`safety_gate`; the settings can turn it off or
+     change its distances.)
    - Stay with it: it steers around what the lidar sees, not things lower than
      the lidar (until the ToF safety stop is on; see `use_tof` below).
    - **If it gets stuck** (the wheels turn but the robot doesn't move: a cable,
@@ -41,22 +44,31 @@ update and debug it. Current as of 2026-10-17. For what changed when, see
      reached in between, it stops and plays a falling tune three times: come and
      help. Places it got stuck show as red **!** on the map, and the **Really
      moving?** metric shows what the check sees. (Not yet tried on the robot.)
-6. Type a name and press **Save**. The map appears in the list underneath; click
-   **download** to get the PNG. Saved maps live on the Pi in `~/maps/`.
+6. **Save map ▾** (top right of the map): type a name and press **Save**. The map
+   appears in the list underneath; click **download** to get the PNG. Saved maps
+   live on the Pi in `~/maps/`.
 7. Press **Stop mapping** when done.
 
-**The page.** Left column, top to bottom: the **Radar** (the lidar right now,
-forward up; red under 0.3 m, amber under 0.6 m), live **metrics**, the mapping
-and autonomy controls, the drive pad, Save map. The rest is the **map**:
+**The page.** The top bar has the status lights, the last message, **Horn (H) ▾**,
+**Explore**, **HOME** and **STOP**. The left column stays put (no scrolling on a
+laptop screen): the **Radar** (the lidar right now, forward up; red under 0.3 m,
+amber under 0.6 m) with the drive arrows on its edges, six key **metrics**, and
+the **Mapping** controls (Start / Stop mapping, Reconnect Roomba, Top speed, what
+the robot is doing). The radar takes whatever height is left. On a phone the
+column goes under the map and scrolls. The rest is the **map**:
 - Mouse wheel zooms, drag pans; **Fit** shows the whole map, **Follow** keeps
   the robot in the middle. `#follow` or `#zoom=3` at the end of the address sets
-  the starting view.
+  the starting view. **Save map ▾** saves the map and lists the saved ones to
+  download.
 - Drawn on it: the robot at its real size (18 in across), its trail (violet), the
   planned path (dashed), frontiers, HOME, the current goal, and the live lidar
   points.
 - **Click to go**, then click the map, to send the robot to one spot.
 
-Metrics: heading (0° = the way it faced at Start mapping, clockwise), speed the
+Metrics: the left column shows heading, speed, distance driven, area mapped,
+really moving? and the nearest obstacle (its arrow points the way the radar
+shows it). **All metrics ▸** opens the full set in the drawer under the map:
+heading (0° = the way it faced at Start mapping, clockwise), speed the
 wheels are told, ground speed (from the map), turn rate (IMU gyro), really
 moving? (the stuck check: how much of what the wheels were told the lidar and
 IMU saw happen), distance
@@ -64,37 +76,70 @@ driven, time mapping, distance from HOME, position, area mapped, frontiers,
 nearest obstacle, lidar / IMU / odom message rates, Pi CPU temperature, CPU and
 memory. Battery says n/a until the Roomba reply cable is fixed.
 
-**Logs** (the bar under the map) show what's happening on the Pi: the newest
-message plus warning / error counts. Open it for every ROS node's log (mission,
-Nav2, slam_toolbox, roomba_bridge...), with level / node / text filters, a
-**Launch output** tab (the raw `ros2 launch` text, where startup errors show
-up), and **Download** to save what's shown as a text file.
+**Jetson camera:** **Camera** in the map toolbar opens what the Jetson's camera
+sees, over the map's corner (**⤢** bigger / smaller, **×** closes it). The Pi relays
+the Jetson's video stream, so the browser only talks to the Pi. The first time,
+type the Jetson's address under **⚙** (for example `<jetson address>:8080`; the
+`http://` and `/stream.mjpg` are filled in); it's saved on the Pi in
+`~/maps/camera.json`. The Jetson must be running `zed_stream.py` (plain picture)
+or `follow_sender.py --stream` (with the skeletons and the sign drawn on), both
+in `docs/jetson-deployment/Scripts/`. The video runs only while the panel is
+open (about 165 KB/s at 1280×720, 4 frames a second). With no picture, the
+panel says why and keeps retrying.
 
-**Horn and tunes** (on the Roomba's own speaker, while mapping runs): **Horn** in
-the header or the **H** key honks. The *Horn and tunes* card plays the built-in
-tunes (Horn, Charge!, La Cucaracha, Mass Destruction from Persona 3) or saved
-ones, and **Preview here** plays them in the browser first. Notes can be typed
-or edited (`B4:16 G#4:16 R:8 ...`: name and octave, C4 = middle C, or R for a
-rest, then the length in 1/64 s), at most 64, one at a time. **Import from a
-MIDI file** takes the melody of any MIDI file on your laptop or phone: pick the
-part that has the tune, set where to start and the octave, preview, Save. Saved
-tunes live on the Pi in `~/maps/tunes.json` (not in git). Keep the MIDI files
-themselves out of the repo: fan MIDIs of game music are arrangements of
-copyrighted songs.
+**Logs & metrics** (the bar under the map) shows what's happening on the Pi: the
+newest message plus warning / error counts. Open it for every ROS node's log
+(mission, Nav2, slam_toolbox, roomba_bridge...), with level / node / text
+filters, a **Launch output** tab (the raw `ros2 launch` text, where startup
+errors show up), the **Metrics** tab, and **Download** to save what's shown as a
+text file.
+
+**Settings** (open with Start mapping…): the values that used to be fixed in the
+code, each with a line of help and its default. A dot marks one you changed;
+**Reset to defaults** fills them all back in. They apply from that start and are
+kept for next time (on the Pi in `~/maps/settings.json`). Groups:
+- *Driving:* speed limit (what the Top speed slider goes up to; the Roomba tops
+  out at 0.50 m/s), speeding up / slowing down, the same for turning
+- *Robot:* use the IMU, robot radius (feeds Nav2's planning, Explore, the
+  tight-space slowdown and the drawing)
+- *Tight spaces:* on/off, slowest speed, and how much room around it / clear
+  ahead means full speed or slowest
+- *Explore:* go HOME when done, give up on a frontier after, ignore short
+  frontiers
+- *Stuck check:* on/off, how far to back up, how many in a row before asking
+  for help
+- *Driving by hand:* how long after the last key press Explore / HOME carry on
+  (0 = never)
+
+How it works: `web_ui` checks the values (`lucia_web/settings.py`), writes them
+as a ROS 2 parameters file and starts `mapping.launch.py settings_file:=<it>`,
+which hands it to every node after its own settings. Started by hand without
+`settings_file`, the nodes use their own defaults.
+
+**Horn and tunes** (on the Roomba's own speaker, while mapping runs): **Horn (H)**
+in the top bar, or the **H** key, honks. Its **▾** opens the tunes: the built-in
+Horn and Charge!, and saved ones (**×** deletes one). **Import from a MIDI file…**
+takes the melody of any MIDI file on your laptop or phone: pick the part that
+has the tune, set where to start and the octave, **Preview here** (in the
+browser), **Play on Roomba**, then name it and **Save**. The Roomba plays one
+note at a time, at most 64. Saved tunes live on the Pi in `~/maps/tunes.json`
+(not in git). Keep the MIDI files themselves out of the repo: fan MIDIs of game
+music are arrangements of copyrighted songs.
 
 **Driving by hand** (test tool): WASD or the arrow keys anywhere on the page
-except while typing in a text box, or hold a pad button; it stops when you let
-go. Only while mapping runs (the wheels driver is part of it). Driving by hand
+except while typing in a text box, or hold an arrow on the radar's edge; it
+stops when you let go. Only while mapping runs (the wheels driver is part of it). Driving by hand
 during Explore, HOME or a click-to-go pauses it; 3 s after your last key press it
 carries on by itself (Explore from wherever you drove it, keeping what it had
 learned; HOME and go-to head for the same spot). The autonomy message counts
-down. **STOP** cancels that. (`web_ui` parameter `resume_after_s`; 0 = never.)
+down. **STOP** cancels that. (How long: in the settings; 0 = never.)
 
 **Speed changes are gradual**, to spare the Pi, lidar and arm: `roomba_bridge`
 takes 0.5 s to reach 15 cm/s and 0.3 s to stop from it (1 s and 0.5 s at
-30 cm/s). That covers everything, STOP included; parameters
-`max_linear_accel` / `max_linear_decel` (0.3 / 0.6 m/s²) and
-`max_angular_accel` / `max_angular_decel` (1.5 / 3.0 rad/s²).
+30 cm/s). That covers everything, STOP included. Forward speed and turning
+change together, so the robot stays on the curve it was told to follow while it
+speeds up or slows down. The rates are in the settings (0.3 / 0.6 m/s² for
+driving, 1.5 / 3.0 rad/s² for turning).
 
 ### What the lights mean
 
@@ -102,7 +147,7 @@ takes 0.5 s to reach 15 cm/s and 0.3 s to stop from it (1 s and 0.5 s at
 |---|---|---|
 | Mapping | `mapping.launch.py` is running | Press Start mapping; open Logs → Launch output |
 | Lidar | `/scan` arrived in the last second | See "Lidar freezes after Start" under Known issues |
-| IMU | `/imu/data` arrived in the last second | Is the IMU Pico plugged in? Replug it; untick "Use IMU" to map without it |
+| IMU | `/imu/data` arrived in the last second | Is the IMU Pico plugged in? Replug it; or turn off "Use the IMU" in the settings to map without it |
 | Wheels | `/odom` arrived in the last second | `roomba_bridge` isn't running: check Logs. (This light doesn't show whether the Roomba itself is on, since its replies don't reach the Pi; if the wheels don't move, see "Roomba turned off and on" under Known issues) |
 | Navigation | The mission node is running and Nav2 is up (yellow: mapping runs but Nav2 isn't ready yet) | Open Logs, filter Warnings and up, look for `lifecycle_manager` or `controller_server` errors |
 | Connection | The page can reach the Pi | Are you on `lucia-control`? Is the Pi on? |

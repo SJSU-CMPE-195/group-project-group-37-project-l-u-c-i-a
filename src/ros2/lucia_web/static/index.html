@@ -19,6 +19,7 @@
     }
   }
   * { box-sizing: border-box; }
+  [hidden] { display: none !important; }   /* even on elements given their own display (flex, grid) */
   html, body { height: 100%; }
   body { margin: 0; background: var(--bg); color: var(--text); display: flex; flex-direction: column;
          font: 14px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; overflow: hidden; }
@@ -39,7 +40,10 @@
 
   /* ---- Layout: sidebar (about 1/5) | map ---- */
   main { flex: 1; min-height: 0; display: grid; grid-template-columns: clamp(300px, 20vw, 400px) minmax(0, 1fr); }
+  /* The sidebar doesn't scroll: the radar card takes whatever height the others leave */
   aside { overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+  aside > .card { flex: none; }
+  aside > #radarCard { flex: 1 1 auto; min-height: 180px; display: flex; flex-direction: column; }
   #mapArea { display: flex; flex-direction: column; min-height: 0; min-width: 0; padding: 12px 12px 12px 0; gap: 8px; }
 
   .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 12px; }
@@ -49,6 +53,8 @@
   .cardhead { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
   .cardhead h2 { margin: 0; }
   .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .row.pair { flex-wrap: nowrap; }
+  .row.pair > button { flex: 1 1 0; min-width: 0; padding: 7px 6px; white-space: nowrap; }
   button { font: inherit; padding: 7px 12px; border-radius: 8px; border: 1px solid var(--line);
            background: var(--pad); color: var(--text); cursor: pointer; }
   button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
@@ -62,14 +68,23 @@
   .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
   .seg button { border: 0; border-radius: 0; padding: 3px 9px; font-size: 12px; }
   a { color: var(--accent); }
+  button.link { background: none; border: 0; padding: 0; color: var(--accent); font-size: 12px; }
 
   /* ---- Radar ---- */
-  #radarWrap { position: relative; width: 100%; aspect-ratio: 1; background: var(--pad); border-radius: 50%; overflow: hidden; }
+  .radarBox { flex: 1; min-height: 0; container-type: size; display: flex; align-items: center; justify-content: center; }
+  #radarWrap { position: relative; width: min(100cqw, 100cqh); height: min(100cqw, 100cqh); }
+  #radarDisc { position: absolute; inset: 0; background: var(--pad); border-radius: 50%; overflow: hidden; }
   #radar { width: 100%; height: 100%; display: block; }
   #radarEmpty { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
-                color: var(--muted); text-align: center; padding: 18%; }
+                color: var(--muted); text-align: center; padding: 22%; }
   #radarEmpty span { background: var(--pad); padding: 6px 10px; border-radius: 6px; }
-  #nearest { margin-top: 8px; font-size: 13px; font-variant-numeric: tabular-nums; }
+  /* Drive by hand: arrows on the radar's edges (forward is up, like the radar) */
+  #pad { position: absolute; inset: 0; pointer-events: none; touch-action: none; user-select: none; }
+  #pad .arrow { position: absolute; pointer-events: auto; width: 36px; height: 36px; padding: 0; border-radius: 50%;
+                font-size: 14px; background: var(--card); box-shadow: 0 1px 4px rgba(0,0,0,.25); }
+  #pad .up { top: 2px; left: calc(50% - 18px); } #pad .down { bottom: 2px; left: calc(50% - 18px); }
+  #pad .left { left: 2px; top: calc(50% - 18px); } #pad .right { right: 2px; top: calc(50% - 18px); }
+  #pad .arrow.held { background: var(--accent); color: #fff; border-color: var(--accent); }
 
   /* ---- Metrics ---- */
   .tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; }
@@ -87,11 +102,67 @@
   .speed output { text-align: right; font-variant-numeric: tabular-nums; }
   #missionMsg { margin: 8px 0 0; font-weight: 600; }
   .check { display: flex; gap: 6px; align-items: center; }
-  .pad { display: grid; grid-template-columns: repeat(3, 52px); grid-template-rows: repeat(3, 52px);
-         gap: 6px; justify-content: center; margin: 2px 0 6px; touch-action: none; user-select: none; }
-  .pad button { font-size: 19px; padding: 0; }
-  .pad button.held { background: var(--accent); color: #fff; border-color: var(--accent); }
-  ul.maps { list-style: none; padding: 0; margin: 8px 0 0; max-height: 150px; overflow: auto; }
+  ul.maps { list-style: none; padding: 0; margin: 8px 0 0; max-height: 220px; overflow: auto; }
+  ul.maps:empty::before { content: 'No saved maps yet.'; color: var(--muted); font-size: 12px; }
+
+  /* ---- Popovers: the horn menu (header) and Save map (map toolbar) ---- */
+  .popover { position: absolute; z-index: 20; background: var(--card); color: var(--text); border: 1px solid var(--line);
+             border-radius: 10px; padding: 10px; box-shadow: 0 6px 24px rgba(0,0,0,.22); }
+  .split { position: relative; display: inline-flex; }
+  .split > button:first-child { border-radius: 8px 0 0 8px; }
+  .split > button + button { border-radius: 0 8px 8px 0; border-left: 0; padding-left: 7px; padding-right: 7px; }
+  #hornMenu { top: calc(100% + 6px); right: 0; width: 300px; }
+  #hornMenu h3, #savePanel h3 { margin: 0 0 6px; font-size: 12px; text-transform: uppercase; letter-spacing: .07em; color: var(--muted); }
+  .tunerow { display: flex; gap: 4px; margin-bottom: 4px; }
+  .tunerow .tuneplay { flex: 1; text-align: left; padding: 5px 9px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tunerow .tunedel { padding: 5px 9px; }
+  #midiBox { border-top: 1px solid var(--line); margin-top: 8px; padding-top: 8px; }
+  #midiBox .row + .row, #midiBox select { margin-top: 6px; }
+  #midiBox input[type=file] { font-size: 12px; max-width: 100%; }
+  #midiBox input[type=number] { width: 4.5em; }
+  #midiInfo.err { color: var(--bad); }
+  #savePanel { top: 48px; right: 10px; width: 280px; }
+
+  /* ---- Jetson camera: a panel over the map's top-left corner, under the map buttons ---- */
+  .campanel { position: absolute; top: 52px; left: 10px; z-index: 15; width: min(380px, calc(100% - 20px));
+              background: var(--card); border: 1px solid var(--line); border-radius: 10px; overflow: hidden;
+              box-shadow: 0 6px 24px rgba(0,0,0,.22); }
+  .campanel.large { width: min(72%, 1000px); }
+  .camhead { display: flex; align-items: center; gap: 6px; padding: 5px 6px 5px 10px; }
+  .camhead b { font-size: 12px; text-transform: uppercase; letter-spacing: .07em; color: var(--muted); }
+  .camhead .grow { flex: 1; }
+  .camhead button { padding: 2px 8px; font-size: 12px; }
+  #camState { font-size: 12px; color: var(--muted); }
+  #camState.live { color: var(--ok); } #camState.bad { color: var(--bad); }
+  .cambody { position: relative; aspect-ratio: 16 / 9; background: #000; }
+  #camImg { width: 100%; height: 100%; object-fit: contain; display: block; }
+  #camMsg { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; text-align: center;
+            padding: 14px; color: #ddd; font-size: 13px; }
+  #camAddr { padding: 6px 8px; border-top: 1px solid var(--line); flex-wrap: nowrap; }
+
+  /* ---- Settings (opens on Start mapping) ---- */
+  dialog#settingsDlg { width: min(640px, 94vw); max-height: 88vh; padding: 0; border: 1px solid var(--line); border-radius: 12px;
+                       background: var(--card); color: var(--text); }
+  dialog#settingsDlg::backdrop { background: rgba(0,0,0,.45); }
+  .dlghead { padding: 14px 16px 6px; }
+  .dlghead h2 { margin: 0; font-size: 17px; }
+  #settingsForm { padding: 0 16px; overflow: auto; max-height: calc(88vh - 150px); }
+  #settingsForm fieldset { border: 0; padding: 0; margin: 10px 0 0; }
+  #settingsForm legend { font-size: 12px; text-transform: uppercase; letter-spacing: .07em; color: var(--muted); padding: 0; margin-bottom: 2px; }
+  .set { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 0 12px; align-items: center; padding: 6px 0;
+         border-top: 1px solid var(--line); }
+  .set .lbl { font-weight: 600; }
+  .set .help { grid-column: 1; font-size: 12px; color: var(--muted); }
+  .set .ctl { grid-column: 2; grid-row: 1 / span 2; display: flex; align-items: center; gap: 6px; white-space: nowrap; }
+  .set .ctl input[type=number] { width: 6.5em; font: inherit; padding: 5px 8px; border-radius: 8px; border: 1px solid var(--line);
+                                 background: var(--bg); color: var(--text); text-align: right; }
+  .set .ctl input[type=checkbox] { width: 18px; height: 18px; accent-color: var(--accent); }
+  .set .unit { color: var(--muted); font-size: 12px; min-width: 3.2em; }
+  .set.changed .lbl::after { content: ' ●'; color: var(--accent); font-size: 10px; vertical-align: 2px; }
+  .dlgfoot { display: flex; gap: 8px; align-items: center; padding: 12px 16px 14px; border-top: 1px solid var(--line); }
+  .dlgfoot .grow { flex: 1; }
+  #settingsErr { color: var(--bad); padding: 0 16px; margin: 8px 0 0; }
+  #settingsErr:empty { display: none; }
   ul.maps li { display: flex; justify-content: space-between; gap: 8px; padding: 4px 0; border-top: 1px solid var(--line); font-size: 13px; }
 
   /* ---- Map ---- */
@@ -134,14 +205,10 @@
   .logview .n { color: var(--accent); }
   .logview .WARN { color: var(--warn); } .logview .ERROR, .logview .FATAL { color: var(--bad); } .logview .DEBUG { color: var(--muted); }
   #scrollNote { font-size: 12px; color: var(--warn); }
+  .metricsview { flex: 1; min-height: 0; overflow: auto; padding: 4px 10px 10px; display: grid; gap: 12px;
+                 grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); align-content: start; }
+  .metricsview h3 { margin: 4px 0 5px; font-size: 12px; text-transform: uppercase; letter-spacing: .07em; color: var(--muted); }
 
-  textarea { font: 12px/1.4 ui-monospace, Menlo, Consolas, monospace; width: 100%; resize: vertical; padding: 6px 8px;
-             border-radius: 8px; border: 1px solid var(--line); background: var(--bg); color: var(--text); margin-top: 8px; }
-  #tunesCard .row + .row { margin-top: 8px; }
-  #tunesCard details { margin-top: 10px; }
-  #tunesCard details .row { margin-top: 8px; }
-  #tunesCard input[type=file] { font-size: 12px; margin-top: 8px; max-width: 100%; }
-  #tuneInfo.err, #midiInfo.err { color: var(--bad); }
   #haltFloat { display: none; position: fixed; right: 16px; bottom: 16px; z-index: 10; padding: 14px 26px; font-size: 17px;
                box-shadow: 0 4px 14px rgba(0,0,0,.3); }
 
@@ -151,6 +218,12 @@
     main { display: flex; flex-direction: column; }
     #mapArea { order: 1; height: 75vh; padding: 12px 12px 0; }
     aside { order: 2; overflow: visible; }
+    aside > #radarCard { min-height: 0; }
+    .radarBox { container-type: normal; }
+    #radarWrap { width: 100%; max-width: 420px; height: auto; aspect-ratio: 1; }
+    #hornMenu { right: auto; left: 0; width: min(300px, calc(100vw - 32px)); }
+    .campanel { top: 96px; }                     /* the map buttons take two rows here */
+    .campanel.large { width: calc(100% - 20px); }
     #message { margin-left: 0; flex-basis: 100%; }
     body.busy #haltFloat { display: block; }
     body.busy { padding-bottom: 80px; }
@@ -170,7 +243,35 @@
   </div>
   <span id="message"></span>
   <span class="row headbtns">
-    <button id="hornTop" title="Honk the Roomba's horn (H)">Horn</button>
+    <span class="split">
+      <button id="hornTop" title="Honk the Roomba's horn (H key)">Horn (H)</button>
+      <button id="hornMenuBtn" title="Tunes: play, or import one from a MIDI file" aria-haspopup="true">▾</button>
+      <div id="hornMenu" class="popover" hidden>
+        <h3>Play on the Roomba</h3>
+        <div id="tuneList"></div>
+        <button class="link" id="midiToggle">Import from a MIDI file…</button>
+        <div id="midiBox" hidden>
+          <input type="file" id="midiFile" accept=".mid,.midi,audio/midi,audio/x-midi">
+          <select id="midiPart" disabled title="Which instrument has the tune" style="width:100%"></select>
+          <div class="row">
+            <label>Start at <input type="number" id="midiStart" value="0" min="0" step="0.5"> s</label>
+            <label>Octave <select id="midiOct">
+              <option value="-24">-2</option><option value="-12">-1</option><option value="0" selected>0</option>
+              <option value="12">+1</option><option value="24">+2</option></select></label>
+          </div>
+          <p class="hint" id="midiInfo">Pick a MIDI file, then the part that has the tune. The Roomba plays one note
+            at a time, at most 64.</p>
+          <div class="row">
+            <button id="midiPreview" disabled title="Play it here, in the browser">Preview here</button>
+            <button id="midiPlay" disabled>Play on Roomba</button>
+          </div>
+          <div class="row">
+            <input type="text" id="tuneName" placeholder="Name to save as" maxlength="40" style="flex:1">
+            <button id="tuneSave" class="primary" disabled>Save</button>
+          </div>
+        </div>
+      </div>
+    </span>
     <button class="primary" id="exploreTop" title="Frontier exploration: map everything it can reach, then come home">Explore</button>
     <button id="homeTop" title="Drive back to where mapping started">HOME</button>
     <button class="halt" id="haltTop" title="Stop driving (Space or Esc)">STOP</button>
@@ -179,140 +280,62 @@
 
 <main>
   <aside>
-    <section class="card">
+    <section class="card" id="radarCard">
       <div class="cardhead">
         <h2>Radar</h2>
         <span class="seg" id="radarRange">
           <button data-m="1">1 m</button><button data-m="2" class="on">2 m</button><button data-m="4">4 m</button>
         </span>
       </div>
-      <div id="radarWrap">
-        <canvas id="radar"></canvas>
-        <div id="radarEmpty"><span>No lidar data. Start mapping to turn the lidar on.</span></div>
+      <div class="radarBox">
+        <div id="radarWrap">
+          <div id="radarDisc">
+            <canvas id="radar"></canvas>
+            <div id="radarEmpty"><span title="The lidar runs while mapping">No lidar data</span></div>
+          </div>
+          <div id="pad">
+            <button class="arrow up" data-l="1" data-a="0" data-k="f" title="Forward: hold (or W / Up). Space or Esc = STOP">▲</button>
+            <button class="arrow left" data-l="0" data-a="1" data-k="l" title="Turn left: hold (or A / Left)">◀</button>
+            <button class="arrow right" data-l="0" data-a="-1" data-k="r" title="Turn right: hold (or D / Right)">▶</button>
+            <button class="arrow down" data-l="-1" data-a="0" data-k="b" title="Back: hold (or S / Down)">▼</button>
+          </div>
+        </div>
       </div>
-      <div id="nearest">Nearest: -</div>
     </section>
 
-    <section class="card" id="metrics">
-      <h2>Motion</h2>
+    <section class="card" id="keyMetrics">
+      <div class="cardhead">
+        <h2>Metrics</h2>
+        <button class="link" id="allMetrics" title="Every metric, in the drawer under the map">All metrics ▸</button>
+      </div>
       <div class="tiles">
         <div class="tile" title="0 = the way it faced at Start mapping, clockwise like a compass">
-          <span class="k">Heading</span><span class="v" id="mHeading">-</span><canvas id="compass"></canvas></div>
-        <div class="tile" title="What the wheels are being told (/cmd_vel_safe)">
-          <span class="k">Speed (wheels)</span><span class="v" id="mSpeed">-</span></div>
-        <div class="tile" title="How fast the robot's position on the map is changing">
-          <span class="k">Ground speed</span><span class="v" id="mGround">-</span></div>
-        <div class="tile" title="Measured by the IMU gyro">
-          <span class="k">Turn rate</span><span class="v" id="mTurn">-</span></div>
-        <div class="tile wide" title="Stuck check: how much of what the wheels were told the lidar (driving) and IMU (turning) saw happen. A few 'not moving' in a row = stuck">
-          <span class="k">Really moving?</span><span class="v" id="mMoving">-</span></div>
-      </div>
-      <h2>Trip</h2>
-      <div class="tiles">
-        <div class="tile"><span class="k">Distance driven</span><span class="v" id="mDist">-</span></div>
-        <div class="tile"><span class="k">Time mapping</span><span class="v" id="mTime">-</span></div>
-        <div class="tile"><span class="k">From HOME</span><span class="v" id="mHome">-</span></div>
-        <div class="tile" title="Map frame, meters; HOME is 0, 0"><span class="k">Position x, y</span><span class="v" id="mPos">-</span></div>
-      </div>
-      <h2>Exploration</h2>
-      <div class="tiles">
-        <div class="tile"><span class="k">Area mapped</span><span class="v" id="mArea">-</span></div>
-        <div class="tile"><span class="k">Frontiers</span><span class="v" id="mFrontiers">-</span></div>
-        <div class="tile wide"><span class="k">Nearest obstacle</span><span class="v" id="mNearest">-</span></div>
-      </div>
-      <h2>Pi + sensors</h2>
-      <div class="tiles">
-        <div class="tile wide" title="Messages per second"><span class="k">Lidar · IMU · Odom</span><span class="v" id="mRates">-</span></div>
-        <div class="tile"><span class="k">CPU temp</span><span class="v" id="mTemp">-</span></div>
-        <div class="tile"><span class="k">CPU</span><span class="v" id="mCpu">-</span></div>
-        <div class="tile"><span class="k">Memory</span><span class="v" id="mMem">-</span></div>
-        <div class="tile" title="Needs the Roomba's serial replies, which don't reach the Pi yet (TODO.md, Phase 1 Step B)">
-          <span class="k">Battery</span><span class="v na">n/a: cable</span></div>
+          <span class="k">Heading</span><span class="v" id="kHeading">-</span><canvas id="compass"></canvas></div>
+        <div class="tile" title="What the wheels are being told">
+          <span class="k">Speed</span><span class="v" id="kSpeed">-</span></div>
+        <div class="tile"><span class="k">Distance driven</span><span class="v" id="kDist">-</span></div>
+        <div class="tile"><span class="k">Area mapped</span><span class="v" id="kArea">-</span></div>
+        <div class="tile" title="Stuck check: how much of what the wheels were told the lidar and IMU saw happen">
+          <span class="k">Really moving?</span><span class="v" id="kMoving">-</span></div>
+        <div class="tile"><span class="k">Nearest obstacle</span><span class="v" id="kNearest">-</span></div>
       </div>
     </section>
 
-    <section class="card">
+    <section class="card" id="mappingCard">
       <h2>Mapping</h2>
-      <div class="row">
-        <button class="primary" id="start">Start mapping</button>
+      <div class="row pair">
+        <button class="primary" id="start" title="Opens the settings, then starts">Start mapping…</button>
         <button class="danger" id="stop">Stop mapping</button>
-        <label class="check"><input type="checkbox" id="useImu" checked> Use IMU</label>
       </div>
       <div class="row" style="margin-top:8px">
-        <button id="reconnect" title="After the Roomba was turned off and on, or its battery died. Keeps the map.">Reconnect Roomba</button>
+        <button id="reconnect" title="Roomba turned off and on, or its battery died? Turn it on, press this and listen for a beep. Mapping keeps running, so the map isn't lost.">Reconnect Roomba</button>
       </div>
-      <p class="hint" id="reconnectMsg" hidden></p>
-      <p class="hint">Roomba turned off and on, or its battery died? Turn it on, press Reconnect, and listen
-        for a beep. Mapping keeps running, so the map isn't lost.</p>
       <div class="speed">
         <label for="speed" title="Top speed for Explore, HOME and driving by hand. It slows down by itself near walls, in doorways and when something is ahead">Top speed</label>
         <input type="range" id="speed" min="5" max="30" step="1" value="30">
         <output id="speedVal" for="speed">30 cm/s</output>
       </div>
-      <h2 style="margin-top:14px">Autonomy</h2>
-      <div class="row">
-        <button class="primary" id="explore" title="Frontier exploration: map everything it can reach, then come home">Explore</button>
-        <button id="goHome" title="Drive back to where mapping started">Return HOME</button>
-        <button class="halt" id="halt" title="Stop driving (Space or Esc)">STOP</button>
-      </div>
       <p id="missionMsg">Navigation starts with mapping.</p>
-      <p class="hint">It steers around what the lidar sees, not things lower than the lidar. Stay with it.</p>
-    </section>
-
-    <section class="card">
-      <h2>Drive</h2>
-      <div class="pad" id="pad">
-        <span></span><button data-l="1" data-a="0" data-k="f" title="Forward (W / Up)">▲</button><span></span>
-        <button data-l="0" data-a="1" data-k="l" title="Turn left (A / Left)">◀</button>
-        <button data-l="0" data-a="0" data-k="" title="Stop">■</button>
-        <button data-l="0" data-a="-1" data-k="r" title="Turn right (D / Right)">▶</button>
-        <span></span><button data-l="-1" data-a="0" data-k="b" title="Back (S / Down)">▼</button><span></span>
-      </div>
-      <p class="hint"><span id="driveHint">WASD or arrow keys; hold to move. Space or Esc = STOP.</span>
-        Driving by hand during Explore or HOME pauses it; it carries on a few seconds after you let go (STOP cancels).</p>
-    </section>
-
-    <section class="card" id="tunesCard">
-      <h2>Horn and tunes</h2>
-      <div class="row">
-        <button class="primary" id="horn" title="Honk (H key)">Horn</button>
-        <select id="tuneSel" style="flex:1" title="Built-in and saved tunes"></select>
-      </div>
-      <div class="row">
-        <button id="tunePlay" title="Play the notes in the box on the Roomba's speaker">Play on Roomba</button>
-        <button id="tunePreview" title="Play the notes in the box here, in the browser">Preview here</button>
-      </div>
-      <textarea id="tuneText" rows="4" spellcheck="false" placeholder="B4:16 G#4:16 R:8 ..."></textarea>
-      <p class="hint" id="tuneInfo"></p>
-      <div class="row">
-        <input type="text" id="tuneName" placeholder="Name to save as" maxlength="40" style="flex:1">
-        <button id="tuneSave">Save</button>
-        <button id="tuneDelete" title="Delete the selected saved tune">Delete</button>
-      </div>
-      <details id="midiBox">
-        <summary>Import from a MIDI file</summary>
-        <input type="file" id="midiFile" accept=".mid,.midi,audio/midi,audio/x-midi">
-        <div class="row"><select id="midiPart" style="flex:1" disabled title="Which instrument has the tune"></select></div>
-        <div class="row">
-          <label>Start at <input type="number" id="midiStart" value="0" min="0" step="0.5" style="width:5em"> s</label>
-          <label>Octave <select id="midiOct">
-            <option value="-24">-2</option><option value="-12">-1</option><option value="0" selected>0</option>
-            <option value="12">+1</option><option value="24">+2</option></select></label>
-        </div>
-        <p class="hint" id="midiInfo">Pick the part that has the tune; its melody lands in the box above, one note at a
-          time, at most 64 notes. Preview, adjust, then Save.</p>
-      </details>
-      <p class="hint">Notes: a name and octave (C4 = middle C), a MIDI number, or R for a rest, then :duration in
-        1/64 s (16 = a quarter second). One note at a time, up to 64.</p>
-    </section>
-
-    <section class="card">
-      <h2>Save map</h2>
-      <div class="row">
-        <input type="text" id="mapName" placeholder="room3" maxlength="40" style="flex:1">
-        <button id="save">Save</button>
-      </div>
-      <ul class="maps" id="maps"></ul>
     </section>
   </aside>
 
@@ -326,6 +349,30 @@
         <button id="fit" title="Show the whole map">Fit</button>
         <button id="follow" title="Keep the robot in the middle">Follow</button>
         <button id="clickGo" title="Then click the map to send the robot there">Click to go</button>
+        <button id="cameraBtn" title="What the Jetson's camera sees (relayed through the Pi)">Camera</button>
+        <button id="saveMapBtn" title="Save the map, or download a saved one">Save map ▾</button>
+      </div>
+      <div id="cameraPanel" class="campanel" hidden>
+        <div class="camhead">
+          <b>Jetson camera</b><span id="camState"></span><span class="grow"></span>
+          <button id="camSize" title="Bigger / smaller">⤢</button>
+          <button id="camEdit" title="The camera's address">⚙</button>
+          <button id="camClose" title="Close (stops the video)">×</button>
+        </div>
+        <div class="cambody"><img id="camImg" alt="What the Jetson's camera sees"><div id="camMsg"></div></div>
+        <div id="camAddr" class="row" hidden>
+          <input type="text" id="camUrl" placeholder="Jetson address, e.g. 192.168.1.20:8080" style="flex:1">
+          <button id="camSave" class="primary">Save</button>
+        </div>
+      </div>
+      <div id="savePanel" class="popover" hidden>
+        <h3>Save the map</h3>
+        <div class="row">
+          <input type="text" id="mapName" placeholder="room3" maxlength="40" style="flex:1">
+          <button id="save" class="primary">Save</button>
+        </div>
+        <h3 style="margin-top:12px">Saved maps</h3>
+        <ul class="maps" id="maps"></ul>
       </div>
       <div class="legend">
         <span><i style="background:var(--accent)"></i>Robot / goal</span>
@@ -340,13 +387,13 @@
 
     <div id="drawer">
       <div class="drawerbar">
-        <button id="drawerToggle">Logs ▲</button>
+        <button id="drawerToggle">Logs &amp; metrics ▲</button>
         <span id="latestLog">No log messages yet.</span>
         <span id="logCounts"></span>
       </div>
       <div class="drawerbody">
         <div class="drawertools">
-          <span class="seg" id="logTabs"><button data-tab="ros" class="on">ROS logs</button><button data-tab="launch">Launch output</button></span>
+          <span class="seg" id="logTabs"><button data-tab="ros" class="on">ROS logs</button><button data-tab="launch">Launch output</button><button data-tab="metrics">Metrics</button></span>
           <select id="logLevel" title="Minimum level">
             <option value="0">All levels</option><option value="20" selected>Info and up</option>
             <option value="30">Warnings and up</option><option value="40">Errors only</option>
@@ -358,12 +405,73 @@
         </div>
         <div id="logView" class="logview"></div>
         <pre id="launchView" class="logview" hidden>(not started)</pre>
+        <div id="metricsView" class="metricsview" hidden>
+          <section>
+            <h3>Motion</h3>
+            <div class="tiles">
+              <div class="tile" title="0 = the way it faced at Start mapping, clockwise like a compass">
+                <span class="k">Heading</span><span class="v" id="mHeading">-</span></div>
+              <div class="tile" title="What the wheels are being told (/cmd_vel_safe)">
+                <span class="k">Speed (wheels)</span><span class="v" id="mSpeed">-</span></div>
+              <div class="tile" title="How fast the robot's position on the map is changing">
+                <span class="k">Ground speed</span><span class="v" id="mGround">-</span></div>
+              <div class="tile" title="Measured by the IMU gyro">
+                <span class="k">Turn rate</span><span class="v" id="mTurn">-</span></div>
+              <div class="tile wide" title="Stuck check: how much of what the wheels were told the lidar (driving) and IMU (turning) saw happen. A few 'not moving' in a row = stuck">
+                <span class="k">Really moving?</span><span class="v" id="mMoving">-</span></div>
+            </div>
+          </section>
+          <section>
+            <h3>Trip</h3>
+            <div class="tiles">
+              <div class="tile"><span class="k">Distance driven</span><span class="v" id="mDist">-</span></div>
+              <div class="tile"><span class="k">Time mapping</span><span class="v" id="mTime">-</span></div>
+              <div class="tile"><span class="k">From HOME</span><span class="v" id="mHome">-</span></div>
+              <div class="tile" title="Map frame, meters; HOME is 0, 0"><span class="k">Position x, y</span><span class="v" id="mPos">-</span></div>
+            </div>
+          </section>
+          <section>
+            <h3>Exploration</h3>
+            <div class="tiles">
+              <div class="tile"><span class="k">Area mapped</span><span class="v" id="mArea">-</span></div>
+              <div class="tile"><span class="k">Frontiers</span><span class="v" id="mFrontiers">-</span></div>
+              <div class="tile wide"><span class="k">Nearest obstacle</span><span class="v" id="mNearest">-</span></div>
+            </div>
+          </section>
+          <section>
+            <h3>Pi + sensors</h3>
+            <div class="tiles">
+              <div class="tile wide" title="Messages per second"><span class="k">Lidar · IMU · Odom</span><span class="v" id="mRates">-</span></div>
+              <div class="tile"><span class="k">CPU temp</span><span class="v" id="mTemp">-</span></div>
+              <div class="tile"><span class="k">CPU</span><span class="v" id="mCpu">-</span></div>
+              <div class="tile"><span class="k">Memory</span><span class="v" id="mMem">-</span></div>
+              <div class="tile" title="Needs the Roomba's serial replies, which don't reach the Pi yet (TODO.md, Phase 1 Step B)">
+                <span class="k">Battery</span><span class="v na">n/a: cable</span></div>
+            </div>
+          </section>
+        </div>
       </div>
     </div>
   </section>
 </main>
 
 <button class="halt" id="haltFloat">STOP</button>
+
+<dialog id="settingsDlg">
+  <div class="dlghead">
+    <h2>Start mapping</h2>
+    <p class="hint">These settings apply from this start, and are kept for next time. A dot marks one changed from its
+      default.</p>
+  </div>
+  <div id="settingsForm"></div>
+  <p id="settingsErr"></p>
+  <div class="dlgfoot">
+    <button id="settingsReset" title="Fill in every default value (nothing changes until you start)">Reset to defaults</button>
+    <span class="grow"></span>
+    <button id="settingsCancel">Cancel</button>
+    <button id="settingsStart" class="primary">Start mapping</button>
+  </div>
+</dialog>
 
 <script>
 const $ = id => document.getElementById(id);
@@ -398,36 +506,29 @@ async function pollStatus() {
   for (const k of ['lidar', 'imu', 'wheels']) setPill('p-' + k, status.sensors[k]);
   $('start').disabled = status.mapping;
   $('stop').disabled = !status.mapping;
-  $('useImu').disabled = status.mapping;
   $('reconnect').disabled = !status.mapping || reconnecting;
   const mission = status.mission, busy = !!mission && mission.mode !== 'idle';
   const navReady = status.mapping && !!mission && mission.nav_ready;
   setPill('p-nav', navReady ? 'ok' : status.mapping ? 'stale' : 'missing');
-  for (const id of ['explore', 'exploreTop']) $(id).disabled = !navReady || (busy && mission.mode === 'explore');
-  for (const id of ['goHome', 'homeTop']) $(id).disabled = !navReady || (busy && mission.mode === 'home');
-  for (const id of ['halt', 'haltTop']) $(id).disabled = !status.mapping;
+  $('exploreTop').disabled = !navReady || (busy && mission.mode === 'explore');
+  $('homeTop').disabled = !navReady || (busy && mission.mode === 'home');
+  $('haltTop').disabled = !status.mapping;
   $('clickGo').disabled = !navReady;
   if (!navReady && picking) setPicking(false);
   showMission(mission);
   $('pad').querySelectorAll('button').forEach(b => b.disabled = !status.mapping);
-  $('driveHint').textContent = status.mapping
-    ? 'WASD or arrow keys; hold to move. Space or Esc = STOP.'
-    : 'Start mapping to drive (the wheels driver runs with it).';
   showSpeed(status.speed);
   const lidarGone = status.sensors.lidar === 'missing';
   $('radarEmpty').style.display = lidarGone ? '' : 'none';
-  if (lidarGone && radar) { radar = null; $('nearest').textContent = 'Nearest: -'; drawRadar(); }
+  if (lidarGone && radar) { radar = null; drawRadar(); }
   showMetrics();
+  showCamera(status.camera);
   if (status.map_version !== mapVersion) pollMap();
   if (status.trail && (status.trail.session !== trail.session || status.trail.len > trail.points.length)) pollTrail();
   requestDraw();
 }
 
-$('start').onclick = async () => {
-  const r = await post('/api/mapping/start', { use_imu: $('useImu').checked });
-  say(r.message, r.ok);
-  pollStatus();
-};
+$('start').onclick = () => openSettings();
 $('stop').onclick = async () => {
   say('Stopping... (takes a few seconds)', true);
   const r = await post('/api/mapping/stop');
@@ -441,9 +542,7 @@ $('reconnect').onclick = async () => {
   say('Reconnecting to the Roomba... (about 5 s)', true);
   try {
     const r = await post('/api/roomba/reconnect');
-    say(r.ok ? 'Roomba: commands sent, listen for the beep' : r.message, r.ok);
-    $('reconnectMsg').textContent = r.message; $('reconnectMsg').hidden = false;
-    $('reconnectMsg').style.color = r.ok ? '' : 'var(--bad)';
+    say(r.ok ? 'Roomba: commands sent, listen for the beep. ' + r.message : r.message, r.ok);
   } catch (e) { say('Could not reach the robot', false); }
   reconnecting = false;
   pollStatus();
@@ -471,9 +570,9 @@ async function sendMission(body) {
   pollStatus();
 }
 function stopAll() { stopDrive(); sendMission({ cmd: 'stop' }); }
-$('explore').onclick = $('exploreTop').onclick = () => sendMission({ cmd: 'explore' });
-$('goHome').onclick = $('homeTop').onclick = () => sendMission({ cmd: 'home' });
-for (const id of ['halt', 'haltTop', 'haltFloat']) $(id).onclick = stopAll;
+$('exploreTop').onclick = () => sendMission({ cmd: 'explore' });
+$('homeTop').onclick = () => sendMission({ cmd: 'home' });
+for (const id of ['haltTop', 'haltFloat']) $(id).onclick = stopAll;
 
 // ---- Speed ---------------------------------------------------------------
 // The server keeps the speed, so every open page shows the same value.
@@ -510,12 +609,27 @@ function bearingText(deg) {
   return d === 0 ? 'ahead' : d === 180 ? 'behind' : `${d}° ${deg > 0 ? 'left' : 'right'}`;
 }
 function setV(id, text, cls) { const el = $(id); el.textContent = text; el.className = 'v' + (cls ? ' ' + cls : ''); }
+// The six on the left (k...) are copies of ones in the drawer's Metrics tab (m...); the
+// left column is narrow, so their full text is also in a tooltip.
+function setBoth(name, text, cls, short) {
+  setV('m' + name, text, cls); setV('k' + name, short ?? text, cls); $('k' + name).title = text;
+}
+// Which way something is, as an arrow like on the radar (forward up): deg > 0 = to the left
+const ARROWS = ['↑', '↖', '←', '↙', '↓', '↘', '→', '↗'];
+const dirArrow = deg => ARROWS[((Math.round(deg / 45) % 8) + 8) % 8];
+
+function showNearest() {
+  const nb = radar && radar.nearest;
+  setBoth('Nearest', nb ? `${nb.m.toFixed(2)} m, ${bearingText(nb.deg)}` : radar ? 'nothing in range' : '-',
+          nb ? (nb.m < CLOSE_M ? 'bad' : nb.m < NEAR_M ? 'warn' : '') : '',
+          nb ? `${nb.m.toFixed(2)} m ${dirArrow(nb.deg)}` : radar ? 'none' : '-');
+}
 
 function showMetrics() {
   const t = status.telemetry || {}, p = status.pose, m = status.mission;
-  setV('mHeading', p ? Math.round(compassDeg(p.yaw)) + '°' : '-');
+  setBoth('Heading', p ? Math.round(compassDeg(p.yaw)) + '°' : '-');
   drawCompass(p);
-  setV('mSpeed', t.cmd ? fmt(Math.abs(t.cmd.linear) * 100, 0, ' cm/s') + (t.cmd.linear < -0.001 ? ' back' : '') : '-');
+  setBoth('Speed', t.cmd ? fmt(Math.abs(t.cmd.linear) * 100, 0, ' cm/s') + (t.cmd.linear < -0.001 ? ' back' : '') : '-');
   setV('mGround', t.ground_speed == null ? '-' : fmt(t.ground_speed * 100, 0, ' cm/s'));
   if (t.gyro_z == null) setV('mTurn', '-');
   else {
@@ -523,26 +637,24 @@ function showMetrics() {
     setV('mTurn', Math.abs(d) < 1 ? '0°/s' : `${Math.abs(d).toFixed(0)}°/s ${d > 0 ? 'left' : 'right'}`);
   }
   const mo = m && m.motion;
-  if (!mo || !mo.enabled) setV('mMoving', mo ? 'check off' : '-');
+  if (!mo || !mo.enabled) setBoth('Moving', mo ? 'check off' : '-');
   else {
     const parts = [];
     if (mo.driven != null) parts.push(`drove ${Math.round(mo.driven * 100)}%`);
     if (mo.turned != null) parts.push(`turned ${Math.round(mo.turned * 100)}%`);
     const detail = parts.length ? ' (' + parts.join(', ') + ')' : '';
-    if (mo.moving === false) setV('mMoving', 'NOT MOVING' + detail, 'bad');
-    else if (mo.moving === true) setV('mMoving', 'yes' + detail);
-    else setV('mMoving', '-');
+    if (mo.moving === false) setBoth('Moving', 'NOT MOVING' + detail, 'bad', 'NOT MOVING');
+    else if (mo.moving === true) setBoth('Moving', 'yes' + detail, '', 'yes');
+    else setBoth('Moving', '-');
   }
-  setV('mDist', fmt(t.distance_m, 2, ' m'));
+  setBoth('Dist', fmt(t.distance_m, 2, ' m'));
   setV('mTime', clock(t.trip_s));
   const home = m ? m.home : { x: 0, y: 0 };
   setV('mHome', p ? fmt(Math.hypot(p.x - home.x, p.y - home.y), 2, ' m') : '-');
   setV('mPos', p ? `${p.x.toFixed(2)}, ${p.y.toFixed(2)}` : '-');
-  setV('mArea', t.area_m2 == null ? '-' : fmt(t.area_m2, 1, ' m²'));
+  setBoth('Area', t.area_m2 == null ? '-' : fmt(t.area_m2, 1, ' m²'));
   setV('mFrontiers', m ? String(m.frontiers.length) : '-');
-  const nb = radar && radar.nearest;
-  setV('mNearest', nb ? `${nb.m.toFixed(2)} m, ${bearingText(nb.deg)}` : '-',
-       nb ? (nb.m < CLOSE_M ? 'bad' : nb.m < NEAR_M ? 'warn' : '') : '');
+  showNearest();
   const r = t.rates || {};
   setV('mRates', `${fmt(r.lidar, 1, '')} · ${fmt(r.imu, 0, '')} · ${fmt(r.wheels, 0, '')} Hz`,
        status.mapping && (!r.lidar || !r.wheels) ? 'warn' : '');
@@ -625,17 +737,18 @@ function drawRadar() {
       const [x, y] = at(k * sliceDeg, m);
       ctx.beginPath(); ctx.arc(x, y, dot, 0, 2 * Math.PI); ctx.fill();
     });
-    const nb = radar.nearest;
-    $('nearest').textContent = nb ? `Nearest: ${nb.m.toFixed(2)} m, ${bearingText(nb.deg)}` : 'Nearest: nothing in range';
+    showNearest();
   }
 
+  // Ring labels on the lower-right diagonal: the drive arrows sit on the axes
   const labelRings = () => {
     ctx.font = '11px system-ui, sans-serif'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
     for (const m of rings) {
-      const text = m + ' m', w = ctx.measureText(text).width, y = cy - m * s + 9;
+      const text = m + ' m', w = ctx.measureText(text).width;
+      const x = cx + m * s * Math.SQRT1_2 - w / 2 - 3, y = cy + m * s * Math.SQRT1_2 - 9;
       ctx.fillStyle = col('pad'); ctx.globalAlpha = 0.85;
-      ctx.fillRect(cx + 2, y - 7, w + 6, 14); ctx.globalAlpha = 1;
-      ctx.fillStyle = col('muted'); ctx.fillText(text, cx + 5, y);
+      ctx.fillRect(x - 3, y - 7, w + 6, 14); ctx.globalAlpha = 1;
+      ctx.fillStyle = col('muted'); ctx.fillText(text, x, y);
     }
   };
   // The robot at its real size, with a tick showing forward (left out without data)
@@ -946,7 +1059,8 @@ function keyDrive() {
   if (l === 0 && a === 0) stopDrive(); else startDrive(l, a);
 }
 window.addEventListener('keydown', e => {
-  if (e.key === 'Escape') {                     // STOP, even while typing
+  if (e.key === 'Escape') {                     // STOP, even while typing (and close any menu)
+    closePops();
     if (status && status.mapping) { e.preventDefault(); keys.clear(); lightPad(keys); stopAll(); }
     return;
   }
@@ -967,76 +1081,103 @@ window.addEventListener('keyup', e => {
 });
 window.addEventListener('blur', () => { keys.clear(); lightPad(keys); stopDrive(); });
 
-// ---- Horn and tunes ----------------------------------------------------------
+// ---- Horn and tunes (the Horn ▾ menu in the header) -----------------------------
 // The Roomba plays one note at a time, up to 64 notes (4 song slots of 16). The
 // server checks and stores tunes; the browser preview is a square wave, which
 // sounds roughly like the Roomba's speaker.
 let tunes = { builtin: [], custom: [] };
-const isCustom = name => tunes.custom.some(t => t.name === name);
 
-async function horn() {
-  try { const r = await post('/api/tunes/play', { name: 'Horn' }); say(r.ok ? 'Honk!' : r.message, r.ok); }
+async function playTune(body, ok) {
+  try { const r = await post('/api/tunes/play', body); say(r.ok ? (ok || r.message) : r.message, r.ok); }
   catch (e) { say('Could not reach the robot', false); }
 }
-$('horn').onclick = $('hornTop').onclick = horn;
+const horn = () => playTune({ name: 'Horn' }, 'Honk!');
+$('hornTop').onclick = horn;
 
-async function loadTunes(select) {
+async function loadTunes() {
   try { tunes = await (await fetch('/api/tunes')).json(); } catch (e) { return; }
-  const sel = $('tuneSel'), keep = select ?? sel.value;
-  sel.innerHTML = '';
-  for (const [label, list] of [['Built-in', tunes.builtin], ['Saved', tunes.custom]]) {
-    if (!list.length) continue;
-    const g = document.createElement('optgroup'); g.label = label;
-    for (const t of list) { const o = document.createElement('option'); o.value = o.textContent = t.name; g.append(o); }
-    sel.append(g);
+  const box = $('tuneList');
+  box.replaceChildren();
+  for (const [list, saved] of [[tunes.builtin, false], [tunes.custom, true]]) {
+    for (const t of list) {
+      const row = document.createElement('div'); row.className = 'tunerow';
+      const play = document.createElement('button'); play.className = 'tuneplay';
+      play.textContent = '▶ ' + t.name; play.title = `${t.notes} notes, ${t.seconds} s`;
+      play.onclick = () => playTune({ name: t.name });
+      row.append(play);
+      if (saved) {
+        const del = document.createElement('button'); del.className = 'tunedel';
+        del.textContent = '×'; del.title = `Delete "${t.name}"`;
+        del.onclick = async () => {
+          if (!confirm(`Delete "${t.name}"?`)) return;
+          const r = await post('/api/tunes/delete', { name: t.name });
+          say(r.message, r.ok);
+          loadTunes();
+        };
+        row.append(del);
+      }
+      box.append(row);
+    }
   }
-  if ([...sel.options].some(o => o.value === keep)) sel.value = keep;
-  showTune();
 }
-function showTune() {
-  const t = [...tunes.builtin, ...tunes.custom].find(x => x.name === $('tuneSel').value);
-  if (!t) return;
-  $('tuneText').value = t.text;
-  $('tuneName').value = isCustom(t.name) ? t.name : '';
-  $('tuneDelete').disabled = !isCustom(t.name);
-  setTuneInfo(`${t.notes} notes, ${t.seconds} s`, true);
-}
-function setTuneInfo(text, ok) { const el = $('tuneInfo'); el.textContent = text; el.className = 'hint' + (ok ? '' : ' err'); }
-$('tuneSel').onchange = () => showTune();
 
-async function checkTune() {
-  const r = await post('/api/tunes/check', { text: $('tuneText').value });
-  setTuneInfo(r.ok ? `${r.notes} notes, ${r.seconds} s` : r.message, r.ok);
-  return r;
-}
-let checkTimer = null;
-$('tuneText').addEventListener('input', () => { clearTimeout(checkTimer); checkTimer = setTimeout(checkTune, 300); });
+// MIDI import: the server picks out the melody; the page re-sends the file when
+// a setting changes, and keeps the result to preview, play or save.
+let midiBytes = null, midiName = '', midiText = '';
+function setMidiInfo(text, ok) { const el = $('midiInfo'); el.textContent = text; el.className = 'hint' + (ok ? '' : ' err'); }
+function midiReady(ready) { for (const id of ['midiPreview', 'midiPlay', 'tuneSave']) $(id).disabled = !ready; }
+$('midiToggle').onclick = () => { $('midiBox').hidden = !$('midiBox').hidden; };
 
-$('tunePlay').onclick = async () => {
+async function convertMidi(keepPart) {
+  if (!midiBytes) return;
+  const part = keepPart ? $('midiPart').value : '';
+  const q = `part=${part}&start=${+$('midiStart').value || 0}&transpose=${$('midiOct').value}`;
   try {
-    const r = await post('/api/tunes/play', { text: $('tuneText').value, name: $('tuneName').value || $('tuneSel').value });
-    say(r.message, r.ok);
-  } catch (e) { say('Could not reach the robot', false); }
+    const r = await (await fetch('/api/tunes/midi?' + q, { method: 'POST', body: midiBytes,
+                                headers: { 'Content-Type': 'application/octet-stream' } })).json();
+    if (!r.ok) { setMidiInfo(r.message, false); midiText = ''; midiReady(false); return; }
+    if (!keepPart) {
+      $('midiPart').innerHTML = '';
+      for (const p of r.parts) {
+        const o = document.createElement('option');
+        o.value = p.index; o.textContent = `${p.name}: ${p.notes} notes, ${p.seconds} s`;
+        $('midiPart').append(o);
+      }
+      $('midiPart').disabled = false;
+      $('tuneName').value = midiName;           // a new file; later changes keep what you typed
+    }
+    $('midiPart').value = r.part;
+    midiText = r.text;
+    midiReady(true);
+    let msg = `Melody: ${r.notes} notes, ${r.seconds} s` + (r.info.truncated ? ` (the first 64 of ${r.info.available}; use Start at for a later part)` : '');
+    if (r.info.out_of_range) msg += `. ${r.info.out_of_range} notes were too low or high for the Roomba (now rests): try another octave.`;
+    setMidiInfo(msg, true);
+  } catch (e) { setMidiInfo('Could not reach the robot', false); }
+}
+$('midiFile').onchange = async () => {
+  const f = $('midiFile').files[0];
+  if (!f) return;
+  midiBytes = await f.arrayBuffer();
+  midiName = f.name.replace(/\.midi?$/i, '').replace(/[^\w ()'!&.,+-]/g, ' ').trim().slice(0, 40);
+  $('midiStart').value = 0;
+  convertMidi(false);
 };
+$('midiPart').onchange = () => convertMidi(true);
+$('midiStart').onchange = () => convertMidi(true);
+$('midiOct').onchange = () => convertMidi(true);
+$('midiPlay').onclick = () => playTune({ text: midiText, name: $('tuneName').value || midiName });
 $('tuneSave').onclick = async () => {
   const name = $('tuneName').value.trim();
-  const r = await post('/api/tunes/save', { name, text: $('tuneText').value });
+  const r = await post('/api/tunes/save', { name, text: midiText });
   say(r.message, r.ok);
-  if (r.ok) loadTunes(name);
-};
-$('tuneDelete').onclick = async () => {
-  const name = $('tuneSel').value;
-  if (!isCustom(name) || !confirm(`Delete "${name}"?`)) return;
-  const r = await post('/api/tunes/delete', { name });
-  say(r.message, r.ok);
-  if (r.ok) loadTunes(tunes.builtin[0] && tunes.builtin[0].name);
+  if (r.ok) loadTunes();
 };
 
 // Preview in the browser
 let audio = null, previewOsc = null;
 function stopPreview() {
   if (previewOsc) { try { previewOsc.stop(); } catch (e) { /* already stopped */ } }
-  previewOsc = null; $('tunePreview').textContent = 'Preview here';
+  previewOsc = null; $('midiPreview').textContent = 'Preview here';
 }
 function playPreview(tune) {
   stopPreview();
@@ -1061,54 +1202,80 @@ function playPreview(tune) {
   osc.start(t0); osc.stop(t);
   osc.onended = () => { if (previewOsc === osc) stopPreview(); };
   previewOsc = osc;
-  $('tunePreview').textContent = 'Stop preview';
+  $('midiPreview').textContent = 'Stop preview';
 }
-$('tunePreview').onclick = async () => {
+$('midiPreview').onclick = async () => {
   if (previewOsc) { stopPreview(); return; }
-  const r = await checkTune();
-  if (r.ok) playPreview(r.tune);
+  const r = await post('/api/tunes/check', { text: midiText });
+  if (r.ok) playPreview(r.tune); else setMidiInfo(r.message, false);
 };
 
-// MIDI import: the server picks out the melody; the page re-sends the file when settings change.
-let midiBytes = null, midiName = '';
-async function convertMidi(keepPart) {
-  if (!midiBytes) return;
-  const part = keepPart ? $('midiPart').value : '';
-  const q = `part=${part}&start=${+$('midiStart').value || 0}&transpose=${$('midiOct').value}`;
-  try {
-    const r = await (await fetch('/api/tunes/midi?' + q, { method: 'POST', body: midiBytes,
-                                headers: { 'Content-Type': 'application/octet-stream' } })).json();
-    const info = $('midiInfo');
-    if (!r.ok) { info.textContent = r.message; info.className = 'hint err'; return; }
-    if (!keepPart) {
-      $('midiPart').innerHTML = '';
-      for (const p of r.parts) {
-        const o = document.createElement('option');
-        o.value = p.index; o.textContent = `${p.name}: ${p.notes} notes, ${p.seconds} s`;
-        $('midiPart').append(o);
-      }
-      $('midiPart').disabled = false;
-    }
-    $('midiPart').value = r.part;
-    $('tuneText').value = r.text;
-    if (!keepPart) $('tuneName').value = midiName;     // a new file; later changes keep what you typed
-    setTuneInfo(`${r.notes} notes, ${r.seconds} s`, true);
-    let msg = `Melody: ${r.notes} notes, ${r.seconds} s` + (r.info.truncated ? ` (the first 64 of ${r.info.available}; use Start at for a later part)` : '');
-    if (r.info.out_of_range) msg += `. ${r.info.out_of_range} notes were too low or high for the Roomba (now rests): try another octave.`;
-    info.textContent = msg; info.className = 'hint';
-  } catch (e) { $('midiInfo').textContent = 'Could not reach the robot'; $('midiInfo').className = 'hint err'; }
+// ---- Jetson camera ------------------------------------------------------------
+// The Pi relays the Jetson's MJPEG stream (/api/camera.mjpg), so the browser only
+// talks to the Pi. It runs only while the panel is open: closing it ends the
+// stream, and the WiFi traffic with it. The status poll says whether pictures
+// are arriving; with none, the panel says why and reconnects every few seconds.
+let camOpen = false, camUrl = '', camTried = 0;
+function camShow(msg) { $('camMsg').textContent = msg; $('camMsg').hidden = !msg; }
+function camConnect() {
+  camTried = Date.now();
+  if (!camUrl) { camShow("Type the Jetson's stream address below."); $('camAddr').hidden = false; return; }
+  $('camImg').src = '/api/camera.mjpg?t=' + camTried;
 }
-$('midiFile').onchange = async () => {
-  const f = $('midiFile').files[0];
-  if (!f) return;
-  midiBytes = await f.arrayBuffer();
-  midiName = f.name.replace(/\.midi?$/i, '').replace(/[^\w ()'!&.,+-]/g, ' ').trim().slice(0, 40);
-  $('midiStart').value = 0;
-  convertMidi(false);
+function setCamera(open) {
+  camOpen = open;
+  $('cameraPanel').hidden = !open;
+  $('cameraBtn').classList.toggle('on', open);
+  if (open) { camShow('Connecting...'); $('camState').textContent = ''; camConnect(); }
+  else $('camImg').removeAttribute('src');
+}
+$('cameraBtn').onclick = () => setCamera(!camOpen);
+$('camClose').onclick = () => setCamera(false);
+$('camSize').onclick = () => $('cameraPanel').classList.toggle('large');
+$('camEdit').onclick = () => { $('camAddr').hidden = !$('camAddr').hidden; if (!$('camAddr').hidden) $('camUrl').focus(); };
+$('camSave').onclick = async () => {
+  const r = await post('/api/camera', { url: $('camUrl').value });
+  say(r.message, r.ok);
+  if (!r.ok) return;
+  camUrl = r.url; $('camUrl').value = r.url;
+  $('camAddr').hidden = !!r.url;
+  if (camOpen) { camShow('Connecting...'); camConnect(); }
 };
-$('midiPart').onchange = () => convertMidi(true);
-$('midiStart').onchange = () => convertMidi(true);
-$('midiOct').onchange = () => convertMidi(true);
+$('camUrl').addEventListener('keydown', e => { if (e.key === 'Enter') $('camSave').click(); });
+function showCamera(c) {
+  if (!camOpen || !c) return;
+  const live = c.viewers > 0 && c.age_s != null && c.age_s < 3;
+  $('camState').textContent = live ? '● live' : camUrl ? 'no picture' : '';
+  $('camState').className = live ? 'live' : 'bad';
+  if (live) { camShow(''); return; }
+  if (!camUrl) return;
+  camShow(c.error ? `No picture from ${camUrl} (${c.error}). Trying again...` : 'Connecting...');
+  if (Date.now() - camTried > 4000) camConnect();
+}
+async function loadCamera() {
+  try { camUrl = (await (await fetch('/api/camera')).json()).url || ''; } catch (e) { return; }
+  $('camUrl').value = camUrl;
+}
+
+// ---- Popovers: the horn menu and Save map -------------------------------------
+const POPS = [['hornMenuBtn', 'hornMenu'], ['saveMapBtn', 'savePanel']];
+function closePops() {
+  for (const [b, p] of POPS) { $(p).hidden = true; $(b).classList.remove('on'); }
+}
+for (const [b, p] of POPS) {
+  $(b).onclick = e => {
+    e.stopPropagation();
+    const open = $(p).hidden;
+    closePops();
+    $(p).hidden = !open; $(b).classList.toggle('on', open);
+    if (open && p === 'savePanel') { loadMaps(); $('mapName').focus(); }
+  };
+}
+document.addEventListener('pointerdown', e => {
+  for (const [b, p] of POPS) {
+    if (!$(p).hidden && !$(p).contains(e.target) && !$(b).contains(e.target)) { $(p).hidden = true; $(b).classList.remove('on'); }
+  }
+});
 
 // ---- Save / list maps ----------------------------------------------------
 async function loadMaps() {
@@ -1200,20 +1367,26 @@ async function pollLaunch() {
     if (follow) v.scrollTop = v.scrollHeight;
   } catch (e) { /* next poll retries */ }
 }
-$('drawerToggle').onclick = () => {
-  const open = $('drawer').classList.toggle('open');
-  $('drawerToggle').textContent = open ? 'Logs ▼' : 'Logs ▲';
+function setDrawer(open) {
+  $('drawer').classList.toggle('open', open);
+  $('drawerToggle').textContent = open ? 'Logs & metrics ▼' : 'Logs & metrics ▲';
   if (open) { const v = $('logView'); v.scrollTop = v.scrollHeight; pollLaunch(); }
   requestDraw();
-};
-$('logTabs').querySelectorAll('button').forEach(b => b.onclick = () => {
-  logTab = b.dataset.tab;
-  $('logTabs').querySelectorAll('button').forEach(o => o.classList.toggle('on', o === b));
-  $('logView').hidden = logTab !== 'ros';
-  $('launchView').hidden = logTab !== 'launch';
-  for (const id of ['logLevel', 'logNode', 'logSearch']) $(id).disabled = logTab !== 'ros';
+}
+$('drawerToggle').onclick = () => setDrawer(!$('drawer').classList.contains('open'));
+function showTab(tab) {
+  logTab = tab;
+  $('logTabs').querySelectorAll('button').forEach(o => o.classList.toggle('on', o.dataset.tab === tab));
+  $('logView').hidden = tab !== 'ros';
+  $('launchView').hidden = tab !== 'launch';
+  $('metricsView').hidden = tab !== 'metrics';
+  for (const id of ['logLevel', 'logNode', 'logSearch']) $(id).hidden = tab !== 'ros';
+  $('logDownload').hidden = tab === 'metrics';
+  $('scrollNote').hidden = true;
   pollLaunch();
-});
+}
+$('logTabs').querySelectorAll('button').forEach(b => b.onclick = () => showTab(b.dataset.tab));
+$('allMetrics').onclick = () => { setDrawer(true); showTab('metrics'); };
 for (const id of ['logLevel', 'logNode']) $(id).onchange = renderLogs;
 $('logSearch').oninput = renderLogs;
 for (const id of ['logView', 'launchView']) {
@@ -1231,8 +1404,72 @@ $('logDownload').onclick = () => {
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 };
 
+// ---- Settings (Start mapping opens them) -------------------------------------------
+// The server sends every setting with its saved value; the form is built from that
+// list, so a new setting needs no change here. Nothing changes until Start.
+let settingsMeta = [];
+const shown = v => String(+(+v).toFixed(3));         // 0.30000000000000004 -> 0.3
+async function openSettings() {
+  try {
+    settingsMeta = (await (await fetch('/api/settings')).json()).settings;
+  } catch (e) { say('Could not reach the robot', false); return; }
+  fillSettings(Object.fromEntries(settingsMeta.map(s => [s.key, s.value])));
+  $('settingsErr').textContent = '';
+  $('settingsDlg').showModal();
+}
+function fillSettings(values) {
+  const form = $('settingsForm');
+  form.replaceChildren();
+  let box = null;
+  for (const s of settingsMeta) {
+    if (!box || box.dataset.group !== s.group) {
+      box = document.createElement('fieldset'); box.dataset.group = s.group;
+      const legend = document.createElement('legend'); legend.textContent = s.group;
+      box.append(legend); form.append(box);
+    }
+    const row = document.createElement('label'); row.className = 'set';
+    const lbl = document.createElement('span'); lbl.className = 'lbl'; lbl.textContent = s.label;
+    const help = document.createElement('span'); help.className = 'help';
+    const def = s.kind === 'bool' ? (s.default ? 'on' : 'off') : shown(s.default) + (s.unit ? ' ' + s.unit : '');
+    help.textContent = (s.help ? s.help + ' ' : '') + `Default ${def}.`;
+    const ctl = document.createElement('span'); ctl.className = 'ctl';
+    const input = document.createElement('input'); input.dataset.key = s.key;
+    if (s.kind === 'bool') { input.type = 'checkbox'; input.checked = !!values[s.key]; }
+    else {
+      input.type = 'number'; input.min = s.min; input.max = s.max; input.step = s.step;
+      input.value = shown(values[s.key]);
+    }
+    const mark = () => row.classList.toggle('changed', s.kind === 'bool' ? input.checked !== s.default
+                                                                          : +input.value !== s.default);
+    input.addEventListener('input', mark); input.addEventListener('change', mark); mark();
+    ctl.append(input);
+    if (s.kind !== 'bool') { const u = document.createElement('span'); u.className = 'unit'; u.textContent = s.unit; ctl.append(u); }
+    row.append(lbl, ctl, help);
+    box.append(row);
+  }
+}
+function readSettings() {
+  const out = {};
+  for (const input of $('settingsForm').querySelectorAll('input[data-key]')) {
+    out[input.dataset.key] = input.type === 'checkbox' ? input.checked : (input.value === '' ? null : +input.value);
+  }
+  return out;
+}
+$('settingsReset').onclick = () => fillSettings(Object.fromEntries(settingsMeta.map(s => [s.key, s.default])));
+$('settingsCancel').onclick = () => $('settingsDlg').close();
+$('settingsStart').onclick = async () => {
+  $('settingsStart').disabled = true;
+  try {
+    const r = await post('/api/mapping/start', { settings: readSettings() });
+    if (r.ok) { $('settingsDlg').close(); say(r.message, true); }
+    else $('settingsErr').textContent = r.message;
+  } catch (e) { $('settingsErr').textContent = 'Could not reach the robot'; }
+  $('settingsStart').disabled = false;
+  pollStatus();
+};
+
 // ---- Start ---------------------------------------------------------------
-pollStatus(); loadMaps(); drawRadar(); pollLogs(); loadTunes();
+pollStatus(); loadMaps(); drawRadar(); pollLogs(); loadTunes(); loadCamera();
 setInterval(pollStatus, 1000);
 setInterval(pollScan, 200);
 setInterval(pollMap, 2000);

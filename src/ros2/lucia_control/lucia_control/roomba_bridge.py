@@ -10,7 +10,11 @@ ROS2 node that owns the Roomba's serial port (nothing else may open it).
   driving at the last speed forever
 - Changes speed gradually, to spare the hardware on board (Pi, lidar, arm):
   every 0.1 s tick moves the wheels only part of the way to the newest command
-  (motion.py's ramp_toward). Defaults: speeding up 0.3 m/s^2 (0 to 15 cm/s in
+  (motion.py's ramp_twist). Forward speed and turn rate move together, the
+  same share of the way, so the robot stays on the curve Nav2 asked for while
+  it speeds up or slows down (eased separately, the turn stopped before the
+  forward speed did and the robot ran straight past the curve; changed
+  2026-10-23). Defaults: speeding up 0.3 m/s^2 (0 to 15 cm/s in
   0.5 s), slowing down twice as fast, 0.6 m/s^2 (15 cm/s to a stop in 0.3 s,
   about 2 cm; 30 cm/s in 0.5 s, about 8 cm); turning 1.5 rad/s^2 up, 3.0 down.
   This covers everything that drives (Nav2, the mission node, the web page),
@@ -63,7 +67,7 @@ from std_msgs.msg import String
 from std_srvs.srv import Trigger
 from tf2_ros import TransformBroadcaster
 
-from lucia_control.motion import ramp_toward, twist_to_wheel_speeds
+from lucia_control.motion import ramp_twist, twist_to_wheel_speeds
 from lucia_control.odometry import Odometry
 from lucia_control.roomba_oi import RoombaOI
 from lucia_control.song import slot_start_times, slots
@@ -193,12 +197,10 @@ class RoombaBridge(Node):
             target_linear, target_angular = (0.0, 0.0) if stale else self._target
             # A late tick (busy Pi) mustn't turn into one big jump.
             ramp_dt_s = min(dt_s, 2 * self._drive_period_s)
-            self._current = (
-                ramp_toward(self._current[0], target_linear,
-                            self._linear_accel, self._linear_decel, ramp_dt_s),
-                ramp_toward(self._current[1], target_angular,
-                            self._angular_accel, self._angular_decel, ramp_dt_s),
-            )
+            self._current = ramp_twist(
+                self._current, (target_linear, target_angular),
+                ((self._linear_accel, self._linear_decel), (self._angular_accel, self._angular_decel)),
+                ramp_dt_s)
         left, right = twist_to_wheel_speeds(
             *self._current, self._wheel_base_mm, self._max_speed_mm_s)
         self._write(lambda roomba: roomba.drive_direct(left, right))
