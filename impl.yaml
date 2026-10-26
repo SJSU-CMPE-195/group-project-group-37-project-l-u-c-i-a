@@ -31,7 +31,7 @@ mock_mode:                        # how a grader runs it WITHOUT the robot
     - "cd src/ros2/lucia_control && python3 -m pytest test -v"                    # Roomba serial protocol against a fake serial port
 
 demo:
-  video: "https://youtu.be/YugvvpbwuFU"
+  video: "https://www.youtube.com/watch?v=YugvvpbwuFU"
   screenshots: ["media/maps/2026-10-16_room1_vs_room2.png"]
 
 notes: "The full system runs on a Raspberry Pi 5 with a Roomba 650, an RPLidar A2M8 and a BNO08X IMU on a Pico 2; the run commands need that hardware and internet for the image build. The ROS 2 Jazzy workspace builds inside docker/Dockerfile with colcon (lucia_vision is skipped there; it needs CUDA on the Jetson). Pico code is MicroPython and is not compiled. All decision logic (frontier exploration, mission, safety gate, motion, odometry, IMU parsing, web page logic) is in plain-Python modules that the tests exercise without ROS or hardware; test_mission_logic.py runs a complete simulated exploration end to end. Tests use POSIX signals and are meant for Linux/macOS."
