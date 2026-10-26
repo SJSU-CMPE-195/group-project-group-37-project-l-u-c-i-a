@@ -1,9 +1,9 @@
-"""Live 8x8 heat maps from the Pico's VL53L5CX sensors.
+"""Live 4x4 heat maps from the Pico's VL53L5CX sensors, plus IMU readout.
 
-Reads frames streamed by pico_stream.py over USB serial and draws one 8x8
-heat map per sensor, left to right. Closer objects are darker. The measured
-frame rate and dropped frame count of each sensor are shown in the window
-title.
+Reads packets streamed by main.py over USB serial and draws one 4x4 heat map
+per sensor, left to right. Closer objects are darker. The measured frame rate
+and dropped frame count of each sensor, and the IMU's rate and orientation,
+are shown in the window title.
 
 Requires: pip install pyserial numpy matplotlib
 
@@ -14,11 +14,12 @@ Usage:
     python pc_heatmap.py --smooth 0.5 --interp
 """
 import argparse
-import binascii
-import struct
+import collections
+import math
 import sys
 import threading
 import time
+from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -26,16 +27,12 @@ import serial
 import serial.tools.list_ports
 from matplotlib.animation import FuncAnimation
 
-PICO_VID = 0x2E8A
-ZONES = 64
-SIDE = 8
+# Same parser as the Pi's ROS node; it has no ROS dependencies.
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "ros2" / "lucia_tof"))
+from lucia_tof import protocol  # noqa: E402
 
-# Packet layout is documented in pico_stream.py.
-SYNC = b"\xAA\x55"
-PROTO_VERSION = 1
-HEADER_FMT = "<BBBBBHIh"  # sync, version, index, flags, seq, ticks_ms, nearest mm
-HEADER_LEN = 13
-PACKET_LEN = HEADER_LEN + ZONES * 2 + 2
+PICO_VID = 0x2E8A
+SIDE = protocol.SIDE
 # A sequence jump bigger than this is taken as a Pico restart, not drops.
 MAX_SEQ_GAP = 1000
 
@@ -47,84 +44,85 @@ def find_pico_port():
     return None
 
 
+def count_drops(last, seq):
+    """Packets missed between sequence numbers last and seq."""
+    if last is None:
+        return 0
+    gap = (seq - last - 1) & 0xFFFF
+    return gap if gap <= MAX_SEQ_GAP else 0
+
+
+def yaw_pitch_roll(w, x, y, z):
+    """Quaternion to yaw, pitch, roll in degrees (ZYX)."""
+    yaw = math.atan2(2 * (w * z + x * y), 1 - 2 * (y * y + z * z))
+    pitch = math.asin(max(-1.0, min(1.0, 2 * (w * y - z * x))))
+    roll = math.atan2(2 * (w * x + y * z), 1 - 2 * (x * x + y * y))
+    return math.degrees(yaw), math.degrees(pitch), math.degrees(roll)
+
+
 class FrameReader(threading.Thread):
     """Parses packets from the Pico in the background and keeps the newest
-    frame per sensor. Text received outside packets (setup logs, tracebacks)
-    is printed to the console."""
+    frame per sensor and the newest IMU sample. Text received outside packets
+    (setup logs, tracebacks) is printed to the console."""
 
     def __init__(self, ser, n):
         super().__init__(daemon=True)
         self.ser = ser
         self.n = n
+        self.parser = protocol.Parser(n)
         self.lock = threading.Lock()
         self.frames = [None] * n
         self.counts = [0] * n
         self.drops = [0] * n
         self.seqs = [None] * n
-        self.text = bytearray()
+        self.imu = None
+        self.imu_count = 0
+        self.imu_drops = 0
+        self.imu_seq = None
+        # Every IMU sample, for plotting; take_imu_history() empties it.
+        self.imu_history = collections.deque(maxlen=5000)
 
     def run(self):
-        buf = bytearray()
-        # After a bad packet, bytes up to the next good one are its remains,
-        # not text.
-        discarding = False
         while True:
-            buf += self.ser.read(self.ser.in_waiting or 1)
-            while True:
-                start = buf.find(SYNC)
-                if start < 0:
-                    # Keep a trailing 0xAA in case it starts the next sync.
-                    end = len(buf) - (1 if buf.endswith(SYNC[:1]) else 0)
-                    if not discarding:
-                        self._text(buf[:end])
-                    del buf[:end]
-                    break
-                if not discarding:
-                    self._text(buf[:start])
-                del buf[:start]
-                if len(buf) < PACKET_LEN:
-                    break
-
-                pkt = bytes(buf[:PACKET_LEN])
-                _, _, version, idx, _flags, seq, _ticks, _nearest = struct.unpack_from(
-                    HEADER_FMT, pkt)
-                crc, = struct.unpack_from("<H", pkt, PACKET_LEN - 2)
-                if (version != PROTO_VERSION or idx >= self.n
-                        or binascii.crc_hqx(pkt[2:PACKET_LEN - 2], 0xFFFF) != crc):
-                    # Not a real packet; skip this sync and resync.
-                    del buf[:1]
-                    discarding = True
-                    continue
-                del buf[:PACKET_LEN]
-                discarding = False
-                self.text.clear()
-
-                grid = np.frombuffer(pkt, dtype="<i2", count=ZONES, offset=HEADER_LEN)
-                grid = grid.astype(float).reshape(SIDE, SIDE)
-                grid[grid < 0] = np.nan
-                with self.lock:
-                    last = self.seqs[idx]
-                    if last is not None:
-                        gap = (seq - last - 1) & 0xFFFF
-                        if gap <= MAX_SEQ_GAP:
-                            self.drops[idx] += gap
-                    self.seqs[idx] = seq
-                    self.frames[idx] = grid
-                    self.counts[idx] += 1
-
-    def _text(self, chunk):
-        self.text += chunk
-        while b"\n" in self.text:
-            line, _, rest = self.text.partition(b"\n")
-            self.text = bytearray(rest)
-            line = line.decode("utf-8", "replace").strip()
-            # Skip leftovers of corrupted binary packets.
-            if line and line.isprintable():
-                print("pico:", line)
+            try:
+                data = self.ser.read(self.ser.in_waiting or 1)
+            except (serial.SerialException, OSError, TypeError):
+                # Port closed on exit, or the Pico was unplugged.
+                return
+            for item in self.parser.feed(data):
+                if isinstance(item, str):
+                    print("pico:", item)
+                elif isinstance(item, protocol.ImuPacket):
+                    with self.lock:
+                        self.imu_drops += count_drops(self.imu_seq, item.seq)
+                        self.imu_seq = item.seq
+                        self.imu = item
+                        self.imu_count += 1
+                        self.imu_history.append(item)
+                else:
+                    grid = np.array(item.distances, dtype=float).reshape(SIDE, SIDE)
+                    grid[grid < 0] = np.nan
+                    idx = item.sensor
+                    with self.lock:
+                        self.drops[idx] += count_drops(self.seqs[idx], item.seq)
+                        self.seqs[idx] = item.seq
+                        self.frames[idx] = grid
+                        self.counts[idx] += 1
 
     def latest(self):
         with self.lock:
             return list(self.frames), list(self.counts), list(self.drops)
+
+    def latest_imu(self):
+        with self.lock:
+            return self.imu, self.imu_count, self.imu_drops
+
+    def take_imu_history(self):
+        """IMU samples received since the last call, oldest first."""
+        with self.lock:
+            samples = list(self.imu_history)
+            self.imu_history.clear()
+            return samples
 
 
 def main():
@@ -189,6 +187,7 @@ def main():
     shown = [None] * n
     last_counts = [0] * n
     fps_counts = [0] * n
+    imu_fps_count = [0]
     fps_time = [time.monotonic()]
     artists = images + [t for ts in texts for t in ts]
 
@@ -225,11 +224,17 @@ def main():
         if now - fps_time[0] >= 1.0:
             rates = [(c - p) / (now - fps_time[0]) for c, p in zip(counts, fps_counts)]
             fps_counts[:] = counts
+            imu, imu_count, imu_drops = reader.latest_imu()
+            imu_rate = (imu_count - imu_fps_count[0]) / (now - fps_time[0])
+            imu_fps_count[0] = imu_count
             fps_time[0] = now
-            fig.canvas.manager.set_window_title(
-                "ToF heat map  |  " + "  ".join(
-                    "{} {:.1f} fps, {} dropped".format(name, r, d)
-                    for name, r, d in zip(names, rates, drops)))
+            title = "ToF heat map  |  " + "  ".join(
+                "{} {:.1f} fps, {} dropped".format(name, r, d)
+                for name, r, d in zip(names, rates, drops))
+            if imu is not None:
+                title += "  |  IMU {:.0f} Hz, {} dropped, yaw {:.1f} pitch {:.1f} roll {:.1f}".format(
+                    imu_rate, imu_drops, *yaw_pitch_roll(*imu.orientation))
+            fig.canvas.manager.set_window_title(title)
         return artists
 
     # blit=True redraws only the heat maps, not the whole figure.

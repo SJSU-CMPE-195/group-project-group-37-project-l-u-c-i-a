@@ -110,7 +110,8 @@ class TofNode(Node):
                     for item in self.parser.feed(data):
                         if isinstance(item, str):
                             self.get_logger().info('pico: ' + item)
-                        else:
+                        elif isinstance(item, protocol.Packet):
+                            # IMU packets are not published yet.
                             self.handle_packet(item, recv_ns)
             except (serial.SerialException, OSError) as e:
                 self.get_logger().error('lost {}: {}'.format(self.port, e))

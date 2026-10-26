@@ -2,7 +2,7 @@ tof_node:
   ros__parameters:
     port: /dev/lucia_tof        # see udev/99-lucia-tof.rules
     baud: 115200                # ignored over USB serial
-    sensor_names: [left, middle, right]   # pico_stream.py SENSORS order
+    sensor_names: [left, middle, right]   # src/pico2/main.py SENSORS order
     frame_id_prefix: tof_       # frames are tof_<name>_link
     flip_h: false               # mirror each image left/right
     flip_v: false               # mirror each image top/bottom

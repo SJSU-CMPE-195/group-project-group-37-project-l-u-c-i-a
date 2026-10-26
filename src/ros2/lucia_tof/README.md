@@ -1,7 +1,7 @@
 # lucia_tof
 
 Publishes the three VL53L5CX time-of-flight sensors on the Pico 2 as standard
-ROS 2 messages. The Pico runs `src/tof_pico/heatmap/pico_stream.py` and streams
+ROS 2 messages. The Pico runs `src/pico2/main.py` and streams
 frames over USB serial; this node reads them and publishes. No custom message
 types, so nothing beyond the standard message packages is needed to subscribe.
 
@@ -24,12 +24,12 @@ the Pico is unplugged or restarts.
 ## Topics
 
 `<name>` is `left`, `middle` or `right` (left to right as seen standing in
-front of the robot). Each sensor publishes about 15 Hz, independently; the
+front of the robot). Each sensor publishes about 60 Hz, independently; the
 sensors are not synchronized.
 
 | Topic | Type | QoS | Contents |
 |---|---|---|---|
-| `tof/<name>/image` | `sensor_msgs/Image` | sensor data (best effort) | 8x8 distance grid |
+| `tof/<name>/image` | `sensor_msgs/Image` | sensor data (best effort) | 4x4 distance grid |
 | `tof/<name>/nearest` | `sensor_msgs/Range` | sensor data (best effort) | closest valid zone |
 | `tof/near` | `std_msgs/Bool` | reliable, depth 10 | true = something close, or no data |
 | `/diagnostics` | `diagnostic_msgs/DiagnosticArray` | reliable | health, 1 Hz |
@@ -39,7 +39,7 @@ default (reliable) subscriber receives nothing from a best-effort publisher.
 
 ### `tof/<name>/image`
 
-- 8x8, `encoding: 16UC1`, little-endian, `step: 16`.
+- 4x4, `encoding: 16UC1`, little-endian, `step: 8`.
 - Each pixel is distance in **millimeters**; **0 means no valid reading** for
   that zone (out of range, or the sensor rejected the measurement). This is the
   usual ROS depth image convention.
@@ -77,7 +77,7 @@ image it came from.
 True when any of these holds:
 
 - some sensor's latest frame has a valid zone closer than the Pico's
-  `NEAR_MM` (300 mm by default, set in `pico_stream.py`);
+  `NEAR_MM` (300 mm by default, set in `src/pico2/main.py`);
 - some sensor has sent no frame for `stale_timeout` (0.5 s), including at
   startup before the first frame;
 - the Pico is not connected.
@@ -120,6 +120,7 @@ sequence numbers), seconds since the last frame, CRC errors. View with
 
 ## Serial protocol
 
-The byte format is documented at the top of `pico_stream.py`.
+The byte format is documented at the top of `src/pico2/main.py`. Protocol version 2 also
+carries IMU packets; this node skips them for now.
 `lucia_tof/protocol.py` parses it and has no ROS dependency; its tests run
 with `python -m pytest test` from this directory.
