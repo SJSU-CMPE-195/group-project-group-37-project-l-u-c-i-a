@@ -291,15 +291,20 @@ SUBSYSTEM=="tty", ATTRS{serial}=="BG03LJ9U", SYMLINK+="roomba"
 
 # Sensor Pico (IMU + ToF sensors) - matched by serial: every MicroPython Pico has this vendor/product ID
 SUBSYSTEM=="tty", ATTRS{idVendor}=="2e8a", ATTRS{idProduct}=="0005", ATTRS{serial}=="fd92d5f577b9417b", SYMLINK+="imu"
+
+# Roomba 650: Noel's new cable (FTDI FT232R), added 2026-11-10
+SUBSYSTEM=="tty", ATTRS{serial}=="BG046PKO", SYMLINK+="roomba"
+
+# Sensor Pico (IMU + ToF), the Pico on the robot since 2026-11-10
+SUBSYSTEM=="tty", ATTRS{idVendor}=="2e8a", ATTRS{idProduct}=="0005", ATTRS{serial}=="72919cfe7798b116", SYMLINK+="imu"
 ```
 
-The robot has one Pico, for the IMU and the ToF sensors (decided 2026-11-10);
-it keeps the name `/dev/imu`. If a different Pico goes on the robot, put its
-serial number in that line.
-
-**New Roomba cable** (Noel's BG046PKOA, 2026-10-25): it has its own serial
-number, so `/dev/roomba` won't appear until it has a line too. Keep the old
-line and add one for the new cable, so either cable works.
+The last two lines were added on 2026-11-10, when the robot got Noel's new
+Roomba cable (serial `BG046PKO`; Windows shows it as `BG046PKOA`) and Noel's
+Pico (serial `72919cfe7798b116`). The old lines stay, so either cable and
+either Pico get the right name. The robot has one Pico, for the IMU and the ToF
+sensors (decided 2026-11-10); if a different one goes on, add a line with its
+serial number. Serial numbers of what's plugged in: `ls -l /dev/serial/by-id/`.
 
 Check: `ls -la /dev/roomba /dev/rplidar /dev/imu`. After editing the rules:
 `sudo udevadm control --reload && sudo udevadm trigger`, then wait a second, or
@@ -412,9 +417,12 @@ The driver files `bno08x.py` and `i2c.py` are already in the Pico's root.
 Ctrl+C and replug the Pico, or use VS Code's MicroPico from a laptop. This Pico
 used to hold a ToF `main.py`, which is backed up on the Pi as `~/tof_main_backup.py`.
 
-**Mounting:** flat, chip side up, fixed to the robot. Which way it points doesn't
-matter: only heading and turn rate are used, and the EKF treats the starting
-heading as 0.
+**Mounting:** flat and fixed to the robot. The robot's IMU is mounted upside
+down (chip side down, 2026-11-10): `tof_node` turns its readings over, telling
+from gravity with Noel's `main.py` (Logs: "IMU board is upside down: turning its
+readings over"), from `imu_upside_down` in `lucia_tof/config/tof.yaml` with
+`stream_main.py`. Which way it points doesn't matter: only heading and turn rate
+are used, and the EKF treats the starting heading as 0.
 
 ---
 

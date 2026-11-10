@@ -86,9 +86,9 @@ Folder: `src/ros2/lucia_control/`
 - [ ] Fix the reply path (Roomba TX to the adapter's RX, FTDI FT232R). Loopback test: unplug from the Roomba, jumper pins 3 and 4 on the cable's mini-DIN plug, send bytes, see if they echo. Echo → the fault is at the Roomba end (reseat); no echo → the adapter/cable (replace, e.g. a ready-made Create 2 serial cable)
 - [ ] Noel's new cable (BG046PKOA, 2026-10-25): its BRC (wake) wire is on RTS; an RTS pulse woke the Roomba,
   DTR did nothing. `RoombaOI.wake()` pulses RTS and DTR together since 2026-11-10, so Reconnect Roomba works
-  with either cable. Once it's on the robot: give it a `/dev/roomba` udev line (it has its own serial
-  number; `docs/setup/ros2-pi.md`, "Devices and udev rules"), then rerun the Roomba reply check
-  (Diagnostics): if replies come back, the reply path above is fixed
+  with either cable. On the robot by 2026-11-10 (FTDI FT232R, serial `BG046PKO`; "BG046PKOA" is how Windows
+  shows it); its `/dev/roomba` udev line was added on the Pi that day. Next: Reconnect Roomba (should beep),
+  and the Roomba reply check (Diagnostics): if replies come back, the reply path above is fixed
 - [x] Added position tracking (`/odom` + the `odom`→`base_link` transform) to the control program (2026-10-09) — **open-loop**, estimated from commanded wheel speed, not a sensor reading, since the cable above isn't fixed yet. Will drift more than real encoder feedback. See `odometry.py` and `docs/changelogs/2026-10-09.md`.
 - [x] Tried `/odom` on the real robot: position and heading both tracked driving + turning correctly.
 - [ ] Once the cable is fixed: measure wheel size and encoder counts per turn (drive a known distance, read the raw counts), then switch `/odom` to use real encoder readings instead of commanded speed. `odometry.py`'s math doesn't change either way — only what feeds it does.
@@ -129,6 +129,12 @@ without waiting on the Roomba cable.
 - [x] udev rule `/dev/imu` added to `/etc/udev/rules.d/99-lucia.rules` (2026-10-16), matching the Pico's serial `fd92d5f577b9417b` (the ToF Pico has the same vendor/product ID). Confirm `ls -la /dev/imu` shows the link, and use `--device=/dev/imu` in the `docker run` command
 - [x] `imu_bridge` on the Pi (2026-10-16): 50 readings/s, 0 bad lines. A quarter turn left by hand read +94.7° (positive = left, the ROS convention) and came back to about +1-2° when turned back
 - [ ] Mount the IMU flat and fixed on the robot; note which way its axes point (needs a `base_link`→`imu_link` transform, like the lidar's)
+- [x] The IMU on the robot's Pico (since 2026-11-10) is **upside down** and can't be turned over: gravity read
+  −9.87 m/s² on its z axis. The EKF takes heading and turn rate only from the IMU, so the turn rate would have
+  come out backwards. `tof_node` now turns the readings over (2026-11-10): it tells from gravity with Noel's
+  `main.py`, from `imu_upside_down` (true in `lucia_tof/config/tof.yaml`) with `stream_main.py`. Checked with
+  the captured reading and a simulated left turn; not yet on the robot
+- [ ] On the robot: turn it left by hand during mapping; `angular_velocity.z` in `/imu/data` should be positive
 - [x] Fusion (runs on the Pi since 2026-10-16, `room2.png`): `lucia_bringup/config/ekf.yaml` takes forward speed from `/odom` and heading + turn rate from `/imu/data`; `roomba_bridge` gained `publish_tf` (off when the EKF runs) and now fills in `/odom`'s twist with rough variances. `ros2 launch lucia_bringup mapping.launch.py` starts roomba_bridge + imu_bridge + EKF + lidar + slam_toolbox (`use_imu:=false` = the first-map setup)
 - [x] Image rebuilt on the Pi (about 6.5 min); plain `colcon build` skips `lucia_vision`. `mapping.launch.py` starts cleanly: `imu_bridge` on `/dev/imu`, `roomba_bridge` hands `odom`→`base_link` to the EKF, slam_toolbox registers the lidar, no warnings (2026-10-16)
 - [x] Mapped the same room again with the IMU (`room2.png`, 2026-10-16): walls are single thin lines with square corners and much less speckle; the doubled wall from `room1.png` is gone. One run each with different starting headings, so not a controlled comparison, but the heading fix is clearly visible
@@ -413,8 +419,11 @@ Pi side:
   ignored SIGTERM, so every restart/shutdown waited 30 s and force-killed everything (the Roomba could keep driving).
   `compose.yml` now has `init: true` and starts `web_ui` directly. On the Pi: `docker compose -f docker/compose.yml up -d`
   once (restart keeps old settings), then `time docker compose -f docker/compose.yml restart` should take seconds
-- [ ] 2026-11-10 update on the Pi: pull `dev` (Noel's code), restart the container, check `lucia_tof` built
-  (`ros2 pkg executables lucia_tof` lists `tof_node`), add the new Roomba cable's udev line if it's on
+- [x] 2026-11-10 update on the Pi: pulled `dev` (daa0e30), container rebuilt with `lucia_tof`
+  (`ros2 pkg executables lucia_tof` → `tof_node`). Added udev lines for the new Roomba cable (`BG046PKO`) and
+  Noel's Pico (`72919cfe7798b116`, `/dev/imu`); the old lines stay. That Pico already runs Noel's `main.py`
+  (ToF frames and IMU packets seen on the port)
+- [ ] Pull the upside-down IMU fix (after daa0e30) on the Pi and restart the container
 - [ ] Try `ssh lucia@lucia.local` from the laptop on a shared WiFi
 - [ ] Try the Pi 5 power button for a clean shutdown (two presses on the desktop OS)
 - [ ] Optional: let NetworkManager run the hotspot's address server (`ipv4.method shared`) instead of the separate

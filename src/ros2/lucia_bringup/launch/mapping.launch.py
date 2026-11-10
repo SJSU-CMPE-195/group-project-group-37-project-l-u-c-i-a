@@ -33,9 +33,12 @@ use_imu:=false falls back to the first-map setup: roomba_bridge publishes
 odom->base_link itself and the IMU/EKF aren't started. Useful for comparing
 maps with and without the IMU, or if the IMU isn't plugged in.
 
-The IMU transform is identity: mount the board flat, chip side up. Which way it
-points doesn't matter - only heading and turn rate are used, and the EKF treats
-its heading at startup as 0 (imu0_relative in ekf.yaml).
+The IMU transform is identity: the board lies flat. The robot's IMU is
+mounted upside down (chip side down); tof_node turns its readings over (it
+tells from gravity, imu_upside_down in lucia_tof's tof.yaml otherwise), so they
+arrive as from a board the right way up. Which way it points doesn't matter -
+only heading and turn rate are used, and the EKF treats its heading at startup
+as 0 (imu0_relative in ekf.yaml).
 
 settings_file:=<params.yaml>: the web page's settings menu (lucia_web
 settings.py), as a ROS 2 parameters file. Every node that has settings there

@@ -77,3 +77,40 @@ def yaw_rad(reading):
     """Heading (rotation about the vertical axis) from the quaternion, in radians."""
     w, x, y, z = reading.orientation
     return math.atan2(2.0 * (w * z + x * y), 1.0 - 2.0 * (y * y + z * z))
+
+
+# A board lying flat reads gravity as about +9.8 m/s^2 on its z axis when it's
+# the right way up, -9.8 when it's upside down. Anything nearer 0 than this
+# (the board on its side) can't tell.
+GRAVITY_CHECK = 5.0
+
+
+def upside_down(reading):
+    """True / False from the reading's gravity, None if it can't tell (no
+    acceleration in it, or the board isn't lying flat)."""
+    if reading.accel is None:
+        return None
+    az = reading.accel[2]
+    if az < -GRAVITY_CHECK:
+        return True
+    if az > GRAVITY_CHECK:
+        return False
+    return None
+
+
+def turned_over(reading):
+    """A reading from a board mounted upside down (chip side down), as the same
+    board would give it the right way up: turned 180 degrees about its x axis.
+
+    Orientation: q * (0, 1, 0, 0), i.e. (w, x, y, z) -> (-x, w, z, -y). Turn
+    rates and accelerations: y and z change sign. On the floor only the heading
+    and the turn rate are used, and those come out right whichever way the
+    board was turned over: a different way only adds a fixed offset to the
+    heading, and the EKF counts the starting heading as 0 anyway.
+    """
+    w, x, y, z = reading.orientation
+    gx, gy, gz = reading.gyro
+    accel = reading.accel
+    if accel is not None:
+        accel = (accel[0], -accel[1], -accel[2])
+    return Reading((-x, w, z, -y), (gx, -gy, -gz), accel)

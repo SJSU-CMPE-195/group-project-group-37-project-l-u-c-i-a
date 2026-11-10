@@ -110,6 +110,14 @@ is filled in from `src/pico2/main.py`; Ling's `stream_main.py` doesn't send it,
 so then `linear_acceleration_covariance[0]` is -1 (not provided). Stamped when
 the reading arrives.
 
+**Upside-down board.** A board mounted chip side down reports turning left as
+turning right, so its readings are turned over (180° about its x axis) before
+publishing. With `main.py`, the node tells from gravity in the first reading
+(about +9.8 m/s² on the board's z axis the right way up, −9.8 upside down) and
+logs which; nothing is published before that. `stream_main.py` sends no
+acceleration, so then `imu_upside_down` decides. The robot's IMU is upside down
+(2026-11-10), so `config/tof.yaml` sets it to true.
+
 About 100 readings a second from `main.py`, 50 from `stream_main.py`. It warns
 in the log if no reading arrives for `imu_warn_s` (1 s). To see the heading
 while checking the IMU by hand, run the node alone with
@@ -144,6 +152,7 @@ and which Pico program sent them. View with `rqt_robot_monitor` or
 | `angular_velocity_variance` | 0.0004 | (rad/s)², about 1 degree/s |
 | `linear_acceleration_variance` | 0.01 | (m/s²)²; the EKF doesn't use acceleration |
 | `imu_warn_s` | 1.0 | s without an IMU reading before it warns |
+| `imu_upside_down` | false (true in `config/tof.yaml`) | the board is chip side down: turn its readings over. Gravity decides when the readings include it (`main.py`), and a mismatch with this is logged |
 
 ## Known gaps
 

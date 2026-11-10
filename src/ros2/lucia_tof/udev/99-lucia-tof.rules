@@ -4,9 +4,10 @@
 # rules"); on the robot, edit that file rather than installing this one.
 #
 # 2e8a:0005 is MicroPython's USB serial on every Pico, so the serial number is
-# what picks this board. fd92d5f577b9417b is the Pico on the robot since
-# 2026-10-16. For a different board, get its number with
-#   udevadm info -q property -n /dev/ttyACM0 | grep ID_SERIAL_SHORT
-# and put it below. Then:
+# what picks the board: 72919cfe7798b116 is Noel's Pico, on the robot since
+# 2026-11-10; fd92d5f577b9417b is the IMU-only Pico it replaced. For a
+# different board, get its number with  ls -l /dev/serial/by-id/  and add a
+# line. Then:
 #   sudo udevadm control --reload-rules && sudo udevadm trigger
+SUBSYSTEM=="tty", ATTRS{idVendor}=="2e8a", ATTRS{idProduct}=="0005", ATTRS{serial}=="72919cfe7798b116", SYMLINK+="imu"
 SUBSYSTEM=="tty", ATTRS{idVendor}=="2e8a", ATTRS{idProduct}=="0005", ATTRS{serial}=="fd92d5f577b9417b", SYMLINK+="imu"

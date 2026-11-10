@@ -15,3 +15,8 @@ tof_node:
     angular_velocity_variance: 0.0004     # about 1 deg/s
     linear_acceleration_variance: 0.01    # not fused by the EKF
     imu_warn_s: 1.0             # s without an IMU reading before it warns
+    # The robot's IMU is mounted upside down (chip side down; it read gravity as
+    # -9.87 m/s^2 on its z axis, 2026-11-10), so its readings are turned over.
+    # With src/pico2/main.py, gravity decides this by itself and a mismatch is
+    # logged; stream_main.py sends no acceleration, so then this value decides.
+    imu_upside_down: true

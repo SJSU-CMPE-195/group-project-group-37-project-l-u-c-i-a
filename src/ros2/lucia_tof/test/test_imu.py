@@ -67,3 +67,81 @@ def test_both_pico_programs_through_the_parser():
     assert isinstance(items[2], ImuPacket) and imu.from_packet(items[2]).orientation == LEVEL
     assert items[3] == tof
     assert len(items) == 4
+
+
+# --- Boards mounted upside down -------------------------------------------
+
+# The IMU reading captured on the robot on 2026-11-10 (that board is chip side down)
+ROBOT_PACKET = ImuPacket(35, 53359, 579310,
+                         (0.00872802734375, 0.00030517578125, 0.99993896484375, -0.00384521484375),
+                         (0.0, 0.0, 0.0), (-0.171875, -0.078125, -9.8671875))
+
+
+def qmul(a, b):
+    w1, x1, y1, z1 = a
+    w2, x2, y2, z2 = b
+    return (w1 * w2 - x1 * x2 - y1 * y2 - z1 * z2,
+            w1 * x2 + x1 * w2 + y1 * z2 - z1 * y2,
+            w1 * y2 - x1 * z2 + y1 * w2 + z1 * x2,
+            w1 * z2 + x1 * y2 - y1 * x2 + z1 * w2)
+
+
+def about(axis, angle):
+    s = math.sin(angle / 2)
+    return (math.cos(angle / 2),) + tuple(s * a for a in axis)
+
+
+def in_board_frame(q, v):
+    """A vector given in world axes, in the axes of a board with orientation q."""
+    w, x, y, z = q
+    return qmul(qmul((w, -x, -y, -z), (0.0,) + tuple(v)), q)[1:]
+
+
+def board_reading(heading, turn_rate, mount):
+    """What a board mounted on a level robot (mount: board -> robot rotation)
+    reads while the robot faces `heading` and turns left at `turn_rate` rad/s."""
+    q = qmul(about((0, 0, 1), heading), mount)
+    return imu.Reading(q, in_board_frame(q, (0.0, 0.0, turn_rate)),
+                       in_board_frame(q, (0.0, 0.0, 9.81)))     # standing still: +g, "up"
+
+
+def heading_change(a, b):
+    d = imu.yaw_rad(b) - imu.yaw_rad(a)
+    return math.atan2(math.sin(d), math.cos(d))
+
+
+def test_the_robots_board_reads_upside_down_and_turned_over_reads_level():
+    raw = imu.from_packet(ROBOT_PACKET)
+    assert imu.upside_down(raw) is True
+    fixed = imu.turned_over(raw)
+    assert imu.upside_down(fixed) is False
+    assert fixed.accel[2] > 9.8
+    w, x, y, z = fixed.orientation
+    assert 1 - 2 * (x * x + y * y) > 0.999          # its z axis points straight up again
+    assert math.isclose(math.sqrt(w * w + x * x + y * y + z * z), 1.0, abs_tol=1e-3)
+
+
+def test_turning_left_reads_left_once_turned_over():
+    # Whichever way the board was turned over (about its x or its y axis)
+    for mount in (about((1, 0, 0), math.pi), about((0, 1, 0), math.pi)):
+        start = board_reading(0.3, 0.0, mount)
+        turning = board_reading(0.8, 0.5, mount)
+        assert math.isclose(turning.gyro[2], -0.5, abs_tol=1e-9)   # raw: turn rate backwards
+        a, b = imu.turned_over(start), imu.turned_over(turning)
+        assert math.isclose(heading_change(a, b), 0.5, abs_tol=1e-9)
+        assert math.isclose(b.gyro[2], 0.5, abs_tol=1e-9)
+        assert math.isclose(b.accel[2], 9.81, abs_tol=1e-9)
+
+
+def test_right_way_up_board_needs_nothing():
+    level = about((0, 0, 1), 0.0)
+    start, turning = board_reading(0.3, 0.0, level), board_reading(0.8, 0.5, level)
+    assert imu.upside_down(turning) is False
+    assert math.isclose(heading_change(start, turning), 0.5, abs_tol=1e-9)
+    assert math.isclose(turning.gyro[2], 0.5, abs_tol=1e-9)
+
+
+def test_upside_down_needs_gravity():
+    assert imu.upside_down(imu.Reading(LEVEL, (0.0, 0.0, 0.0), None)) is None
+    assert imu.upside_down(imu.Reading(LEVEL, (0.0, 0.0, 0.0), (9.8, 0.0, 0.3))) is None  # on its side
+    assert imu.turned_over(imu.Reading(LEVEL, (0.0, 0.0, 0.1), None)).accel is None

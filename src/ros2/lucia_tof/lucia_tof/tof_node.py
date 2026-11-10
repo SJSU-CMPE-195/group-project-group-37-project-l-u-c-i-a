@@ -81,6 +81,11 @@ class TofNode(Node):
         self.linear_acceleration_variance = self.declare_parameter(
             'linear_acceleration_variance', 0.01).value
         self.imu_warn_s = self.declare_parameter('imu_warn_s', 1.0).value
+        # Upside-down board: with src/pico2/main.py, gravity in the first
+        # reading decides; stream_main.py sends no acceleration, so this says.
+        self.imu_upside_down = self.declare_parameter('imu_upside_down', False).value
+        self.imu_flip = None    # decided at the first reading, before anything is published
+        self.imu_undecided = 0
 
         self.sensors = [SensorState(n, prefix + n + '_link') for n in names]
         self.image_pubs = [
@@ -209,6 +214,13 @@ class TofNode(Node):
     # --- IMU ---------------------------------------------------------------
 
     def handle_imu(self, reading, source, recv_ns):
+        if reading is not None:
+            if self.imu_flip is None:
+                self.decide_flip(reading)
+                if self.imu_flip is None:
+                    return          # can't tell yet which way up the board is
+            if self.imu_flip:
+                reading = imu.turned_over(reading)
         with self.lock:
             st = self.imu_state
             st.source = source
@@ -241,6 +253,42 @@ class TofNode(Node):
             for i in (0, 4, 8):
                 msg.linear_acceleration_covariance[i] = self.linear_acceleration_variance
         self.imu_pub.publish(msg)
+
+    def decide_flip(self, raw):
+        """Which way up the IMU board is, once, from the first reading that can tell.
+
+        A board mounted upside down (chip side down) reports turning left as
+        turning right, so its readings are turned over before publishing.
+        Readings with acceleration (src/pico2/main.py) show it from gravity;
+        stream_main.py's have none, so imu_upside_down decides for those.
+        """
+        if raw.accel is None:
+            self.imu_flip = self.imu_upside_down
+            self.get_logger().info(
+                'IMU readings without acceleration (stream_main.py): taking the board as {} '
+                '(imu_upside_down)'.format('upside down' if self.imu_flip else 'the right way up'))
+            return
+        seen = imu.upside_down(raw)
+        if seen is None:            # no acceleration report yet, or not lying flat
+            self.imu_undecided += 1
+            if self.imu_undecided >= 100:   # about a second: go by the setting
+                self.imu_flip = self.imu_upside_down
+                self.get_logger().warning(
+                    'Gravity on the IMU\'s z axis is {:+.1f} m/s^2, too small to tell which way '
+                    'up it is; going by imu_upside_down: {}'.format(
+                        raw.accel[2], str(self.imu_upside_down).lower()))
+            return
+        self.imu_flip = seen
+        way = 'upside down: turning its readings over' if seen else 'the right way up'
+        self.get_logger().info('IMU board is {} (gravity {:+.1f} m/s^2 on its z axis)'.format(
+            way, raw.accel[2]))
+        if seen != self.imu_upside_down:
+            self.get_logger().warning(
+                'imu_upside_down is {} but gravity says the board is {}; going by gravity. '
+                'Set imu_upside_down: {} in lucia_tof/config/tof.yaml (it decides for '
+                'stream_main.py, which sends no acceleration)'.format(
+                    str(self.imu_upside_down).lower(), 'upside down' if seen else 'the right way up',
+                    str(seen).lower()))
 
     def check_imu(self):
         """Warn once when the IMU goes quiet, and say when it's back."""
@@ -337,6 +385,8 @@ class TofNode(Node):
                 KeyValue(key='seconds since last reading', value=age),
                 KeyValue(key='sent by', value=sent_by.get(ims.source, 'nothing yet')),
                 KeyValue(key='published on imu/data', value=str(self.publish_imu)),
+                KeyValue(key='board upside down (readings turned over)',
+                         value={None: 'not known yet', True: 'yes', False: 'no'}[self.imu_flip]),
             ]
             msg.status.append(d)
         self.diag_pub.publish(msg)
