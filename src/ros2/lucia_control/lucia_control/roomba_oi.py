@@ -92,13 +92,15 @@ class RoombaOI:
 
     def wake(self):
         """
-        Wake the Roomba from sleep by pulsing the BRC pin low via DTR.
+        Wake the Roomba from sleep by pulsing the BRC pin low via RTS.
         Call this before start() if the Roomba may be asleep.
-        Requires the USB-serial adapter's DTR line wired to the Mini-DIN BRC pin.
+        The BG046PKOA cable has BRC on RTS (rts=True pulls it low); DTR does nothing.
         """
-        self.ser.dtr = True   # pull BRC low
-        time.sleep(1)
-        self.ser.dtr = False    # release
+        self.ser.rts = False   # idle
+        time.sleep(0.5)
+        self.ser.rts = True    # pull BRC low
+        time.sleep(0.5)
+        self.ser.rts = False   # release
         time.sleep(2)          # allow Roomba to fully wake
 
     def start(self):
