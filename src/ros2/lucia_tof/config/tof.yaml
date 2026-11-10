@@ -1,6 +1,6 @@
 tof_node:
   ros__parameters:
-    port: /dev/lucia_tof        # see udev/99-lucia-tof.rules
+    port: /dev/imu              # the sensor Pico (ToF + IMU); see udev/99-lucia-tof.rules
     baud: 115200                # ignored over USB serial
     sensor_names: [left, middle, right]   # src/pico2/main.py SENSORS order
     frame_id_prefix: tof_       # frames are tof_<name>_link
@@ -9,3 +9,9 @@ tof_node:
     max_range: 4.0              # m, Range.max_range
     stale_timeout: 0.5          # s without a frame before tof/near goes true
     near_rate: 10.0             # Hz, tof/near is also sent on every frame
+    publish_imu: true           # IMU readings on imu/data (mapping.launch.py sets this from use_imu)
+    imu_frame_id: imu_link
+    orientation_variance: 0.0025          # about 3 deg; rough, not measured (same as imu_bridge)
+    angular_velocity_variance: 0.0004     # about 1 deg/s
+    linear_acceleration_variance: 0.01    # not fused by the EKF
+    imu_warn_s: 1.0             # s without an IMU reading before it warns

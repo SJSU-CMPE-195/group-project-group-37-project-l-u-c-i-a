@@ -596,7 +596,8 @@ class WebUi(Node):
         self._apply_settings(settings)
         with self._lock:
             self._trail.reset()
-        if not self.mapping.start(use_imu=settings['use_imu'], settings_file=params_path):
+        if not self.mapping.start(use_imu=settings['use_imu'], use_tof=settings['use_tof'],
+                                  settings_file=params_path):
             return False, 'Already running'
         return True, 'Mapping started'
 

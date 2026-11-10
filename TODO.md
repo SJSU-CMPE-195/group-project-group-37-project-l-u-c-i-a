@@ -31,12 +31,19 @@ planned first; frontier exploration was moved ahead of it that evening at Christ
 On the robot 2026-10-23: gradual speed changes and carrying on after driving by hand work; tight
 spaces slow it down (slowest speed then raised to 10 cm/s).
 
+2026-11-10: Noel's code merged (`pico2`, `tof_pico`, `new-cable-rts-wake`; Ling's IMU address fix
+came with it). **One Pico 2 for the IMU and the ToF sensors** (decided 2026-11-10): `lucia_tof`'s
+`tof_node` reads it and publishes `/imu/data` too, so it replaced `imu_bridge` in `mapping.launch.py`;
+it reads Noel's `src/pico2/main.py` and Ling's `stream_main.py` alike. "ToF safety stop" is a switch
+in the page's settings (off). Reconnect Roomba wakes the Roomba with either cable.
+
 **Not yet tried on the robot**: from 2026-10-17, clean container stop (`compose.yml`, needs `up -d`
 once), Reconnect Roomba, tunes and MIDI import (the horn played), the 0.23 m footprint, the stuck
 check; from 2026-10-23, the new page layout and the settings menu at Start mapping (Phase 5), and the
-tight-space fixes (ramp keeps the curve, Nav2 look-ahead scales with speed; Phase 4). Written earlier
-and waiting on hardware: the ToF safety gate (`use_tof`, off until the sensors are mounted).
-Next: those first tries (see Phases 1, 4, 5 and "Setup on the Pi"), then the ToF stop.
+tight-space fixes (ramp keeps the curve, Nav2 look-ahead scales with speed; Phase 4); from
+2026-11-10, `tof_node` as the IMU reader, the ToF safety stop switch, and the wake pulse for the
+new cable. Waiting on hardware: the ToF safety stop itself (sensors not mounted).
+Next: those first tries (see Phases 1, 2, 4, 5 and "Setup on the Pi"), then the ToF stop.
 
 ---
 
@@ -77,6 +84,11 @@ Folder: `src/ros2/lucia_control/`
 - [x] Checked 2026-09-18: **the Roomba's replies don't reach the Pi.** Battery voltage reads 0, encoders read 0. Driving still works, so the Pi-to-Roomba direction is fine.
 - [x] Rechecked 2026-10-16, counting bytes instead of decoding them: **zero bytes** come back for battery voltage (packet 22) or either encoder (43/44), even while turning a wheel by hand. The old "reads 0" was really "no reply at all" (the driver turns an empty read into 0). The encoders themselves are untested. A beep command played in the same session, so the Roomba was awake and receiving: only the Roomba-to-Pi direction is broken
 - [ ] Fix the reply path (Roomba TX to the adapter's RX, FTDI FT232R). Loopback test: unplug from the Roomba, jumper pins 3 and 4 on the cable's mini-DIN plug, send bytes, see if they echo. Echo → the fault is at the Roomba end (reseat); no echo → the adapter/cable (replace, e.g. a ready-made Create 2 serial cable)
+- [ ] Noel's new cable (BG046PKOA, 2026-10-25): its BRC (wake) wire is on RTS; an RTS pulse woke the Roomba,
+  DTR did nothing. `RoombaOI.wake()` pulses RTS and DTR together since 2026-11-10, so Reconnect Roomba works
+  with either cable. Once it's on the robot: give it a `/dev/roomba` udev line (it has its own serial
+  number; `docs/setup/ros2-pi.md`, "Devices and udev rules"), then rerun the Roomba reply check
+  (Diagnostics): if replies come back, the reply path above is fixed
 - [x] Added position tracking (`/odom` + the `odom`→`base_link` transform) to the control program (2026-10-09) — **open-loop**, estimated from commanded wheel speed, not a sensor reading, since the cable above isn't fixed yet. Will drift more than real encoder feedback. See `odometry.py` and `docs/changelogs/2026-10-09.md`.
 - [x] Tried `/odom` on the real robot: position and heading both tracked driving + turning correctly.
 - [ ] Once the cable is fixed: measure wheel size and encoder counts per turn (drive a known distance, read the raw counts), then switch `/odom` to use real encoder readings instead of commanded speed. `odometry.py`'s math doesn't change either way — only what feeds it does.
@@ -120,7 +132,16 @@ without waiting on the Roomba cable.
 - [x] Fusion (runs on the Pi since 2026-10-16, `room2.png`): `lucia_bringup/config/ekf.yaml` takes forward speed from `/odom` and heading + turn rate from `/imu/data`; `roomba_bridge` gained `publish_tf` (off when the EKF runs) and now fills in `/odom`'s twist with rough variances. `ros2 launch lucia_bringup mapping.launch.py` starts roomba_bridge + imu_bridge + EKF + lidar + slam_toolbox (`use_imu:=false` = the first-map setup)
 - [x] Image rebuilt on the Pi (about 6.5 min); plain `colcon build` skips `lucia_vision`. `mapping.launch.py` starts cleanly: `imu_bridge` on `/dev/imu`, `roomba_bridge` hands `odom`→`base_link` to the EKF, slam_toolbox registers the lidar, no warnings (2026-10-16)
 - [x] Mapped the same room again with the IMU (`room2.png`, 2026-10-16): walls are single thin lines with square corners and much less speckle; the doubled wall from `room1.png` is gone. One run each with different starting headings, so not a controlled comparison, but the heading fix is clearly visible
-- [ ] `imu_bridge`: skip the first, partial line after opening the port (it shows up as a harmless `Pico: 01477,...` log line)
+- [ ] Skip the first, partial line after opening the port (a harmless `pico: 01477,...` log line; `tof_node` does it too now)
+- [x] **One Pico for the IMU and the ToF sensors** (decided 2026-11-10). Only one program may open it, so
+  `lucia_tof`'s `tof_node` now publishes `/imu/data` (same frame, variances and topic as `imu_bridge`) and
+  replaced `imu_bridge` in `mapping.launch.py`. It reads Noel's `src/pico2/main.py` packets (100 Hz, with
+  acceleration) and Ling's `stream_main.py` lines alike, so nothing needs switching when the Pico's code
+  changes. Noel's `main.py` now also finds the IMU at 0x4A (the robot's; it only tried 0x4B) and keeps
+  streaming the IMU without the ToF sensors (it used to stop at a missing sensor). Tested here with a
+  simulated Pico and stub ROS; not yet on the robot
+- [ ] On the robot: Start mapping, IMU light green, `ros2 topic hz /imu/data` about 50/s (100/s once
+  `src/pico2/main.py` is loaded)
 
 ---
 
@@ -130,18 +151,22 @@ Folder: `src/ros2/lucia_bringup/`
 
 Decided 2026-10-16: built on the **ToF distance sensors** the team is implementing
 (`src/tof_pico/`, VL53L5CX on a Pico), not the lidar. Waits until those are ready.
-- [x] ToF Pico → Pi → ROS2: Noel's `lucia_tof` package (branch `tof_pico`, not merged into `dev` yet).
-  Publishes an 8x8 distance grid and nearest reading per sensor, and `tof/near` (Bool: true = something
-  within 300 mm, or a sensor silent). Before it goes on the Pi: its udev rule (`99-lucia-tof.rules`) matches
-  any MicroPython Pico (`2e8a:0005`) without a serial number, so `/dev/lucia_tof` can grab the IMU Pico
-  too. Add the ToF Pico's `ATTRS{serial}`, like the `/dev/imu` rule
+- [x] ToF Pico → Pi → ROS2: Noel's `lucia_tof` package, merged 2026-11-10 (from `pico2`, which includes
+  `tof_pico`). Three sensors at 4x4 and 60 Hz each: a distance grid and nearest reading per sensor, and
+  `tof/near` (Bool: true = something within 300 mm, or a sensor silent). The ToF sensors share the IMU's
+  Pico (`/dev/imu`, matched by serial), so its old any-Pico udev rule (`/dev/lucia_tof`) is gone
 - [x] "Stop if something's too close" node (2026-10-16; runs in pass-through on the Pi, the blocking path not yet tried): `lucia_bringup` `safety_gate`.
   Everything that drives (page, Nav2, mission) publishes `/cmd_vel`; the gate passes it to `/cmd_vel_safe`,
   which `roomba_bridge` listens to in `mapping.launch.py`. With `use_tof:=true` it blocks forward motion
   while `tof/near` is true or silent; turning and backing up still pass so Nav2 can turn away. Default
   `use_tof:=false` = pass-through. Rules in `safety_logic.py` (tested)
-- [ ] Merge `lucia_tof` (with the udev fix), mount the sensors, add its node to `mapping.launch.py` under `use_tof`
-  (the gate's stop is ramped like every stop: about 2 cm extra at 15 cm/s, 8 cm at 30 cm/s, inside the 300 mm)
+- [x] `tof_node` in `mapping.launch.py` (2026-11-10): starts when `use_imu` or `use_tof` is on. "ToF safety
+  stop" in the page's settings sets `use_tof` (off by default)
+- [ ] Wire and mount the three ToF sensors on the Pico (`src/pico2/README.md`), load `src/pico2/main.py` onto it
+  (same page), and check `tof/near` (the gate's stop is ramped like every stop: about 2 cm extra at 15 cm/s,
+  8 cm at 30 cm/s, inside the 300 mm)
+- [ ] Noel's known gaps (`lucia_tof/README.md`): image orientation (`flip_h` / `flip_v`) and radial vs.
+  straight-ahead distance not checked; no `base_link`→`tof_*_link` transforms yet
 - [ ] Test it on its own, driving by keyboard toward a wall, before Explore relies on it
 
 ---
@@ -388,6 +413,8 @@ Pi side:
   ignored SIGTERM, so every restart/shutdown waited 30 s and force-killed everything (the Roomba could keep driving).
   `compose.yml` now has `init: true` and starts `web_ui` directly. On the Pi: `docker compose -f docker/compose.yml up -d`
   once (restart keeps old settings), then `time docker compose -f docker/compose.yml restart` should take seconds
+- [ ] 2026-11-10 update on the Pi: pull `dev` (Noel's code), restart the container, check `lucia_tof` built
+  (`ros2 pkg executables lucia_tof` lists `tof_node`), add the new Roomba cable's udev line if it's on
 - [ ] Try `ssh lucia@lucia.local` from the laptop on a shared WiFi
 - [ ] Try the Pi 5 power button for a clean shutdown (two presses on the desktop OS)
 - [ ] Optional: let NetworkManager run the hotspot's address server (`ipv4.method shared`) instead of the separate

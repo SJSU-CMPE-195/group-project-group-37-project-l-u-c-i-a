@@ -1,6 +1,7 @@
 # Runs on the Pico. Streams the BNO08X's heading and rotation rate to the
-# Raspberry Pi over USB serial, for the Pi's ROS2 imu_bridge node
-# (src/ros2/lucia_imu) to publish on /imu/data. Upload as main.py so it runs
+# Raspberry Pi over USB serial, for the Pi's ROS2 tof_node (src/ros2/lucia_tof,
+# which reads this and Noel's src/pico2/main.py alike) to publish on /imu/data.
+# IMU only; src/pico2/main.py sends the IMU and the ToF sensors. Upload as main.py so it runs
 # on boot, together with bno08x.py and i2c.py (see docs/BNO08X Pico2 Setup.md,
 # including the i2c.py import fix: `from bno08x import BNO08X`).
 #
@@ -13,8 +14,8 @@
 #           compass off, so heading drifts slowly instead of jumping.
 #   gx..gz  gyro, rad/s (latest reading when the quaternion arrives)
 # Every other line (startup text, errors) starts with something other than "I,"
-# and is ignored by the Pi. If this format changes, change
-# src/ros2/lucia_imu/lucia_imu/imu_line.py to match.
+# and is logged by the Pi. If this format changes, change
+# src/ros2/lucia_tof/lucia_tof/imu.py (and lucia_imu/imu_line.py) to match.
 
 from machine import I2C, Pin
 

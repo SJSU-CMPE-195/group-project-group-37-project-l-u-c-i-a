@@ -1,5 +1,10 @@
 # udev Rules — Stable Device Names
 
+> The rules actually on the robot are in [`ros2-pi.md`](ros2-pi.md), "Devices and udev
+> rules": the Roomba's FTDI cable, the RPLidar, and the sensor Pico (IMU + ToF sensors) as
+> `/dev/imu`, plus how to add the new Roomba cable. This page explains the method; its
+> example (both devices on CP210x chips) predates them.
+
 ## Problem
 
 The Raspberry Pi has two USB serial devices: the Roomba 650 and the RPLidar A2.

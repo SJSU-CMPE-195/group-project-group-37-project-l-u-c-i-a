@@ -1,7 +1,13 @@
 """
 imu_bridge.py
 
-ROS2 node that owns the IMU Pico's USB serial port (nothing else may open it).
+ROS2 node that reads the IMU Pico's USB serial port (nothing else may open it
+while it runs).
+
+Not started by mapping.launch.py since 2026-11-10: the robot has one Pico for
+the IMU and the ToF sensors, read by lucia_tof's tof_node, which also
+understands this line format. Kept for checking the IMU by hand while the Pico
+runs src/imu/stream_main.py.
 
 - Reads the Pico's line stream (src/imu/stream_main.py, parsed by imu_line.py)
 - Publishes each reading as sensor_msgs/Imu on /imu/data: orientation (game

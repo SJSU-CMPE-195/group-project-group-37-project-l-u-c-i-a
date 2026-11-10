@@ -30,6 +30,20 @@ def test_start_runs_and_captures_output():
         m.stop()
 
 
+def test_tof_safety_stop_goes_to_the_launch():
+    m = MappingProcess(FAKE_LAUNCH)
+    try:
+        assert m.start(use_tof=True)
+        assert wait_for(lambda: any("use_tof:=true" in line for line in m.log_tail()))
+    finally:
+        m.stop()
+    try:
+        assert m.start()
+        assert wait_for(lambda: any("use_tof:=false" in line for line in m.log_tail()))
+    finally:
+        m.stop()
+
+
 def test_settings_file_goes_to_the_launch():
     m = MappingProcess(FAKE_LAUNCH)
     try:

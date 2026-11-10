@@ -147,7 +147,7 @@ driving, 1.5 / 3.0 rad/s² for turning).
 |---|---|---|
 | Mapping | `mapping.launch.py` is running | Press Start mapping; open Logs → Launch output |
 | Lidar | `/scan` arrived in the last second | See "Lidar freezes after Start" under Known issues |
-| IMU | `/imu/data` arrived in the last second | Is the IMU Pico plugged in? Replug it; or turn off "Use the IMU" in the settings to map without it |
+| IMU | `/imu/data` arrived in the last second | Is the sensor Pico plugged in (`ls -la /dev/imu`)? Replug it; or turn off "Use the IMU" in the settings to map without it |
 | Wheels | `/odom` arrived in the last second | `roomba_bridge` isn't running: check Logs. (This light doesn't show whether the Roomba itself is on, since its replies don't reach the Pi; if the wheels don't move, see "Roomba turned off and on" under Known issues) |
 | Navigation | The mission node is running and Nav2 is up (yellow: mapping runs but Nav2 isn't ready yet) | Open Logs, filter Warnings and up, look for `lifecycle_manager` or `controller_server` errors |
 | Connection | The page can reach the Pi | Are you on `lucia-control`? Is the Pi on? |
@@ -168,7 +168,7 @@ plus our additions (`docker/Dockerfile`), sidesteps that.
 | `lucia_control` | `roomba_bridge` | `/dev/roomba` | `/cmd_vel_safe` → wheels (Safe mode, re-entered every second); `/odom` estimated from commanded wheel speeds; `~/reconnect` service (Reconnect Roomba); `~/song` topic (horn and tunes, up to 64 notes) |
 | `lucia_lidar` | `rplidar_composition` (from `rplidar_ros`) | `/dev/rplidar` | `/scan` at about 10 Hz |
 | `lucia_lidar` | `slam_toolbox` | | `/map`, `map`→`odom` |
-| `lucia_imu` | `imu_bridge` | `/dev/imu` | `/imu/data` (heading + turn rate) at about 50 Hz |
+| `lucia_tof` | `tof_node` | `/dev/imu` (the sensor Pico: IMU + ToF sensors) | `/imu/data` (heading + turn rate; about 100 Hz from Noel's `src/pico2/main.py`, 50 from Ling's `src/imu/stream_main.py`, whichever is on the Pico); `tof/near` and the ToF images once the sensors are wired. Started when "Use the IMU" or "ToF safety stop" is on. Replaced `lucia_imu`'s `imu_bridge` on 2026-11-10 |
 | `lucia_bringup` | `ekf_filter_node` (`robot_localization`) | | Combines `/odom` forward speed with IMU heading → `odom`→`base_link` |
 | `lucia_bringup` | `safety_gate` | | `/cmd_vel` → `/cmd_vel_safe` (what `roomba_bridge` listens to); with `use_tof:=true`, blocks forward motion while `tof/near` is true or silent |
 | `lucia_nav` | Nav2: `controller_server`, `planner_server`, `behavior_server`, `bt_navigator`, `lifecycle_manager_navigation` | | Plans a path on `/map` and drives it (`/cmd_vel`, `/plan`); settings in `lucia_nav/config/nav2.yaml` |
@@ -177,14 +177,16 @@ plus our additions (`docker/Dockerfile`), sidesteps that.
 | `lucia_vision` | | | Jetson/ZED camera code. Doesn't build on the Pi (needs CUDA); skipped automatically |
 
 Rule: **one program per device.** Nothing else opens a device's port while its
-node runs. That includes VS Code's MicroPico console for the IMU Pico.
+node runs. That includes VS Code's MicroPico console for the sensor Pico, and
+`imu_bridge`, which is no longer started (it can only read `stream_main.py`).
 
 Launch files:
 - `lucia_bringup/launch/mapping.launch.py`: everything (control, safety gate,
   IMU, EKF, lidar, slam_toolbox, Nav2 + mission). Options:
   `use_imu:=false` (wheels-only heading), `use_nav:=false` (mapping only, no
-  Nav2), `use_tof:=true` (ToF safety stop on; needs Noel's `lucia_tof` node
-  running, or forward driving stays blocked).
+  Nav2), `use_tof:=true` (ToF safety stop on, also in the page's settings:
+  forward driving stops while something is within 30 cm of a ToF sensor, or
+  while they send nothing).
 - `lucia_nav/launch/navigation.launch.py`: Nav2 + the mission node only.
 - `lucia_lidar/launch/lidar_and_map.launch.py`: lidar + slam_toolbox only, plus
   the `base_link`→`laser` transform (`laser_yaw` default π: the lidar is mounted
@@ -287,9 +289,17 @@ SUBSYSTEM=="tty", ATTRS{idVendor}=="10c4", ATTRS{idProduct}=="ea60", ATTRS{seria
 # Roomba 650 (FTDI chip)
 SUBSYSTEM=="tty", ATTRS{serial}=="BG03LJ9U", SYMLINK+="roomba"
 
-# IMU Pico (BNO08X) - matched by serial: the ToF Pico has the same vendor/product ID
+# Sensor Pico (IMU + ToF sensors) - matched by serial: every MicroPython Pico has this vendor/product ID
 SUBSYSTEM=="tty", ATTRS{idVendor}=="2e8a", ATTRS{idProduct}=="0005", ATTRS{serial}=="fd92d5f577b9417b", SYMLINK+="imu"
 ```
+
+The robot has one Pico, for the IMU and the ToF sensors (decided 2026-11-10);
+it keeps the name `/dev/imu`. If a different Pico goes on the robot, put its
+serial number in that line.
+
+**New Roomba cable** (Noel's BG046PKOA, 2026-10-25): it has its own serial
+number, so `/dev/roomba` won't appear until it has a line too. Keep the old
+line and add one for the new cable, so either cable works.
 
 Check: `ls -la /dev/roomba /dev/rplidar /dev/imu`. After editing the rules:
 `sudo udevadm control --reload && sudo udevadm trigger`, then wait a second, or
@@ -359,21 +369,31 @@ It adds `python3-serial`, `rplidar_ros`, `slam_toolbox`, `nav2_bringup` (include
 
 ---
 
-## The IMU Pico
+## The sensor Pico (IMU + ToF)
 
-Ling's BNO08X is wired to a Raspberry Pi Pico 2 (I²C address `0x4A`; wiring in
-`docs/BNO08X Pico2 Setup.md`) and plugged into the Pi over USB. The Pico runs
-`src/imu/stream_main.py` as its `main.py` and prints one line per reading, about
-50 per second:
+One Raspberry Pi Pico 2 carries Ling's BNO08X (I²C address `0x4A`; wiring in
+`docs/BNO08X Pico2 Setup.md`) and, once they're wired, Noel's three VL53L5CX
+ToF sensors (wiring in `src/pico2/README.md`). It's plugged into the Pi over
+USB as `/dev/imu`. `lucia_tof`'s `tof_node` reads it, whichever of these two
+programs it runs as its `main.py`:
+
+- Noel's `src/pico2/main.py`: ToF + IMU as binary packets. It keeps going with
+  whatever is connected (IMU only, ToF only, or both). How to load it from
+  the Pi: `src/pico2/README.md`.
+- Ling's `src/imu/stream_main.py` (on the robot until Noel's is loaded): IMU
+  only, as text, described below.
+
+`stream_main.py` prints one line per reading, about 50 per second:
 
 ```
 I,<qw>,<qx>,<qy>,<qz>,<gx>,<gy>,<gz>
 ```
 That's the game rotation vector (gyro + accelerometer, no compass, which the
-Roomba's motors would throw off) and the gyro in rad/s. `imu_bridge` ignores every
-line that doesn't start with `I,`.
+Roomba's motors would throw off) and the gyro in rad/s. Other lines are logged
+as `pico: ...`.
 
-**Quick check, without ROS2** (on the Pi, with nothing else using the port):
+**Quick check, without ROS2** (on the Pi, with mapping stopped; readable text
+with `stream_main.py` only, `main.py` sends binary):
 ```bash
 stty -F /dev/imu raw -echo
 timeout 1 cat /dev/imu | head -3
@@ -403,7 +423,7 @@ heading as 0.
 | Tool | What it tells you |
 |---|---|
 | `ros2 run lucia_lidar scan_check` | Closest lidar reading's distance and angle, once a second. Hand in front of the robot ≈ ±180°, on its left ≈ -90° |
-| `ros2 run lucia_imu imu_bridge --ros-args --log-level imu_bridge:=debug` | Heading, turn rate and readings per second every 2 s (stop mapping first: it owns `/dev/imu`) |
+| `ros2 run lucia_tof tof_node --ros-args -p port:=/dev/imu --log-level tof_node:=debug` | IMU heading, turn rate and readings per second every 2 s, plus the Pico's own messages (stop mapping first: it owns `/dev/imu`) |
 | `ros2 topic hz /scan` (or `/imu/data`, `/odom`) | Whether a topic is publishing, and how fast |
 | `ros2 node list`, `ros2 topic list --no-daemon` | What's running and visible |
 | `ros2 run tf2_ros tf2_echo odom laser` | Whether the transform chain is complete |

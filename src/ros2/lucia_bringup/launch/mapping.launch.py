@@ -5,7 +5,13 @@ Everything needed to build a map, in one command:
 - roomba_bridge (wheels, /odom), listening on /cmd_vel_safe
 - safety_gate: passes /cmd_vel on to /cmd_vel_safe, blocking forward motion
   while the ToF sensors see something close (only with use_tof:=true)
-- imu_bridge (Ling's BNO08X Pico, /imu/data) + where the IMU sits on the robot
+- lucia_tof's tof_node, the only program that opens the sensor Pico (one
+  Pico 2 for the IMU and the ToF sensors, /dev/imu): /imu/data for the EKF
+  (use_imu) and tof/near for safety_gate (use_tof). Started when either is on.
+  It reads Noel's src/pico2/main.py (IMU + ToF) and Ling's IMU-only
+  src/imu/stream_main.py alike, so it doesn't matter which is on the Pico.
+  Replaced lucia_imu's imu_bridge here on 2026-11-10.
+- where the IMU sits on the robot (static transform)
 - robot_localization EKF combining /odom and /imu/data into odom->base_link
   (config/ekf.yaml)
 - lucia_lidar's lidar_and_map.launch.py (lidar + slam_toolbox)
@@ -17,7 +23,7 @@ Usage:
     ros2 launch lucia_bringup mapping.launch.py use_imu:=false   # wheels only, as before
     ros2 launch lucia_bringup mapping.launch.py use_nav:=false   # mapping only, no Nav2
     ros2 launch lucia_bringup mapping.launch.py use_tof:=true    # ToF safety stop on
-      (needs lucia_tof's node running, or forward driving stays blocked)
+      (forward driving stays blocked while the ToF sensors send nothing)
 Normally started from the web page (lucia_web). From a terminal instead:
     ros2 topic pub --once /mission/command std_msgs/String "data: explore"
 or drive by hand (test tool):
@@ -38,7 +44,8 @@ navigation.launch.py the mission node and Nav2), so it overrides them. Default:
 config/no_settings.yaml, which changes nothing.
 
 Runs on the Pi: mapping since 2026-10-16, with Nav2 + Explore since 2026-10-17.
-use_tof:=true is not yet tried (the ToF sensors aren't mounted).
+use_tof:=true is not yet tried (the ToF sensors aren't mounted), and neither
+is tof_node on the Pi (2026-11-10).
 """
 
 import os
@@ -48,7 +55,7 @@ from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
 from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
-from launch.substitutions import LaunchConfiguration, NotSubstitution
+from launch.substitutions import LaunchConfiguration, NotSubstitution, OrSubstitution
 from launch_ros.actions import Node
 
 
@@ -58,8 +65,10 @@ def generate_launch_description():
         get_package_share_directory('lucia_lidar'), 'launch', 'lidar_and_map.launch.py')
     nav_launch = os.path.join(
         get_package_share_directory('lucia_nav'), 'launch', 'navigation.launch.py')
+    tof_config = os.path.join(get_package_share_directory('lucia_tof'), 'config', 'tof.yaml')
 
     use_imu = LaunchConfiguration('use_imu')
+    use_tof = LaunchConfiguration('use_tof')
     with_imu = IfCondition(use_imu)
     settings = LaunchConfiguration('settings_file')     # last in each list: overrides the rest
 
@@ -71,7 +80,8 @@ def generate_launch_description():
         DeclareLaunchArgument('use_tof', default_value='false',
                               description='ToF safety stop: block forward driving while tof/near is true'),
         DeclareLaunchArgument('roomba_port', default_value='/dev/roomba'),
-        DeclareLaunchArgument('imu_port', default_value='/dev/imu'),
+        DeclareLaunchArgument('pico_port', default_value='/dev/imu',
+                              description='The sensor Pico (IMU + ToF sensors)'),
         DeclareLaunchArgument('settings_file', default_value=os.path.join(bringup_config, 'no_settings.yaml'),
                               description="Parameters file from the web page's settings menu"),
 
@@ -91,17 +101,20 @@ def generate_launch_description():
             package='lucia_bringup',
             executable='safety_gate',
             name='safety_gate',
-            parameters=[{'use_tof': LaunchConfiguration('use_tof')}, settings],
+            parameters=[{'use_tof': use_tof}, settings],
             output='screen',
         ),
 
         Node(
-            package='lucia_imu',
-            executable='imu_bridge',
-            name='imu_bridge',
-            parameters=[{'port': LaunchConfiguration('imu_port')}],
+            package='lucia_tof',
+            executable='tof_node',
+            name='tof_node',
+            parameters=[tof_config, {
+                'port': LaunchConfiguration('pico_port'),
+                'publish_imu': use_imu,
+            }],
             output='screen',
-            condition=with_imu,
+            condition=IfCondition(OrSubstitution(use_imu, use_tof)),
         ),
 
         Node(

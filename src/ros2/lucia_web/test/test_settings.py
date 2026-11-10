@@ -14,6 +14,7 @@ def test_defaults_check_out_and_match_the_code():
     assert d['top_speed'] == 0.30 and d['tight_min_speed'] == 0.10 and d['robot_radius'] == 0.23
     assert (d['linear_accel'], d['linear_decel'], d['angular_accel'], d['angular_decel']) == (0.3, 0.6, 1.5, 3.0)
     assert d['max_stuck'] == 3 and d['use_imu'] is True
+    assert d['use_tof'] is False        # until the ToF sensors are mounted
 
 
 def test_every_setting_describes_itself():

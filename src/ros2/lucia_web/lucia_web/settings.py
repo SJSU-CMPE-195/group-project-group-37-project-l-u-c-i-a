@@ -51,6 +51,9 @@ SETTINGS = [
     # Robot and sensors
     Setting('use_imu', 'Robot', 'Use the IMU', 'bool', True,
             help='Heading from the IMU (straighter maps). Off: wheels only, if the IMU is unplugged.'),
+    Setting('use_tof', 'Robot', 'ToF safety stop', 'bool', False,
+            help='Stops forward driving while the ToF sensors see something within 30 cm, or send '
+                 'nothing. Turning and backing up still work. Leave off until they are mounted.'),
     Setting('robot_radius', 'Robot', 'Robot radius', 'float', 0.23, 0.15, 0.40, 0.01, 'm',
             'Center to its furthest edge (18 in across = 0.23). For planning, the tight-space slowdown and drawing.'),
     # Tight spaces (safety_gate)

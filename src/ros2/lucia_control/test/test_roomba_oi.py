@@ -46,3 +46,29 @@ def test_define_and_play_song():
 def test_define_song_rejects(slot, notes):
     with pytest.raises(ValueError):
         make_roomba().define_song(slot, notes)
+
+
+class LineRecorder:
+    """Fake serial port that records RTS/DTR changes, to check the wake pulse."""
+
+    def __init__(self):
+        self.changes = []
+
+    def __setattr__(self, name, value):
+        if name in ('rts', 'dtr'):
+            self.changes.append((name, value))
+        object.__setattr__(self, name, value)
+
+
+def test_wake_pulses_rts_and_dtr_together(monkeypatch):
+    # RTS reaches BRC on the new cable, DTR on the old one: one low pulse on both, then released
+    sleeps = []
+    monkeypatch.setattr('time.sleep', sleeps.append)
+    roomba = RoombaOI.__new__(RoombaOI)
+    roomba.ser = LineRecorder()
+    roomba.wake()
+    states = roomba.ser.changes
+    assert [v for n, v in states if n == 'rts'] == [False, True, False]
+    assert [v for n, v in states if n == 'dtr'] == [False, True, False]
+    assert roomba.ser.rts is False and roomba.ser.dtr is False
+    assert sleeps[:2] == [0.5, 0.5]

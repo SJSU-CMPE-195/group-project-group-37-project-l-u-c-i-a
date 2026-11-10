@@ -1,6 +1,9 @@
-"""ROS 2 node that publishes the Pico's VL53L5CX ToF frames.
+"""ROS 2 node for the robot's sensor Pico: publishes the VL53L5CX ToF frames
+and the BNO08X IMU (imu/data, for the EKF).
 
-See the package README for topics and parameters.
+The robot has one Pico 2 for both, so this is the only program that opens it.
+It replaced lucia_imu's imu_bridge in mapping.launch.py on 2026-11-10. See the
+package README for topics and parameters.
 """
 import array
 import math
@@ -15,10 +18,10 @@ from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data
 from rclpy.time import Time
-from sensor_msgs.msg import Image, Range
+from sensor_msgs.msg import Image, Imu, Range
 from std_msgs.msg import Bool
 
-from lucia_tof import protocol
+from lucia_tof import imu, protocol
 
 # A sequence jump bigger than this is taken as a Pico restart, not drops.
 MAX_SEQ_GAP = 1000
@@ -40,6 +43,20 @@ class SensorState:
         self.diag_time = time.monotonic()
 
 
+class ImuState:
+
+    def __init__(self):
+        self.last = None        # time.monotonic() of the last good reading
+        self.reading = None     # the last good imu.Reading
+        self.source = None      # 'packets' (src/pico2/main.py) or 'lines' (src/imu/stream_main.py)
+        self.count = 0
+        self.bad = 0
+        self.diag_count = 0
+        self.diag_time = time.monotonic()
+        self.log_count = 0
+        self.warned = False
+
+
 class TofNode(Node):
 
     def __init__(self):
@@ -54,6 +71,16 @@ class TofNode(Node):
         self.max_range = self.declare_parameter('max_range', 4.0).value
         self.stale_timeout = self.declare_parameter('stale_timeout', 0.5).value
         near_rate = self.declare_parameter('near_rate', 10.0).value
+        # The IMU on the same Pico, published like lucia_imu's imu_bridge did:
+        # same topic, frame and variances (rough values, not measured).
+        self.publish_imu = self.declare_parameter('publish_imu', True).value
+        self.imu_frame_id = self.declare_parameter('imu_frame_id', 'imu_link').value
+        self.orientation_variance = self.declare_parameter('orientation_variance', 0.0025).value
+        self.angular_velocity_variance = self.declare_parameter(
+            'angular_velocity_variance', 0.0004).value
+        self.linear_acceleration_variance = self.declare_parameter(
+            'linear_acceleration_variance', 0.01).value
+        self.imu_warn_s = self.declare_parameter('imu_warn_s', 1.0).value
 
         self.sensors = [SensorState(n, prefix + n + '_link') for n in names]
         self.image_pubs = [
@@ -64,6 +91,9 @@ class TofNode(Node):
             for n in names]
         self.near_pub = self.create_publisher(Bool, 'tof/near', 10)
         self.diag_pub = self.create_publisher(DiagnosticArray, '/diagnostics', 10)
+        self.imu_pub = self.create_publisher(Imu, 'imu/data', 10) if self.publish_imu else None
+        self.imu_state = ImuState()
+        self.start_time = time.monotonic()
 
         # Zone index in the published image -> zone index in the packet.
         self.zone_map = []
@@ -80,6 +110,10 @@ class TofNode(Node):
 
         self.create_timer(1.0 / near_rate, self.publish_near)
         self.create_timer(1.0, self.publish_diagnostics)
+        if self.publish_imu:
+            self.create_timer(self.imu_warn_s, self.check_imu)
+            self.create_timer(2.0, self.log_imu)
+            self.get_logger().info('publishing the IMU on imu/data in frame ' + self.imu_frame_id)
         threading.Thread(target=self.serial_loop, daemon=True).start()
 
     # --- serial ------------------------------------------------------------
@@ -108,11 +142,11 @@ class TofNode(Node):
                     data = ser.read(ser.in_waiting or 1)
                     recv_ns = self.get_clock().now().nanoseconds
                     for item in self.parser.feed(data):
-                        if isinstance(item, str):
-                            self.get_logger().info('pico: ' + item)
-                        elif isinstance(item, protocol.Packet):
-                            # IMU packets are not published yet.
-                            self.handle_packet(item, recv_ns)
+                        try:
+                            self.handle_item(item, recv_ns)
+                        except Exception as e:  # noqa: BLE001 - one bad item mustn't stop this thread
+                            self.get_logger().error(
+                                'skipped a reading: {!r}'.format(e), throttle_duration_sec=5.0)
             except (serial.SerialException, OSError) as e:
                 self.get_logger().error('lost {}: {}'.format(self.port, e))
             finally:
@@ -120,6 +154,16 @@ class TofNode(Node):
                 with self.lock:
                     self.connected = False
                 self.publish_near()
+
+    def handle_item(self, item, recv_ns):
+        if isinstance(item, protocol.Packet):
+            self.handle_packet(item, recv_ns)
+        elif isinstance(item, protocol.ImuPacket):
+            self.handle_imu(imu.from_packet(item), 'packets', recv_ns)
+        elif imu.is_line(item):
+            self.handle_imu(imu.from_line(item), 'lines', recv_ns)
+        else:
+            self.get_logger().info('pico: ' + item)
 
     def handle_packet(self, pkt, recv_ns):
         s = self.sensors[pkt.sensor]
@@ -162,6 +206,77 @@ class TofNode(Node):
 
         self.publish_near()
 
+    # --- IMU ---------------------------------------------------------------
+
+    def handle_imu(self, reading, source, recv_ns):
+        with self.lock:
+            st = self.imu_state
+            st.source = source
+            if reading is None:
+                st.bad += 1
+                return
+            st.last = time.monotonic()
+            st.reading = reading
+            st.count += 1
+        if self.imu_pub is None:
+            return
+
+        # Stamped when it arrived, as imu_bridge did. (Packets also carry the
+        # Pico's own sample time, if that's ever needed.)
+        msg = Imu()
+        msg.header.stamp = Time(nanoseconds=recv_ns).to_msg()
+        msg.header.frame_id = self.imu_frame_id
+        q = msg.orientation
+        q.w, q.x, q.y, q.z = reading.orientation
+        g = msg.angular_velocity
+        g.x, g.y, g.z = reading.gyro
+        for i in (0, 4, 8):
+            msg.orientation_covariance[i] = self.orientation_variance
+            msg.angular_velocity_covariance[i] = self.angular_velocity_variance
+        if reading.accel is None:
+            msg.linear_acceleration_covariance[0] = -1.0  # not sent (stream_main.py)
+        else:
+            a = msg.linear_acceleration
+            a.x, a.y, a.z = reading.accel
+            for i in (0, 4, 8):
+                msg.linear_acceleration_covariance[i] = self.linear_acceleration_variance
+        self.imu_pub.publish(msg)
+
+    def check_imu(self):
+        """Warn once when the IMU goes quiet, and say when it's back."""
+        now = time.monotonic()
+        with self.lock:
+            st = self.imu_state
+            quiet_s = now - (st.last if st.last is not None else self.start_time)
+            if quiet_s > self.imu_warn_s and not st.warned:
+                st.warned = True
+                news = 'quiet'
+            elif quiet_s <= self.imu_warn_s and st.warned:
+                st.warned = False
+                news = 'back'
+            else:
+                return
+        if news == 'quiet':
+            self.get_logger().warning(
+                'No IMU data for {:.1f} s - is the Pico on {} running src/pico2/main.py (or '
+                'src/imu/stream_main.py) with the IMU wired, and is nothing else holding the '
+                'port (e.g. VS Code MicroPico)?'.format(quiet_s, self.port))
+        else:
+            self.get_logger().info('IMU data flowing again')
+
+    def log_imu(self):
+        """Heading and rate every 2 s, at debug level (--log-level tof_node:=debug)."""
+        with self.lock:
+            st = self.imu_state
+            reading, source, bad = st.reading, st.source, st.bad
+            count, st.log_count = st.count - st.log_count, st.count
+        if reading is None:
+            return
+        self.get_logger().debug(
+            'IMU: yaw {:+.1f} deg, yaw rate {:+.1f} deg/s, {:.0f} readings/s ({}), '
+            '{} bad so far'.format(math.degrees(imu.yaw_rad(reading)),
+                                   math.degrees(reading.gyro[2]), count / 2.0, source, bad))
+
     # --- near flag and diagnostics -----------------------------------------
 
     def is_stale(self, s, now):
@@ -200,6 +315,30 @@ class TofNode(Node):
                     KeyValue(key='crc errors (all sensors)', value=str(self.parser.crc_errors)),
                 ]
                 msg.status.append(st)
+
+            ims = self.imu_state
+            rate = (ims.count - ims.diag_count) / (now - ims.diag_time)
+            ims.diag_count, ims.diag_time = ims.count, now
+            d = DiagnosticStatus()
+            d.name = 'imu (sensor pico)'
+            d.hardware_id = self.port
+            if not self.connected:
+                d.level, d.message = DiagnosticStatus.ERROR, 'not connected'
+            elif ims.last is None or now - ims.last > self.imu_warn_s:
+                d.level, d.message = DiagnosticStatus.ERROR, 'no recent readings'
+            else:
+                d.level, d.message = DiagnosticStatus.OK, 'ok'
+            age = 'never' if ims.last is None else '{:.2f}'.format(now - ims.last)
+            sent_by = {'packets': 'src/pico2/main.py', 'lines': 'src/imu/stream_main.py'}
+            d.values = [
+                KeyValue(key='rate (Hz)', value='{:.1f}'.format(rate)),
+                KeyValue(key='readings', value=str(ims.count)),
+                KeyValue(key='bad readings', value=str(ims.bad)),
+                KeyValue(key='seconds since last reading', value=age),
+                KeyValue(key='sent by', value=sent_by.get(ims.source, 'nothing yet')),
+                KeyValue(key='published on imu/data', value=str(self.publish_imu)),
+            ]
+            msg.status.append(d)
         self.diag_pub.publish(msg)
 
 

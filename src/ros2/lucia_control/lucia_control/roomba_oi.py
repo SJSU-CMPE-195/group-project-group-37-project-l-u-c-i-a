@@ -92,16 +92,26 @@ class RoombaOI:
 
     def wake(self):
         """
-        Wake the Roomba from sleep by pulsing the BRC pin low via RTS.
+        Wake the Roomba from sleep by pulsing the BRC pin low.
         Call this before start() if the Roomba may be asleep.
-        The BG046PKOA cable has BRC on RTS (rts=True pulls it low); DTR does nothing.
+
+        Which wire reaches BRC depends on the cable: RTS on the BG046PKOA cable
+        (Noel, 2026-10-25: an RTS pulse woke it, DTR did nothing), DTR on the
+        old FT232R cable, if its BRC wire is connected at all. Both lines are
+        pulsed together, so this works with either cable; the one that isn't
+        wired to BRC does nothing. True pulls BRC low (FTDI outputs are
+        active-low).
         """
-        self.ser.rts = False   # idle
+        self._set_brc(False)   # idle
         time.sleep(0.5)
-        self.ser.rts = True    # pull BRC low
+        self._set_brc(True)    # pull BRC low
         time.sleep(0.5)
-        self.ser.rts = False   # release
+        self._set_brc(False)   # release
         time.sleep(2)          # allow Roomba to fully wake
+
+    def _set_brc(self, low):
+        self.ser.rts = low
+        self.ser.dtr = low
 
     def start(self):
         """Enter OI passive mode. Always call this first."""

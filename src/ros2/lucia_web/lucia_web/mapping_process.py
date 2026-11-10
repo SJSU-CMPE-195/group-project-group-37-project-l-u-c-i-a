@@ -43,17 +43,18 @@ class MappingProcess:
         with self._lock:
             return list(self._log)[-count:]
 
-    def start(self, use_imu=True, settings_file=None):
+    def start(self, use_imu=True, use_tof=False, settings_file=None):
         """
-        Start mapping. settings_file: a ROS 2 parameters file with the page's
-        settings (settings.params_yaml), or None for the nodes' own defaults.
-        Returns False if it's already running.
+        Start mapping. use_tof: the ToF safety stop. settings_file: a ROS 2
+        parameters file with the page's settings (settings.params_yaml), or
+        None for the nodes' own defaults. Returns False if it's already running.
         """
         with self._lock:
             if self._proc is not None and self._proc.poll() is None:
                 return False
             self._log.clear()
-            args = self._command + [f'use_imu:={"true" if use_imu else "false"}']
+            args = self._command + [f'use_imu:={"true" if use_imu else "false"}',
+                                    f'use_tof:={"true" if use_tof else "false"}']
             if settings_file:
                 args.append(f'settings_file:={settings_file}')
             # Own process group, so stop() reaches every node the launch started.

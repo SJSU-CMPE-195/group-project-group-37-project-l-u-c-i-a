@@ -44,14 +44,14 @@ own WiFi.
 ## System Architecture
 
 Everything on the robot runs on the Raspberry Pi 5, as ROS 2 nodes in one Docker
-container. The lidar and the IMU reach the Pi over USB, the Roomba over its serial port,
+container. The lidar and the sensor Pico (IMU, time-of-flight sensors) reach the Pi over USB, the Roomba over its serial port,
 and people reach the robot through a web page on the Pi's own WiFi.
 
 ```mermaid
 flowchart TB
   subgraph pi["Raspberry Pi 5: ROS 2 Jazzy in Docker"]
     rplidar["rplidar driver"]
-    imu_bridge["imu_bridge"]
+    tof_node["tof_node<br/>(IMU + ToF)"]
     roomba_bridge["roomba_bridge"]
     ekf["EKF<br/>(wheels + IMU)"]
     slam["slam_toolbox<br/>(map + position)"]
@@ -62,7 +62,8 @@ flowchart TB
 
     rplidar -->|"/scan"| slam
     rplidar -->|"/scan"| nav2
-    imu_bridge -->|"/imu/data"| ekf
+    tof_node -->|"/imu/data"| ekf
+    tof_node -.->|"tof/near"| gate
     roomba_bridge -->|"/odom"| ekf
     ekf -->|"odom to base_link"| slam
     slam -->|"/map"| mission
@@ -75,7 +76,7 @@ flowchart TB
   end
 
   lidar["RPLidar A2M8"] -->|USB| rplidar
-  imu["BNO08X IMU<br/>on a Pico 2"] -->|USB| imu_bridge
+  pico["Pico 2: BNO08X IMU<br/>+ ToF sensors"] -->|USB| tof_node
   roomba_bridge -->|serial| roomba["Roomba 650<br/>(wheels, speaker)"]
   browser["Laptop or phone"] <-->|"robot's WiFi hotspot"| web_ui
 ```
@@ -104,7 +105,8 @@ How a run works:
    (start/stop mapping, Explore, HOME, STOP, drive, save map).
 
 In progress outside the Pi: a Jetson Nano with a ZED 2i camera (object recognition,
-results sent to the Pi) and time-of-flight sensors on a second Pico.
+results sent to the Pi), and three time-of-flight sensors on the IMU's Pico for a safety
+stop (the code is in, the sensors aren't mounted yet).
 
 ## Prerequisites
 
@@ -114,8 +116,8 @@ phone with WiFi and a web browser. Nothing to install.
 **To set up or update the Pi:**
 - Raspberry Pi 5 on Debian 13 (64-bit), with internet for the first setup
 - Docker with the Compose plugin, and git
-- The robot's USB devices: RPLidar A2M8, the IMU Pico 2 (BNO08X), and the Roomba's
-  USB-serial cable (FTDI FT232R)
+- The robot's USB devices: RPLidar A2M8, the sensor Pico 2 (BNO08X IMU, VL53L5CX
+  time-of-flight sensors), and the Roomba's USB-serial cable (FTDI)
 - An SSH client on your laptop
 - `mpremote` (`pipx install mpremote`) to load code onto the Picos
 
@@ -152,8 +154,9 @@ Then, once:
   [`docs/Raspberry Pi Initial Setup.md`](docs/Raspberry%20Pi%20Initial%20Setup.md)
 - **Fixed device names** (`/dev/roomba`, `/dev/rplidar`, `/dev/imu`):
   [`docs/setup/udev-rules.md`](docs/setup/udev-rules.md)
-- **IMU Pico:** load `src/imu/stream_main.py` onto it as `main.py` (see "The IMU Pico" in
-  [`ros2-pi.md`](docs/setup/ros2-pi.md))
+- **Sensor Pico:** load `src/pico2/main.py` onto it (IMU + ToF sensors; see
+  [`src/pico2/README.md`](src/pico2/README.md)), or the IMU-only `src/imu/stream_main.py`
+  (see "The sensor Pico" in [`ros2-pi.md`](docs/setup/ros2-pi.md)). The Pi reads either.
 
 **Updating** (on a WiFi with internet, from the repo folder):
 `git pull && docker compose -f docker/compose.yml restart`. No image rebuild is needed
@@ -207,11 +210,12 @@ python3 -m pytest test
 
 | Package | What the tests cover | Tests |
 |---|---|---|
-| `lucia_control` | Wheel-speed math, gradual speed changes (keeping the robot on its curve), position estimate, Roomba Open Interface commands, tunes | 51 |
-| `lucia_imu` | Reading the IMU Pico's output: valid lines, half-received lines, garbage, heading math | 13 |
+| `lucia_control` | Wheel-speed math, gradual speed changes (keeping the robot on its curve), position estimate, Roomba Open Interface commands (including the wake pulse), tunes | 52 |
+| `lucia_tof` | Reading the sensor Pico: packets, corruption, clock sync, IMU readings from either Pico program, heading math | 20 |
+| `lucia_imu` | Reading the IMU-only Pico program's output: valid lines, half-received lines, garbage, heading math | 13 |
 | `lucia_nav` | Finding frontiers, the mission's decisions (Explore, HOME, stuck, pause and resume), a full simulated exploration of two rooms, the stuck check against a simulated lidar in a room and a hallway | 87 |
 | `lucia_bringup` | The safety gate: time-of-flight block, slowing down in tight spaces | 12 |
-| `lucia_web` | The control page's logic (drive commands, map encoding, metrics, resuming after driving by hand), the settings menu (checking values, the parameters file it writes), starting and stopping mapping, tunes and MIDI import | 117 |
+| `lucia_web` | The control page's logic (drive commands, map encoding, metrics, resuming after driving by hand), the settings menu (checking values, the parameters file it writes), starting and stopping mapping, tunes and MIDI import | 131 |
 
 **On the robot.** Anything that needs ROS 2 is checked on the robot itself, following the
 checklists in [`TODO.md`](TODO.md); the results are written up in
@@ -224,9 +228,11 @@ checklists in [`TODO.md`](TODO.md); the results are written up in
 - Slowing down in tight spaces (2026-10-23): it was too slow, so its slowest speed went from
   6 to 10 cm/s (not yet re-tried)
 
-Not yet tried on the robot: the stuck check; and from 2026-10-23, the settings menu, the new
+Not yet tried on the robot: the stuck check; from 2026-10-23, the settings menu, the new
 page layout, and two changes to make tight spaces quicker (speed and turning ease together,
-and Nav2 looks less far ahead when slow).
+and Nav2 looks less far ahead when slow); from 2026-11-10, reading the IMU through the
+sensor Pico's new node, the ToF safety stop switch, and waking the Roomba with either
+cable.
 
 ## Demo
 
@@ -248,8 +254,8 @@ of a full Explore run is still to be recorded.
 ## Technical Stack
 
 **Hardware:** Roomba 650 base · Raspberry Pi 5 (256 GB microSD, 5 A UPS) · RPLidar A2M8 ·
-BNO08X IMU on a Raspberry Pi Pico 2 · VL53L5CX time-of-flight sensors on a Pico 2 (in
-progress) · Jetson Nano + ZED 2i stereo camera (in progress).
+BNO08X IMU and VL53L5CX time-of-flight sensors (being mounted) on one Raspberry Pi
+Pico 2 · Jetson Nano + ZED 2i stereo camera (in progress).
 
 **Software:** ROS 2 Jazzy in Docker on the Pi (the Pi runs Debian 13, which ROS 2 doesn't
 support directly). The container starts at boot (Docker Compose) and serves the control page.
@@ -258,13 +264,15 @@ support directly). The container starts at boot (Docker Compose) and serves the 
 |---|---|
 | `lucia_control` | `roomba_bridge`: drives the wheels over serial (Safe mode), position estimate, reconnect, tunes |
 | `lucia_lidar` | RPLidar driver + slam_toolbox (the map) |
-| `lucia_imu` | `imu_bridge`: reads the IMU Pico, publishes heading and turn rate |
+| `lucia_tof` | `tof_node`: reads the sensor Pico; publishes the IMU's heading and turn rate, and the time-of-flight distances and "something close" signal |
+| `lucia_imu` | `imu_bridge`: the earlier IMU reader (IMU-only Pico program), kept for checks by hand |
 | `lucia_bringup` | `mapping.launch.py` (starts everything), IMU + wheels fusion (EKF), `safety_gate` |
 | `lucia_nav` | Nav2 set up for the Roomba, and `mission`: Explore, Return HOME, go to a spot |
 | `lucia_web` | `web_ui`: the control page (also: logs, metrics, tunes and MIDI import) |
 | `lucia_vision` | Jetson / ZED camera code (doesn't build on the Pi) |
 
-Code for the Picos: `src/imu/` (IMU) and `src/tof_pico/` (ToF sensors).
+Code for the Pico: `src/pico2/` (IMU + ToF sensors), `src/imu/` (the IMU driver and the
+IMU-only program) and `src/tof_pico/` (ToF demos).
 Algorithms: SLAM (slam_toolbox), frontier exploration (our own, `lucia_nav/frontier.py`),
 path planning and following (Nav2), sensor fusion (EKF, robot_localization), YOLO object
 detection (Jetson, in progress). Languages: Python, MicroPython, C++.
@@ -277,7 +285,8 @@ detection (Jetson, in progress). Languages: Python, MicroPython, C++.
 | [`TODO.md`](TODO.md) | Live task list |
 | [`docs/changelogs/`](docs/changelogs/) | What changed when, session by session |
 | [`docs/setup/udev-rules.md`](docs/setup/udev-rules.md) | Fixed device names (`/dev/roomba`, `/dev/rplidar`, `/dev/imu`) |
-| [`docs/BNO08X Pico2 Setup.md`](docs/BNO08X%20Pico2%20Setup.md) | The IMU Pico |
+| [`src/pico2/README.md`](src/pico2/README.md) | The sensor Pico: wiring, loading its code |
+| [`docs/BNO08X Pico2 Setup.md`](docs/BNO08X%20Pico2%20Setup.md) | The IMU's wiring on the Pico |
 | [`docs/setup/ros2-jetson.md`](docs/setup/ros2-jetson.md), [`docs/jetson_nano_zed_setup.md`](docs/jetson_nano_zed_setup.md) | Jetson and camera |
 | [`docs/Roomba Serial Scripts/`](docs/Roomba%20Serial%20Scripts/Roomba%20Serial%20Scripts.md) | Last semester's Python scripts for the Roomba (`src/scripts/`) |
 

@@ -78,12 +78,14 @@ DEFAULT_ADDR = 0x29
 RANGING_FREQ = 60         # Hz (max 60 for 4x4)
 
 # BNO08X IMU on I2C1 (GP2 = SDA, GP3 = SCL), INT on GP16. RST is not
-# connected, so the driver resets it over I2C. ADD not connected = 0x4B
-# (the GY-BNO08X board pulls it high); ADD to GND = 0x4A.
+# connected, so the driver resets it over I2C. Its address depends on the
+# ADD pin: 0x4A with ADD to GND (the IMU on the robot, Ling's wiring), 0x4B
+# with ADD not connected (the GY-BNO08X board pulls it high). The first one
+# found is used.
 IMU_ENABLED = True
 IMU_SDA_PIN, IMU_SCL_PIN = 2, 3
 IMU_INT_PIN = 16
-IMU_ADDR = 0x4B
+IMU_ADDRS = (0x4A, 0x4B)
 IMU_I2C_FREQ = 400_000
 IMU_HZ = 100
 
@@ -218,11 +220,14 @@ def setup_imu():
         from imu.i2c import BNO08X_I2C
 
         i2c = I2C(1, sda=Pin(IMU_SDA_PIN), scl=Pin(IMU_SCL_PIN), freq=IMU_I2C_FREQ)
-        if IMU_ADDR not in i2c.scan():
-            log("IMU not found at 0x{:02X} (scan: {}), continuing without it".format(
-                IMU_ADDR, [hex(a) for a in i2c.scan()]))
+        found = i2c.scan()
+        addrs = [a for a in IMU_ADDRS if a in found]
+        if not addrs:
+            log("IMU not found at {} (scan: {}), continuing without it".format(
+                " or ".join("0x{:02X}".format(a) for a in IMU_ADDRS), [hex(a) for a in found]))
             return None
-        bno = BNO08X_I2C(i2c, address=IMU_ADDR,
+        log("IMU at 0x{:02X}".format(addrs[0]))
+        bno = BNO08X_I2C(i2c, address=addrs[0],
                          int_pin=Pin(IMU_INT_PIN, Pin.IN, Pin.PULL_UP), reset_pin=None)
         bno.game_quaternion.enable(IMU_HZ)
         bno.gyro.enable(IMU_HZ)
@@ -283,8 +288,16 @@ def main():
     if STOP_PIN is not None:
         stop = Pin(STOP_PIN, Pin.OUT, value=STOP_ACTIVE)
 
+    # Each half keeps going without the other: the robot needs the IMU's
+    # heading even before the ToF sensors are wired. Missing ToF sensors are
+    # still safe: the Pi counts a sensor that sends nothing as "something
+    # close", and the stop pin stays at "stop".
     i2c = I2C(0, sda=Pin(SDA_PIN), scl=Pin(SCL_PIN), freq=I2C_FREQ)
-    sensors = setup_sensors(i2c)
+    try:
+        sensors = setup_sensors(i2c)
+    except Exception as e:
+        log("ToF setup failed ({!r}), continuing without the ToF sensors".format(e))
+        sensors = []
     bno = setup_imu() if IMU_ENABLED else None
 
     # Raw byte stream; no newline translation.

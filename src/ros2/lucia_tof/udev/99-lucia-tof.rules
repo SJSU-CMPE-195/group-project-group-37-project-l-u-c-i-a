@@ -1,10 +1,12 @@
-# Gives the ToF Pico a stable name, /dev/lucia_tof.
-# 2e8a:0005 is MicroPython's USB serial on any Pico. If another MicroPython
-# board is plugged in, also match its serial number, from
-#   udevadm info -a -n /dev/ttyACM0 | grep serial
-# e.g. add: ATTRS{serial}=="E6614C311B7A1234"
+# Gives the robot's sensor Pico (one Pico 2: ToF sensors + IMU) the stable
+# name /dev/imu. This is the same line as in the Pi's
+# /etc/udev/rules.d/99-lucia.rules (docs/setup/ros2-pi.md, "Devices and udev
+# rules"); on the robot, edit that file rather than installing this one.
 #
-# Install:
-#   sudo cp 99-lucia-tof.rules /etc/udev/rules.d/
+# 2e8a:0005 is MicroPython's USB serial on every Pico, so the serial number is
+# what picks this board. fd92d5f577b9417b is the Pico on the robot since
+# 2026-10-16. For a different board, get its number with
+#   udevadm info -q property -n /dev/ttyACM0 | grep ID_SERIAL_SHORT
+# and put it below. Then:
 #   sudo udevadm control --reload-rules && sudo udevadm trigger
-SUBSYSTEM=="tty", ATTRS{idVendor}=="2e8a", ATTRS{idProduct}=="0005", SYMLINK+="lucia_tof", MODE="0666"
+SUBSYSTEM=="tty", ATTRS{idVendor}=="2e8a", ATTRS{idProduct}=="0005", ATTRS{serial}=="fd92d5f577b9417b", SYMLINK+="imu"
