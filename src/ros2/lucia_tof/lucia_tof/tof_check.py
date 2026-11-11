@@ -9,8 +9,8 @@ Twice a second: each sensor's nearest distance, and NEAR when tof_node would
 stop the robot: something in its path within the stop distance (zones.py,
 --stop, default 0.15 m past the front of the Roomba), with the glitch guards
 (near_filter.py). At the end: frames per second, readings too close
-to be real (glitches the filter drops), each sensor's 4x4 grid in mm (-1 = no
-reading, row 0 at the top), the IMU's rate and the Pico's own messages.
+to be real (glitches the filter drops), each sensor's 4x4 grid in mm: each
+zone's median over the run (-1 = no reading in most frames; row 0 at the top), the IMU's rate and the Pico's own messages.
 
 Hand test: hold a hand about 15 cm in front of one sensor at a time; only that
 sensor should drop and say NEAR. Names are the robot's own left / middle /
@@ -18,6 +18,7 @@ right (checked on the robot 2026-11-10).
 """
 import argparse
 import os
+import statistics
 import time
 
 from lucia_tof import protocol, zones
@@ -44,6 +45,7 @@ def check(read, seconds, clock=time.monotonic, out=print, min_mm=20, stop_m=0.15
     frames = [0] * len(NAMES)
     glitches = [0] * len(NAMES)
     last = [None] * len(NAMES)          # (packet, nearest_mm, near)
+    readings = [[[] for _ in range(protocol.ZONES)] for _ in NAMES]
     imu = 0
     texts = []
     start = tick = clock()
@@ -56,6 +58,9 @@ def check(read, seconds, clock=time.monotonic, out=print, min_mm=20, stop_m=0.15
                     glitches[i] += 1
                 in_way = zones.in_the_way(item.distances, zones.MOUNTS[NAMES[i]], box, min_mm)
                 last[i] = (item,) + filters[i].update(item.distances, in_way)
+                for z, d in enumerate(item.distances):
+                    if d >= min_mm:
+                        readings[i][z].append(d)
             elif isinstance(item, protocol.ImuPacket):
                 imu += 1
             else:
@@ -66,15 +71,17 @@ def check(read, seconds, clock=time.monotonic, out=print, min_mm=20, stop_m=0.15
                            for n, l in zip(NAMES, last)))
     elapsed = max(clock() - start, 1e-9)
     out('')
-    for n, f, g, l in zip(NAMES, frames, glitches, last):
+    for i, (n, f, g, l) in enumerate(zip(NAMES, frames, glitches, last)):
         line = '{}: {:.0f} frames/s'.format(n, f / elapsed)
         if l is None:
             out(line + '  <- nothing from this sensor')
             continue
-        valid = sum(1 for d in l[0].distances if d >= min_mm)
+        # each zone's median, if it had a reading in at least half the frames
+        grid = [round(statistics.median(z)) if len(z) * 2 >= f else -1 for z in readings[i]]
+        valid = sum(1 for d in grid if d >= 0)
         out(line + ', {} of 16 zones see something, {} frames with a glitch'.format(valid, g))
         for r in range(protocol.SIDE):
-            row = l[0].distances[protocol.SIDE * r:protocol.SIDE * (r + 1)]
+            row = grid[protocol.SIDE * r:protocol.SIDE * (r + 1)]
             out('   ' + ' '.join('{:6}'.format(d) for d in row))
     out('IMU: {:.0f} readings/s   damaged packets: {}'.format(imu / elapsed, parser.crc_errors))
     for t in texts[:10]:

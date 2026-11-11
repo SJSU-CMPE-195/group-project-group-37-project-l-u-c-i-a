@@ -26,6 +26,9 @@ def test_check_counts_frames_glitches_and_prints_grids():
     assert 'middle: 600 mm' in text and 'NEAR' not in text     # the glitches never show as NEAR
     assert 'right: 0 frames/s  <- nothing from this sensor' in text
     assert '10 frames with a glitch' in text
+    # grids are each zone's median: the 0 mm glitches don't show in the middle sensor's
+    assert 'middle: 20 frames/s, 16 of 16 zones see something' in text
+    assert '      600    600    600    600' in text
 
 
 def test_tof_node_running(tmp_path):
