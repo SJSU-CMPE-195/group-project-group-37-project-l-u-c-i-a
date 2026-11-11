@@ -400,7 +400,10 @@ same web page.
   switched itself off twice with the camera running: the adapter on hand is too weak. It stays on in **5 W mode**
   (`sudo nvpmodel -m 1` on the Jetson), with slower detection
 - [ ] A 5 V 4 A adapter for the Nano on the bench (ask Ethan which one he used 2026-10-23), then `sudo nvpmodel -m 0`
-  for full power. Is the stream smooth on the page over the hotspot?
+  for full power. Is the stream smooth on the page over the hotspot? Even in 5 W mode it isn't enough
+  (2026-11-11): the Nano restarted by itself, `dmesg` showed `soctherm: OC ALARM` (its over-current alarm) and the
+  ZED failing to connect (`error -71`, "Cannot enable"), so the camera was gone. Stopgap: a powered USB 3 hub for
+  the ZED
 - [ ] Sign test: does a raised hand at 1.5-2 m stay in view and fire `follow`?
 
 Flow: ZED 2 → Nano (finds people, reads the sign) → network → Pi node (`/person`, `/gesture`) → mission `follow`
