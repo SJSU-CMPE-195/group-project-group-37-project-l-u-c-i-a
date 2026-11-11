@@ -356,9 +356,12 @@ same web page.
 - [x] The Jetson link (2026-11-10): Ethernet cable Pi ↔ Nano. Pi `192.168.1.1` (static), its `dnsmasq` gives the
   Nano's MAC (`48:b0:2d:5b:0e:c3`) `192.168.1.2` and nothing else; `follow_sender.service` sends to
   `--host 192.168.1.1`. Lease and ping work. Setup and checks: `docs/setup/ros2-pi.md`, "The Jetson link"
-- [ ] The camera stream over the link: the ZED wasn't detected on 2026-11-10 ("CAMERA NOT DETECTED", the service
-  retries every few seconds). ZED straight into a USB 3.0 port, Nano on its 5 V 4 A supply; then `curl` from the
-  Pi gives 200, and the page's Camera at `192.168.1.2:8080`. Then: is it smooth over the hotspot?
+- [x] The camera stream over the link (2026-11-10): `curl` from the Pi gives 200, about 10 frames a second; on the
+  page: Camera → ⚙ → `192.168.1.2:8080`. First the ZED wasn't detected (replugged, Jetson restarted), then the Nano
+  switched itself off twice with the camera running: the adapter on hand is too weak. It stays on in **5 W mode**
+  (`sudo nvpmodel -m 1` on the Jetson), with slower detection
+- [ ] A 5 V 4 A adapter for the Nano on the bench (ask Ethan which one he used 2026-10-23), then `sudo nvpmodel -m 0`
+  for full power. Is the stream smooth on the page over the hotspot?
 - [ ] Sign test: does a raised hand at 1.5-2 m stay in view and fire `follow`?
 
 Flow: ZED 2 → Nano (finds people, reads the sign) → network → Pi node (`/person`, `/gesture`) → mission `follow`

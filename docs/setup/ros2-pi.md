@@ -242,33 +242,51 @@ At boot it always starts the hotspot: `pi-ap` has autoconnect priority 100 and
 every saved WiFi has 0 (checked 2026-10-17). Saved WiFi on the Pi: Christian's
 personal network and `LiveLaughLove`.
 
-**Switch to a shared WiFi.** Do it from an SSH session over the hotspot; the
-session just drops when the hotspot goes away, and you reconnect over that WiFi:
-```bash
-nmcli connection show                        # saved networks
-sudo systemctl stop dnsmasq                  # the hotspot's address server - stop it first
-sudo nmcli connection up "<network name or UUID>" || sudo systemctl start dnsmasq
-```
-Then join your laptop to that same WiFi and `ssh lucia@lucia.local` (the Pi
-announces its name on the network with avahi, so you don't need its IP; not yet
-tried from the laptop). Otherwise: `ip -4 addr show wlan0` on the Pi, or your
-router's device list.
+### Getting in
 
-If the WiFi doesn't come up (wrong password, out of range), NetworkManager falls
-back to the hotspot by itself. The `|| sudo systemctl start dnsmasq` restarts the
-address server for that case. If you ever see `lucia-control` but your laptop
-gets no address, `dnsmasq` is still stopped: reboot the Pi, or give the laptop the
+You always reach the Pi over its WiFi, never through the Ethernet port (that's
+the Jetson's).
+
+**On the hotspot** (what the Pi starts at every boot): join the WiFi
+`lucia-control` (password: ask the team), then
+- SSH: `ssh lucia@10.42.0.1`
+- the page: http://10.42.0.1:8080
+- the Jetson, through the Pi: `ssh -J lucia@10.42.0.1 lucia@192.168.1.2` (a
+  laptop on the hotspot can't reach the Jetson's cable directly)
+
+**Switching the Pi to a home WiFi** (for internet, e.g. to update):
+1. SSH in over the hotspot (above).
+2. Find the WiFi's name: `nmcli connection show` lists the saved ones.
+3. Run:
+   ```bash
+   sudo systemctl stop dnsmasq                  # the hotspot's address server - stop it first
+   sudo nmcli connection up "<WiFi name>" || sudo systemctl start dnsmasq
+   ```
+   Your session freezes and drops: the hotspot just went away. That's expected.
+4. Join your laptop to that same WiFi, then `ssh lucia@lucia.local` (the Pi
+   announces its name with avahi; not yet confirmed from the laptop). Otherwise
+   use the Pi's address on that network, from your router's device list. The
+   page is on port 8080 there too, e.g. `http://lucia.local:8080`.
+
+If the Pi can't join the WiFi (wrong password, out of range), NetworkManager
+goes back to the hotspot by itself within about a minute, and the
+`|| sudo systemctl start dnsmasq` restarts the hotspot's address server; join
+`lucia-control` again. If you ever see `lucia-control` but your laptop gets no
+address, `dnsmasq` is still stopped: reboot the Pi, or give the laptop the
 address `10.42.0.50/24` by hand, `ssh lucia@10.42.0.1`, and run
 `sudo systemctl start dnsmasq`.
 
-**Back to the hotspot:** reboot, or
+The Jetson keeps working while the Pi is on a home WiFi: it's on the Ethernet
+port, and the address the Pi gave it lasts 24 h.
+
+**Back to the hotspot:** `sudo reboot` (it always starts on its hotspot), or
 `sudo nmcli connection up pi-ap && sudo systemctl start dnsmasq` (the session
 drops; join `lucia-control`).
 
-The page is on port 8080 whichever network the Pi is on, for example
-`http://lucia.local:8080`.
-
-SSH: `ssh lucia@10.42.0.1` on the hotspot, `ssh lucia@lucia.local` elsewhere.
+This can't lock you out: the Pi always has the hotspot to fall back on. Changing
+the Ethernet port's settings while you're connected through it can, which is
+why that port is only ever changed from an SSH session over the hotspot (see
+"The Jetson link").
 
 **Turning it off without a screen:** press the Pi 5's power button, then press it
 again (on the desktop version of the OS the first press opens a shutdown menu).
@@ -311,6 +329,20 @@ the Jetson: SSH into the Pi, then `ssh lucia@192.168.1.2`. If the Jetson came up
 before the Pi, unplug and replug its cable so it asks for an address again.
 Stopping `dnsmasq` (switching WiFi) doesn't cut the Jetson off: its address lasts
 24 h.
+
+**The camera on the page:** Camera → ⚙ → `192.168.1.2:8080`. The Pi relays it;
+a browser on the hotspot can't open `192.168.1.2` itself. Checked 2026-11-10:
+`200` and about 10 frames a second over the link.
+
+**Power:** with the adapter on hand (2026-11-10), the Nano switched itself off
+a minute or two after the camera and the body-tracking model started (Ethan saw
+the same; it needs 5 V 4 A in its DC jack; the Waveshare carrier board has no
+J48 jumper). In its **5 W mode** it stays on: on the Jetson,
+`sudo nvpmodel -m 1` (`sudo nvpmodel -q` shows the mode; it stays after
+restarts). Detection is slower in 5 W mode; with a proper 5 V 4 A supply, go
+back to full power with `sudo nvpmodel -m 0`. Tip: unplug the ZED before
+booting if it keeps switching off, so there's time to SSH in and change the
+mode; the sender picks the camera up within seconds of plugging it back in.
 
 **Never change the Ethernet settings while you're SSH'd in through that port**
 (2026-11-10: that locked Christian out). Check with `echo $SSH_CONNECTION`: it
