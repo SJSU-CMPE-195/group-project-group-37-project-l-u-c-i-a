@@ -505,6 +505,7 @@ are used, and the EKF treats the starting heading as 0.
 | Tool | What it tells you |
 |---|---|
 | `ros2 run lucia_lidar scan_check` | Closest lidar reading's distance and angle, once a second. Hand in front of the robot ≈ ±180°, on its left ≈ -90° |
+| `ros2 run lucia_tof tof_check` | What each ToF sensor sees for 10 s: live nearest distance and NEAR, frames per second, glitches, 4x4 grids, IMU rate (stop mapping first) |
 | `ros2 run lucia_tof tof_node --ros-args -p port:=/dev/imu --log-level tof_node:=debug` | IMU heading, turn rate and readings per second every 2 s, plus the Pico's own messages (stop mapping first: it owns `/dev/imu`) |
 | `ros2 topic hz /scan` (or `/imu/data`, `/odom`) | Whether a topic is publishing, and how fast |
 | `ros2 node list`, `ros2 topic list --no-daemon` | What's running and visible |

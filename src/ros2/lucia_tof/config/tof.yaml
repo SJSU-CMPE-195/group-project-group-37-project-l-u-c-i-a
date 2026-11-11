@@ -9,6 +9,9 @@ tof_node:
     max_range: 4.0              # m, Range.max_range
     stale_timeout: 0.5          # s without a frame before tof/near goes true
     near_rate: 10.0             # Hz, tof/near is also sent on every frame
+    near_mm: 300                # closer than this = near (same as the Pico's NEAR_MM)
+    near_frames: 3              # frames in a row before a sensor's answer changes (~50 ms)
+    min_range_mm: 20            # closer readings are glitches, unless half the zones agree
     publish_imu: true           # IMU readings on imu/data (mapping.launch.py sets this from use_imu)
     imu_frame_id: imu_link
     orientation_variance: 0.0025          # about 3 deg; rough, not measured (same as imu_bridge)

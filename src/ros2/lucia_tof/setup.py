@@ -25,6 +25,7 @@ setup(
     entry_points={
         'console_scripts': [
             'tof_node = lucia_tof.tof_node:main',
+            'tof_check = lucia_tof.tof_check:main',
         ],
     },
 )

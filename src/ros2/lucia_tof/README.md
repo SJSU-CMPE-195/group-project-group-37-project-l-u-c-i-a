@@ -33,9 +33,9 @@ the Pico is unplugged or restarts.
 
 ## Topics
 
-`<name>` is `left`, `middle` or `right` (left to right as seen standing in
-front of the robot). Each sensor publishes about 60 Hz, independently; the
-sensors are not synchronized.
+`<name>` is `left`, `middle` or `right`: the robot's own left, middle and right
+(checked on the robot 2026-11-10 with a hand in front of each). Each sensor
+publishes about 60 Hz, independently; the sensors are not synchronized.
 
 | Topic | Type | QoS | Contents |
 |---|---|---|---|
@@ -87,8 +87,15 @@ image it came from.
 
 True when any of these holds:
 
-- some sensor's latest frame has a valid zone closer than the Pico's
-  `NEAR_MM` (300 mm by default, set in `src/pico2/main.py`);
+- some sensor sees something closer than `near_mm` (300 mm, the same as the
+  Pico's `NEAR_MM`), decided with two guards against glitches
+  (`lucia_tof/near_filter.py`): readings closer than the sensor can measure
+  (`min_range_mm`, 20) are dropped, unless half or more of the zones read that
+  close at once (something pressed against it); and a sensor's answer only
+  changes after `near_frames` (3) frames in a row agree, about 50 ms. On the
+  robot the middle sensor sent "0 mm" with nothing in front of it (2026-11-10),
+  which used to count as near and would have stopped the robot for nothing.
+  The Pico's own near flag isn't used;
 - some sensor has sent no frame for `stale_timeout` (0.5 s), including at
   startup before the first frame;
 - the Pico is not connected.
@@ -146,6 +153,9 @@ and which Pico program sent them. View with `rqt_robot_monitor` or
 | `max_range` | 4.0 | m, reported in `Range.max_range` |
 | `stale_timeout` | 0.5 | s without a frame before a sensor counts as stale |
 | `near_rate` | 10.0 | Hz, minimum `tof/near` publish rate |
+| `near_mm` | 300 | closer than this = near |
+| `near_frames` | 3 | frames in a row before a sensor's near / clear answer changes |
+| `min_range_mm` | 20 | readings closer than this are glitches (unless half the zones agree: covered) |
 | `publish_imu` | true | publish `imu/data` (`mapping.launch.py` sets it from `use_imu`) |
 | `imu_frame_id` | `imu_link` | frame of `imu/data` |
 | `orientation_variance` | 0.0025 | rad², about 3 degrees; rough, not measured |
@@ -153,6 +163,19 @@ and which Pico program sent them. View with `rqt_robot_monitor` or
 | `linear_acceleration_variance` | 0.01 | (m/s²)²; the EKF doesn't use acceleration |
 | `imu_warn_s` | 1.0 | s without an IMU reading before it warns |
 | `imu_upside_down` | false (true in `config/tof.yaml`) | the board is chip side down: turn its readings over. Gravity decides when the readings include it (`main.py`), and a mismatch with this is logged |
+
+## Checking the sensors: `tof_check`
+
+```bash
+ros2 run lucia_tof tof_check            # 10 s; --seconds 20 for longer
+```
+
+Stop mapping first (it refuses while `tof_node` runs: both would read the same
+port). Twice a second it prints each sensor's nearest distance and NEAR, decided
+the way `tof_node` does; then frames per second (about 60 each), frames with a
+glitch, each sensor's 4x4 grid in mm (-1 = no reading, row 0 at the top), the
+IMU's rate and anything the Pico printed. For the hand test, hold a hand about
+15 cm in front of one sensor at a time: only that one should drop and say NEAR.
 
 ## Known gaps
 

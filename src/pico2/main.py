@@ -63,7 +63,7 @@ from vl53l5cx import (
 SDA_PIN, SCL_PIN = 0, 1
 I2C_FREQ = 1_000_000
 
-# Listed left to right as seen standing in front of the sensors.
+# The robot's own left, middle and right (checked on the robot 2026-11-10).
 # (name, LPn GPIO or None if not connected, unique I2C address)
 # At most one sensor may have LPn not connected: it is always enabled, so it
 # must be readdressed first while the others are held off.

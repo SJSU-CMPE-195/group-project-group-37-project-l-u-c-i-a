@@ -170,10 +170,14 @@ Decided 2026-10-16: built on the **ToF distance sensors** the team is implementi
   stop" in the page's settings sets `use_tof` (off by default)
 - [x] ToF sensors checked on the robot (2026-11-10, Noel's Pico with his `main.py`, read straight from `/dev/imu`
   with mapping stopped): all three at 60 frames/s, IMU 88/s, no damaged packets. Hand test: each sensor alone
-  dropped to 16-26 cm and flagged NEAR, so left / middle / right are in the right order (Noel's names are as seen
-  facing the robot: his "left" is the robot's right). The cones overlap: a hand between two shows in both. The
-  bottom rows of middle and right see the floor at 53-66 cm, beyond the 30 cm NEAR line. Two "0 mm NEAR"
-  readings from the middle sensor in the first run, none in the second (probably a hand on it; watch for it)
+  dropped to 16-26 cm and flagged NEAR, so left / middle / right are in the right order, and they're the robot's
+  own left / middle / right (Christian; Noel's comment said "as seen standing in front", corrected). The cones
+  overlap: a hand between two shows in both. The bottom rows of middle and right see the floor at 53-66 cm,
+  beyond the 30 cm NEAR line
+- [x] Glitch: the middle sensor sent "0 mm NEAR" twice in 10 s with nothing in front of it (2026-11-10). `tof_node`
+  now decides near itself (`lucia_tof/near_filter.py`): drops readings under 20 mm unless half the zones agree
+  (covered), and a sensor's answer changes only after 3 frames in a row (about 50 ms). Tested here; not yet on
+  the robot. `ros2 run lucia_tof tof_check` replaces the pasted check script and counts glitches
 - [ ] The stop itself (the gate's stop is ramped like every stop: about 2 cm extra at 15 cm/s, 8 cm at 30 cm/s,
   inside the 300 mm): "ToF safety stop" on, drive toward a wall by keyboard
 - [ ] Noel's known gaps (`lucia_tof/README.md`): image orientation (`flip_h` / `flip_v`) and radial vs.

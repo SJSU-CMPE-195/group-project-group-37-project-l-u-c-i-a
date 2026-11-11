@@ -22,11 +22,11 @@ from sensor_msgs.msg import Image, Imu, Range
 from std_msgs.msg import Bool
 
 from lucia_tof import imu, protocol
+from lucia_tof.near_filter import NearFilter
 
 # A sequence jump bigger than this is taken as a Pico restart, not drops.
 MAX_SEQ_GAP = 1000
 FIELD_OF_VIEW = math.radians(45.0)
-MIN_RANGE = 0.02  # m
 
 
 class SensorState:
@@ -70,6 +70,10 @@ class TofNode(Node):
         self.flip_v = self.declare_parameter('flip_v', False).value
         self.max_range = self.declare_parameter('max_range', 4.0).value
         self.stale_timeout = self.declare_parameter('stale_timeout', 0.5).value
+        # Near / clear per sensor, with the glitch guards in near_filter.py
+        self.near_mm = self.declare_parameter('near_mm', 300).value
+        self.near_frames = self.declare_parameter('near_frames', 3).value
+        self.min_range_mm = self.declare_parameter('min_range_mm', 20).value
         near_rate = self.declare_parameter('near_rate', 10.0).value
         # The IMU on the same Pico, published like lucia_imu's imu_bridge did:
         # same topic, frame and variances (rough values, not measured).
@@ -88,6 +92,8 @@ class TofNode(Node):
         self.imu_undecided = 0
 
         self.sensors = [SensorState(n, prefix + n + '_link') for n in names]
+        self.near_filters = [NearFilter(self.near_mm, self.near_frames, self.min_range_mm)
+                             for _ in names]
         self.image_pubs = [
             self.create_publisher(Image, 'tof/{}/image'.format(n), qos_profile_sensor_data)
             for n in names]
@@ -142,6 +148,8 @@ class TofNode(Node):
                 self.connected = True
                 for s in self.sensors:
                     s.last_seq = None
+                for f in self.near_filters:
+                    f.reset()
             try:
                 while rclpy.ok():
                     data = ser.read(ser.in_waiting or 1)
@@ -172,6 +180,7 @@ class TofNode(Node):
 
     def handle_packet(self, pkt, recv_ns):
         s = self.sensors[pkt.sensor]
+        nearest_mm, near = self.near_filters[pkt.sensor].update(pkt.distances)
         stamp = Time(nanoseconds=self.clock_sync.stamp(pkt.ticks_ms, recv_ns)).to_msg()
 
         with self.lock:
@@ -181,7 +190,7 @@ class TofNode(Node):
                     s.drops += gap
             s.last_seq = pkt.seq
             s.last_frame = time.monotonic()
-            s.near = pkt.near
+            s.near = near
             s.frames += 1
 
         img = Image()
@@ -191,7 +200,9 @@ class TofNode(Node):
         img.encoding = '16UC1'
         img.is_bigendian = 0
         img.step = protocol.SIDE * 2
-        mm = array.array('H', (max(pkt.distances[i], 0) for i in self.zone_map))
+        # 0 = no reading (ROS depth image convention), also for readings too close to be real
+        mm = array.array('H', (d if d >= self.min_range_mm else 0
+                               for d in (pkt.distances[i] for i in self.zone_map)))
         if sys.byteorder != 'little':
             mm.byteswap()
         img.data = mm.tobytes()
@@ -201,12 +212,12 @@ class TofNode(Node):
         rng.header = img.header
         rng.radiation_type = Range.INFRARED
         rng.field_of_view = FIELD_OF_VIEW
-        rng.min_range = MIN_RANGE
+        rng.min_range = self.min_range_mm / 1000.0
         rng.max_range = float(self.max_range)
-        if pkt.nearest_mm == protocol.INVALID:
+        if nearest_mm == protocol.INVALID:
             rng.range = math.inf
         else:
-            rng.range = pkt.nearest_mm / 1000.0
+            rng.range = max(nearest_mm / 1000.0, rng.min_range)   # covered: as close as it measures
         self.range_pubs[pkt.sensor].publish(rng)
 
         self.publish_near()
