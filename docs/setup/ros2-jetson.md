@@ -13,8 +13,9 @@ ships Ubuntu 22.04 (Jammy), meaning ROS2 Humble is the correct distro for the Je
 ## Prerequisites
 
 - Jetson Nano flashed with JetPack 5.x
-- J48 jumper shorted (barrel jack power enabled)
-- 5V/4A power supply connected to barrel jack
+- 5V/4A power supply in the DC jack. The team's Nano sits on a Waveshare `JETSON-IO-BASE-A`
+  carrier board, which has no J48 jumper (that's on NVIDIA's own developer kit). With a weaker
+  supply the Nano switches off once the ZED and the detection model run (2026-11-10)
 - ZED 2i connected to USB 3.0 (blue port)
 - Ethernet cable connected to Raspberry Pi
 
