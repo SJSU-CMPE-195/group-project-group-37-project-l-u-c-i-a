@@ -14,14 +14,16 @@ import time
 import rclpy
 import serial
 from diagnostic_msgs.msg import DiagnosticArray, DiagnosticStatus, KeyValue
+from geometry_msgs.msg import TransformStamped
 from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data
 from rclpy.time import Time
-from sensor_msgs.msg import Image, Imu, Range
+from sensor_msgs.msg import Image, Imu, PointCloud2, PointField, Range
 from std_msgs.msg import Bool
+from tf2_ros import StaticTransformBroadcaster
 
-from lucia_tof import imu, protocol, zones
+from lucia_tof import imu, obstacles, protocol, zones
 from lucia_tof.near_filter import NearFilter
 
 # A sequence jump bigger than this is taken as a Pico restart, not drops.
@@ -85,7 +87,13 @@ class TofNode(Node):
             half_width=self.declare_parameter('half_width_m', 0.25).value,
             z_min=self.declare_parameter('z_min_m', 0.02).value,
             z_max=self.declare_parameter('z_max_m', 0.45).value)
-        self.radial = self.declare_parameter('radial', True).value
+        self.radial = self.declare_parameter('radial', False).value
+        # Obstacles and free space for Nav2's map (obstacles.py, nav2.yaml tof_layer)
+        self.map_obstacles = self.declare_parameter('map_obstacles', True).value
+        self.mark_max_mm = self.declare_parameter('mark_max_mm', 1000).value
+        self.free_max_mm = self.declare_parameter('free_max_mm', 1500).value
+        self.floor_margin_mm = self.declare_parameter('floor_margin_mm', 100).value
+        base_frame = self.declare_parameter('base_frame', 'base_link').value
         near_rate = self.declare_parameter('near_rate', 10.0).value
         # The IMU on the same Pico, published like lucia_imu's imu_bridge did:
         # same topic, frame and variances (rough values, not measured).
@@ -107,6 +115,35 @@ class TofNode(Node):
         self.near_filters = [NearFilter(self.near_mm, self.near_frames, self.min_range_mm)
                              for _ in names]
         self.mounts = [zones.MOUNTS.get(n) for n in names]
+        # Bottom-row floor distances per sensor (obstacles.FLOOR_MM; tof.yaml can override)
+        self.floor_rows = [
+            list(self.declare_parameter('floor_mm_' + n, obstacles.FLOOR_MM[n]).value)
+            if n in obstacles.FLOOR_MM else None
+            for n in names]
+        self.obstacle_pubs = [
+            self.create_publisher(PointCloud2, 'tof/{}/obstacles'.format(n), qos_profile_sensor_data)
+            for n in names]
+        self.free_pubs = [
+            self.create_publisher(PointCloud2, 'tof/{}/free'.format(n), qos_profile_sensor_data)
+            for n in names]
+        # Where each sensor sits on the robot, for Nav2 (and RViz)
+        self.tf_static = StaticTransformBroadcaster(self)
+        transforms = []
+        for sensor, mount in zip(self.sensors, self.mounts):
+            if mount is None:
+                continue
+            t = TransformStamped()
+            t.header.stamp = self.get_clock().now().to_msg()
+            t.header.frame_id = base_frame
+            t.child_frame_id = sensor.frame_id
+            t.transform.translation.x = float(mount.x)
+            t.transform.translation.y = float(mount.y)
+            t.transform.translation.z = float(mount.z)
+            t.transform.rotation.z = math.sin(math.radians(mount.yaw_deg) / 2)
+            t.transform.rotation.w = math.cos(math.radians(mount.yaw_deg) / 2)
+            transforms.append(t)
+        if transforms:
+            self.tf_static.sendTransform(transforms)
         self.get_logger().info(
             'ToF stop: something in the robot\'s path within {:.2f} m of its front'.format(
                 self.stop_box.ahead))
@@ -239,7 +276,30 @@ class TofNode(Node):
             rng.range = max(nearest_mm / 1000.0, rng.min_range)   # covered: as close as it measures
         self.range_pubs[pkt.sensor].publish(rng)
 
+        if self.map_obstacles and mount is not None:
+            marks, free = obstacles.classify(
+                image, self.floor_rows[pkt.sensor], mount.z, self.min_range_mm, self.mark_max_mm,
+                self.free_max_mm, self.floor_margin_mm, self.stop_box.z_max, self.radial)
+            self.obstacle_pubs[pkt.sensor].publish(self.cloud(img.header, marks))
+            self.free_pubs[pkt.sensor].publish(self.cloud(img.header, free))
+
         self.publish_near()
+
+    @staticmethod
+    def cloud(header, points):
+        """PointCloud2 of (x, y, z) float32 points, in the header's frame."""
+        msg = PointCloud2()
+        msg.header = header
+        msg.height = 1
+        msg.width = len(points)
+        msg.fields = [PointField(name=n, offset=4 * k, datatype=PointField.FLOAT32, count=1)
+                      for k, n in enumerate('xyz')]
+        msg.is_bigendian = False
+        msg.point_step = 12
+        msg.row_step = 12 * len(points)
+        msg.data = obstacles.pack_xyz(points)
+        msg.is_dense = True
+        return msg
 
     # --- IMU ---------------------------------------------------------------
 

@@ -43,6 +43,9 @@ publishes about 60 Hz, independently; the sensors are not synchronized.
 | `tof/<name>/nearest` | `sensor_msgs/Range` | sensor data (best effort) | closest valid zone |
 | `tof/near` | `std_msgs/Bool` | reliable, depth 10 | true = something close, or no data |
 | `imu/data` | `sensor_msgs/Imu` | reliable, depth 10 | IMU orientation, turn rate and acceleration (unless `publish_imu` is false) |
+| `tof/<name>/obstacles` | `sensor_msgs/PointCloud2` | sensor data | obstacles for Nav2's map, in `tof_<name>_link` |
+| `tof/<name>/free` | `sensor_msgs/PointCloud2` | sensor data | free space up to these points, for Nav2's map |
+| `/tf_static` | | | `base_link` → `tof_<name>_link`: where each sensor sits (`zones.py`) |
 | `/diagnostics` | `diagnostic_msgs/DiagnosticArray` | reliable | health, 1 Hz |
 
 Subscribe to the first two with `rclpy.qos.qos_profile_sensor_data`; a
@@ -163,7 +166,12 @@ and which Pico program sent them. View with `rqt_robot_monitor` or
 | `half_width_m` | 0.25 | the path's half width (the page sets it from the robot radius + 2 cm) |
 | `front_m` | 0.17 | front of the Roomba from its middle |
 | `z_min_m`, `z_max_m` | 0.02, 0.45 | lower = floor, higher = it passes under |
-| `radial` | true | readings along each zone's line of sight (else straight out from the face; not yet checked) |
+| `radial` | false | readings straight out from the face (corner zones read no longer than the middle ones facing a wall, 2026-11-10) |
+| `map_obstacles` | true | publish `tof/<name>/obstacles` and `free` |
+| `mark_max_mm`, `free_max_mm` | 1000, 1500 | obstacles up to 1 m; nothing in range = free up to 1.5 m |
+| `floor_margin_mm` | 100 | bottom row: this much shorter than the floor = something on it |
+| `floor_mm_<name>` | measured | each sensor's bottom-row floor distances (4 zones, mm) |
+| `base_frame` | `base_link` | parent frame of the `tof_<name>_link` transforms |
 | `near_mm` | 300 | only for a sensor `zones.py` doesn't know: closer than this = near |
 | `near_frames` | 3 | frames in a row before a sensor's near / clear answer changes |
 | `min_range_mm` | 20 | readings closer than this are glitches (unless half the zones agree: covered) |
@@ -188,6 +196,25 @@ glitch, each sensor's 4x4 grid in mm (-1 = no reading, row 0 at the top), the
 IMU's rate and anything the Pico printed. For the hand test, hold a hand about
 15 cm in front of one sensor at a time: only that one should drop and say NEAR.
 
+## On Nav2's map: `tof/<name>/obstacles` and `tof/<name>/free`
+
+Each frame, every zone becomes one point in the sensor's frame
+(`lucia_tof/obstacles.py`): an obstacle (within `mark_max_mm`, 1 m, not the
+floor, not higher than `z_max_m`), or free space up to there (the floor,
+anything further, or nothing in range: free to `free_max_mm`, 1.5 m). The floor
+shows only in each sensor's bottom row, at its own distance (`floor_mm_<name>`,
+measured on open floor with `tof_check`: left about 70 cm, middle 63, right 55);
+a bottom-row reading `floor_margin_mm` (10 cm) shorter is something on it.
+Re-measure them if the bracket moves.
+
+Nav2's `tof_layer` (`lucia_nav/config/nav2.yaml`, both costmaps) marks the
+obstacles and clears along the lines to the free points, but only from 0.7 m
+out. Its own layer, so the lidar's clearing, which passes over low things,
+can't erase them. Close to the robot a low object drops out of view, and its
+mark stays until the robot has moved away. The page's "Low obstacles on the
+map" turns the layer on (off by default until it's been tried on the robot).
+The node publishes where each sensor sits (`base_link` → `tof_<name>_link`).
+
 ## Low obstacles: what the sensors can't see
 
 Mounted 25.4 cm up and level, their view only reaches 22.5° down, so a low object
@@ -195,20 +222,25 @@ drops out of view as the robot gets close (distances from the front of the
 Roomba): 5 cm tall at about 42 cm, 10 cm at about 30 cm, 15 cm at about 17 cm;
 20 cm and taller stay in view. The lidar (30 cm up) only sees things taller than
 that. So the stop can't catch things lower than about 15 cm at a 15 cm stop
-distance. The bracket can't be tilted (2026-11-10); the plan is to put what the
-sensors see on Nav2's map, which remembers a low object seen further out after
-it drops out of view.
+distance. The bracket can't be tilted (2026-11-10), so what they see goes on
+Nav2's map (above), which remembers a low object seen further out after it
+drops out of view.
 
 ## Known gaps
 
-- **Image orientation is not verified yet.** Wave a hand on one side of a
-  sensor in `rqt_image_view` and set `flip_h` / `flip_v` so the image matches
-  what the sensor sees.
-- **Radial vs. perpendicular distance is not verified.** It matters only if
-  the images are turned into 3D points: aim a sensor at a flat wall; if the
-  corner zones read longer than the center, distances are radial.
-- **No TF.** The `tof_*_link` frames need static transforms from `base_link`
-  once the mounting is final.
+Checked on the robot 2026-11-10 with `tof_check` (these were open before):
+- **Image orientation:** row 0 is the top (the floor shows in the bottom row)
+  and column 0 the sensor's left (a book on the robot's left half showed in the
+  middle sensor's left two columns), so `flip_h` / `flip_v` stay false.
+- **Distance:** straight out from the face (`radial: false`): facing a flat
+  wall, the corner zones read no longer than the middle ones. Many zones read
+  nothing in that test, so it's not certain; within 1 m the difference is a
+  few cm.
+- **TF:** `tof_node` publishes `base_link` → `tof_<name>_link` from `zones.py`.
+
+Still open: the floor distances were measured on carpet; a different floor, or
+the robot rocking when it brakes, may move them (watch for ghost obstacles
+just ahead with "Low obstacles on the map" on).
 
 ## Serial protocol
 

@@ -78,6 +78,10 @@ def test_ros_params_have_the_types_the_nodes_declared():
     assert tof['stop_distance_m'] == 0.15 and tof['half_width_m'] == 0.25
     local = p['local_costmap']['local_costmap']['ros__parameters']
     assert local['robot_radius'] == 0.23 and local['inflation_layer']['inflation_radius'] == 0.45
+    assert local['tof_layer']['enabled'] is False          # off until it's been tried on the robot
+    settings, _ = clean({'tof_map': True})
+    glob = ros_params(settings)['global_costmap']['global_costmap']['ros__parameters']
+    assert glob['tof_layer']['enabled'] is True
 
 
 def test_params_yaml_is_plain_yaml_without_aliases():

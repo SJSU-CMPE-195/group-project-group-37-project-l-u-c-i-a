@@ -51,22 +51,26 @@ def zone_angles(index):
     return (1.5 - col) * ZONE_DEG, (1.5 - row) * ZONE_DEG
 
 
-def zone_point(index, distance_m, mount, radial=True):
-    """The point a zone's reading came from, in base_link (x, y, z).
+def sensor_point(index, distance_m, radial=False):
+    """The point a zone's reading came from, in the sensor's own frame
+    (x straight out of its face, y to its left, z up).
 
     radial: the reading is the distance along the zone's line of sight;
-    otherwise it's measured straight out from the sensor's face (not yet
-    checked which one the VL53L5CX reports; it matters little this close).
+    otherwise (the default) it's measured straight out from the sensor's face.
+    On the robot (2026-11-10, facing a wall) the corner zones read no longer
+    than the middle ones, so straight out; it matters little this close.
     """
     az, el = (math.radians(a) for a in zone_angles(index))
     if radial:
-        fwd = distance_m * math.cos(el) * math.cos(az)
-        side = distance_m * math.cos(el) * math.sin(az)
-        up = distance_m * math.sin(el)
-    else:
-        fwd = distance_m
-        side = distance_m * math.tan(az)
-        up = distance_m * math.tan(el)
+        return (distance_m * math.cos(el) * math.cos(az),
+                distance_m * math.cos(el) * math.sin(az),
+                distance_m * math.sin(el))
+    return distance_m, distance_m * math.tan(az), distance_m * math.tan(el)
+
+
+def zone_point(index, distance_m, mount, radial=True):
+    """The point a zone's reading came from, in base_link (x, y, z)."""
+    fwd, side, up = sensor_point(index, distance_m, radial)
     yaw = math.radians(mount.yaw_deg)
     return (mount.x + fwd * math.cos(yaw) - side * math.sin(yaw),
             mount.y + fwd * math.sin(yaw) + side * math.cos(yaw),

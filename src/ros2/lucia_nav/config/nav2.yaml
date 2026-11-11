@@ -137,7 +137,7 @@ behavior_server:
     min_rotational_vel: 0.2
     rotational_acc_lim: 2.0
 
-# Small map around the robot, from the lidar only, for steering.
+# Small map around the robot, from the lidar (and the ToF sensors' tof_layer when on), for steering.
 local_costmap:
   local_costmap:
     ros__parameters:
@@ -151,7 +151,7 @@ local_costmap:
       resolution: 0.05
       robot_radius: 0.23            # 18 in across, measured 2026-10-17
       transform_tolerance: 0.3
-      plugins: ["obstacle_layer", "inflation_layer"]
+      plugins: ["obstacle_layer", "tof_layer", "inflation_layer"]
       obstacle_layer:
         plugin: "nav2_costmap_2d::ObstacleLayer"
         enabled: true
@@ -166,6 +166,77 @@ local_costmap:
           obstacle_min_range: 0.0
           raytrace_max_range: 3.0
           raytrace_min_range: 0.0
+      tof_layer:
+        # Low things the lidar (30.5 cm up) can't see, from the ToF sensors (lucia_tof
+        # obstacles.py). Its own layer, so the lidar's clearing, which passes over low
+        # things, can't erase them. Cleared only by the ToF's own free-space points, and
+        # only from 0.7 m out: closer than that a low object drops out of the sensors'
+        # view (lucia_tof zones.py), so its mark stays while the robot is near it.
+        # Off unless the page's "Low obstacles on the map" setting turns it on.
+        plugin: "nav2_costmap_2d::ObstacleLayer"
+        enabled: false
+        footprint_clearing_enabled: true
+        observation_sources: tof_left tof_middle tof_right tof_left_free tof_middle_free tof_right_free
+        tof_left:
+          topic: /tof/left/obstacles
+          data_type: "PointCloud2"
+          marking: true
+          clearing: false
+          min_obstacle_height: -0.5
+          max_obstacle_height: 2.0
+          obstacle_max_range: 1.2
+          obstacle_min_range: 0.0
+          expected_update_rate: 0.0
+        tof_middle:
+          topic: /tof/middle/obstacles
+          data_type: "PointCloud2"
+          marking: true
+          clearing: false
+          min_obstacle_height: -0.5
+          max_obstacle_height: 2.0
+          obstacle_max_range: 1.2
+          obstacle_min_range: 0.0
+          expected_update_rate: 0.0
+        tof_right:
+          topic: /tof/right/obstacles
+          data_type: "PointCloud2"
+          marking: true
+          clearing: false
+          min_obstacle_height: -0.5
+          max_obstacle_height: 2.0
+          obstacle_max_range: 1.2
+          obstacle_min_range: 0.0
+          expected_update_rate: 0.0
+        tof_left_free:
+          topic: /tof/left/free
+          data_type: "PointCloud2"
+          marking: false
+          clearing: true
+          min_obstacle_height: -0.5
+          max_obstacle_height: 2.0
+          raytrace_max_range: 1.6
+          raytrace_min_range: 0.7
+          expected_update_rate: 0.0
+        tof_middle_free:
+          topic: /tof/middle/free
+          data_type: "PointCloud2"
+          marking: false
+          clearing: true
+          min_obstacle_height: -0.5
+          max_obstacle_height: 2.0
+          raytrace_max_range: 1.6
+          raytrace_min_range: 0.7
+          expected_update_rate: 0.0
+        tof_right_free:
+          topic: /tof/right/free
+          data_type: "PointCloud2"
+          marking: false
+          clearing: true
+          min_obstacle_height: -0.5
+          max_obstacle_height: 2.0
+          raytrace_max_range: 1.6
+          raytrace_min_range: 0.7
+          expected_update_rate: 0.0
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
         inflation_radius: 0.45        # robot radius + ~0.2 m where paths get more expensive
@@ -184,7 +255,7 @@ global_costmap:
       resolution: 0.05
       track_unknown_space: true
       transform_tolerance: 0.3
-      plugins: ["static_layer", "obstacle_layer", "inflation_layer"]
+      plugins: ["static_layer", "obstacle_layer", "tof_layer", "inflation_layer"]
       static_layer:
         plugin: "nav2_costmap_2d::StaticLayer"
         map_subscribe_transient_local: true
@@ -202,6 +273,77 @@ global_costmap:
           obstacle_min_range: 0.0
           raytrace_max_range: 3.0
           raytrace_min_range: 0.0
+      tof_layer:
+        # Low things the lidar (30.5 cm up) can't see, from the ToF sensors (lucia_tof
+        # obstacles.py). Its own layer, so the lidar's clearing, which passes over low
+        # things, can't erase them. Cleared only by the ToF's own free-space points, and
+        # only from 0.7 m out: closer than that a low object drops out of the sensors'
+        # view (lucia_tof zones.py), so its mark stays while the robot is near it.
+        # Off unless the page's "Low obstacles on the map" setting turns it on.
+        plugin: "nav2_costmap_2d::ObstacleLayer"
+        enabled: false
+        footprint_clearing_enabled: true
+        observation_sources: tof_left tof_middle tof_right tof_left_free tof_middle_free tof_right_free
+        tof_left:
+          topic: /tof/left/obstacles
+          data_type: "PointCloud2"
+          marking: true
+          clearing: false
+          min_obstacle_height: -0.5
+          max_obstacle_height: 2.0
+          obstacle_max_range: 1.2
+          obstacle_min_range: 0.0
+          expected_update_rate: 0.0
+        tof_middle:
+          topic: /tof/middle/obstacles
+          data_type: "PointCloud2"
+          marking: true
+          clearing: false
+          min_obstacle_height: -0.5
+          max_obstacle_height: 2.0
+          obstacle_max_range: 1.2
+          obstacle_min_range: 0.0
+          expected_update_rate: 0.0
+        tof_right:
+          topic: /tof/right/obstacles
+          data_type: "PointCloud2"
+          marking: true
+          clearing: false
+          min_obstacle_height: -0.5
+          max_obstacle_height: 2.0
+          obstacle_max_range: 1.2
+          obstacle_min_range: 0.0
+          expected_update_rate: 0.0
+        tof_left_free:
+          topic: /tof/left/free
+          data_type: "PointCloud2"
+          marking: false
+          clearing: true
+          min_obstacle_height: -0.5
+          max_obstacle_height: 2.0
+          raytrace_max_range: 1.6
+          raytrace_min_range: 0.7
+          expected_update_rate: 0.0
+        tof_middle_free:
+          topic: /tof/middle/free
+          data_type: "PointCloud2"
+          marking: false
+          clearing: true
+          min_obstacle_height: -0.5
+          max_obstacle_height: 2.0
+          raytrace_max_range: 1.6
+          raytrace_min_range: 0.7
+          expected_update_rate: 0.0
+        tof_right_free:
+          topic: /tof/right/free
+          data_type: "PointCloud2"
+          marking: false
+          clearing: true
+          min_obstacle_height: -0.5
+          max_obstacle_height: 2.0
+          raytrace_max_range: 1.6
+          raytrace_min_range: 0.7
+          expected_update_rate: 0.0
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
         inflation_radius: 0.45        # robot radius + ~0.2 m where paths get more expensive

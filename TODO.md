@@ -187,11 +187,17 @@ Decided 2026-10-16: built on the **ToF distance sensors** the team is implementi
   any wall. Tested with the robot's recorded grids and a simulated wall; not yet on the robot
 - [ ] The stop itself (ramped like every stop: about 2 cm extra at 15 cm/s, 8 cm at 30 cm/s): "ToF safety
   stop" on, drive toward a wall by keyboard; also along a wall (it must not stop)
-- [ ] Low obstacles: from 25.4 cm up, level, the sensors lose a low object as the robot nears it (5 cm tall:
-  at about 42 cm from the front; 10 cm: 30 cm; 15 cm: 17 cm). Plan: put what the ToF sensors see on Nav2's map
-  (its own layer, so the lidar can't erase it), so a low object seen further out is remembered and planned
-  around. Needs on the robot first: which grid column is which side (`flip_h`), radial vs straight-out
-  distances, and where the floor shows up in each sensor's bottom rows (53-66 cm for middle / right)
+- [x] Checked on the robot (2026-11-10, `tof_check`): column 0 is the sensor's left, row 0 the top (no flips);
+  distances straight out from the face; each sensor sees the floor only in its bottom row (left ~70 cm,
+  middle ~63, right ~55: the bracket isn't perfectly level)
+- [x] Low obstacles on Nav2's map (2026-11-10): `tof_node` publishes obstacle and free-space points per sensor
+  (`obstacles.py`: the floor by each sensor's measured bottom-row distance, obstacles up to 1 m, nothing higher
+  than the robot) and where the sensors sit (`/tf_static`). Nav2's `tof_layer` in both costmaps marks them and
+  clears only from 0.7 m out, so a low object stays marked after it drops out of view. Page setting **"Low
+  obstacles on the map"**, off by default. Tested here (geometry, robot's grids, stub ROS); not yet on the robot
+- [ ] On the robot: Nav2 starts with `tof_layer` (Logs: no costmap errors); with it on, the robot still drives
+  through open space (no ghost obstacles from the floor); a shoe or box lower than the lidar in its way gets
+  planned around in Explore / goto
 - [ ] Noel's known gaps (`lucia_tof/README.md`): image orientation (`flip_h` / `flip_v`) and radial vs.
   straight-ahead distance not checked; no `base_link`→`tof_*_link` transforms yet
 - [ ] Test it on its own, driving by keyboard toward a wall, before Explore relies on it

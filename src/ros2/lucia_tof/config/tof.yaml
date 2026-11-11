@@ -15,7 +15,15 @@ tof_node:
     half_width_m: 0.25          # its path: robot radius + 2 cm each side of the middle
     z_min_m: 0.02               # lower = the floor
     z_max_m: 0.45               # higher = it passes under
-    radial: true                # readings along each zone's line of sight (not yet checked)
+    radial: false               # readings straight out from the face (wall test 2026-11-10)
+    # Obstacles and free space for Nav2's map (lucia_tof/obstacles.py, nav2.yaml tof_layer)
+    map_obstacles: true
+    mark_max_mm: 1000           # obstacles up to 1 m out
+    free_max_mm: 1500           # "nothing in range" = free up to 1.5 m
+    floor_margin_mm: 100        # bottom row: this much shorter than the floor = something on it
+    floor_mm_left: [713, 699, 698, 711]     # bottom row's floor, open floor 2026-11-10 (tof_check)
+    floor_mm_middle: [633, 606, 648, 643]
+    floor_mm_right: [550, 534, 550, 560]
     near_frames: 3              # frames in a row before a sensor's answer changes (~50 ms)
     min_range_mm: 20            # closer readings are glitches, unless half the zones agree
     near_mm: 300                # only for sensors zones.py doesn't know: closer than this = near

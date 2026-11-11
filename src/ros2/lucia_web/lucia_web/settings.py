@@ -58,6 +58,9 @@ SETTINGS = [
             'How far past the front of the Roomba something in its path stops it (it brakes a few cm '
             'more). Things lower than about 15 cm can drop out of the sensors\' view before it gets '
             'this close.'),
+    Setting('tof_map', 'Robot', 'Low obstacles on the map', 'bool', False,
+            help='Puts what the ToF sensors see low down (lower than the lidar) on Nav2\'s map, so it '
+                 'steers around it. New: if the robot hesitates in open space, turn this off.'),
     Setting('robot_radius', 'Robot', 'Robot radius', 'float', 0.23, 0.15, 0.40, 0.01, 'm',
             'Center to its furthest edge (18 in across = 0.23). For planning, the tight-space slowdown and drawing.'),
     # Tight spaces (safety_gate)
@@ -184,7 +187,8 @@ def ros_params(s):
 
     def costmap():      # a fresh dict each time: shared ones come out as YAML aliases
         return {'ros__parameters': {'robot_radius': radius,
-                                    'inflation_layer': {'inflation_radius': radius + INFLATION_MARGIN_M}}}
+                                    'inflation_layer': {'inflation_radius': radius + INFLATION_MARGIN_M},
+                                    'tof_layer': {'enabled': bool(s['tof_map'])}}}
     return {
         'roomba_bridge': {'ros__parameters': {
             'max_speed_mm_s': float(s['top_speed']) * 1000.0,
