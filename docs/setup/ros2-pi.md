@@ -49,13 +49,25 @@ update and debug it. Current as of 2026-10-17. For what changed when, see
    live on the Pi in `~/maps/`.
 7. Press **Stop mapping** when done.
 
-**The page.** The top bar has the status lights, the last message, **Horn (H) ▾**,
-**Explore**, **HOME** and **STOP**. The left column stays put (no scrolling on a
-laptop screen): the **Radar** (the lidar right now, forward up; red under 0.3 m,
-amber under 0.6 m) with the drive arrows on its edges, six key **metrics**, and
-the **Mapping** controls (Start / Stop mapping, Reconnect Roomba, Top speed, what
-the robot is doing). The radar takes whatever height is left. On a phone the
-column goes under the map and scrolls. The rest is the **map**:
+**The page** (three columns since 2026-11-10). The top bar has the status lights,
+the Roomba's **battery**, the last message, **Horn (H) ▾**, **Explore**, **HOME** and
+**STOP**. The left column stays put (no scrolling on a laptop screen): the
+**Radar** with the drive arrows on its edges, six key **metrics**, and the
+**Mapping** controls (Start / Stop mapping, Reconnect Roomba, Top speed, what the
+robot is doing). The middle is the **map**, with the logs drawer under it. The
+right column: the **Jetson camera**, the **ToF sensors** and **Telemetry**.
+**⤢** on the radar, the camera or the ToF card swaps it into the middle (the map
+takes its place, small, with its own ⤢ to come back; the choice is remembered in
+that browser). On a phone everything stacks: map, radar and controls, then the
+right column.
+
+The **radar** shows, forward up: the lidar right now (red under 0.3 m, amber
+under 0.6 m), and the ToF sensors: each one's view as a fan (out to 1 m, the way
+it faces), something low they see as orange dots, the floor they see as grey
+dots, anything higher than the robot or further than 1 m as rings, and the ToF
+stop zone as a dashed box (filled red while it stops the robot).
+
+The **map**:
 - Mouse wheel zooms, drag pans; **Fit** shows the whole map, **Follow** keeps
   the robot in the middle. `#follow` or `#zoom=3` at the end of the address sets
   the starting view. **Save map ▾** saves the map and lists the saved ones to
@@ -73,19 +85,33 @@ wheels are told, ground speed (from the map), turn rate (IMU gyro), really
 moving? (the stuck check: how much of what the wheels were told the lidar and
 IMU saw happen), distance
 driven, time mapping, distance from HOME, position, area mapped, frontiers,
-nearest obstacle, lidar / IMU / odom message rates, Pi CPU temperature, CPU and
-memory. Battery says n/a until the Roomba reply cable is fixed.
+nearest obstacle, lidar / IMU / odom message rates, the ToF sensors' frame rates,
+Pi CPU temperature, CPU and memory, and the battery.
 
-**Jetson camera:** **Camera** in the map toolbar opens what the Jetson's camera
-sees, over the map's corner (**⤢** bigger / smaller, **×** closes it). The Pi relays
+**Jetson camera** (right column): what the Jetson's camera sees. The Pi relays
 the Jetson's video stream, so the browser only talks to the Pi. The first time,
-type the Jetson's address under **⚙** (for example `<jetson address>:8080`; the
-`http://` and `/stream.mjpg` are filled in); it's saved on the Pi in
-`~/maps/camera.json`. The Jetson must be running `zed_stream.py` (plain picture)
-or `follow_sender.py --stream` (with the skeletons and the sign drawn on), both
-in `docs/jetson-deployment/Scripts/`. The video runs only while the panel is
-open (about 165 KB/s at 1280×720, 4 frames a second). With no picture, the
-panel says why and keeps retrying.
+type the Jetson's address under **⚙** (on the robot `192.168.1.2:8080`, see "The
+Jetson link"; the `http://` and `/stream.mjpg` are filled in); it's saved on the
+Pi in `~/maps/camera.json`. The Jetson must be running `zed_stream.py` (plain
+picture) or `follow_sender.py --stream` (with the skeletons and the sign drawn
+on), both in `docs/jetson-deployment/Scripts/`. **⏸** pauses the video (about
+165 KB/s at 1280×720), and the page remembers it. With no picture, the panel says
+why and keeps retrying. Under the picture: what the Jetson detects (how many
+people, how far, the last sign and when), from its UDP messages to the Pi's port
+5005 (`web_ui` listens; parameter `jetson_port`).
+
+**ToF sensors** (right column): each sensor's 4×4 zones as seen from behind it,
+in cm: something in reach colored (red under 30 cm, amber under 60), the floor
+grey, nothing / further than 1 m / higher than the robot plain. The badge says
+whether the ToF stop sees something in the robot's path (**NEAR**) or not
+(**clear**), and the line under it whether the stop and "Low obstacles on the
+map" are on.
+
+**Telemetry** (right column): the Roomba's battery (%, voltage, charge, temperature,
+charging or not; `roomba_bridge` reads it every 2 s while mapping), graphs of the
+battery over 10 minutes and its current, speed and the Pi's temperature, the
+lidar / IMU / wheels and ToF message rates, the Jetson's messages per second,
+and the Pi's CPU and memory.
 
 **Logs & metrics** (the bar under the map) shows what's happening on the Pi: the
 newest message plus warning / error counts. Open it for every ROS node's log
@@ -148,9 +174,12 @@ driving, 1.5 / 3.0 rad/s² for turning).
 | Mapping | `mapping.launch.py` is running | Press Start mapping; open Logs → Launch output |
 | Lidar | `/scan` arrived in the last second | See "Lidar freezes after Start" under Known issues |
 | IMU | `/imu/data` arrived in the last second | Is the sensor Pico plugged in (`ls -la /dev/imu`)? Replug it; or turn off "Use the IMU" in the settings to map without it |
-| Wheels | `/odom` arrived in the last second | `roomba_bridge` isn't running: check Logs. (This light doesn't show whether the Roomba itself is on, since its replies don't reach the Pi; if the wheels don't move, see "Roomba turned off and on" under Known issues) |
+| ToF | All three ToF sensors' frames arriving (yellow: some) | Is the sensor Pico plugged in (`ls -la /dev/imu`)? `ros2 run lucia_tof tof_check` with mapping stopped |
+| Wheels | `/odom` arrived in the last second | `roomba_bridge` isn't running: check Logs. For whether the Roomba itself answers, look at the battery: it only updates while the Roomba replies (see "Roomba turned off and on" under Known issues) |
 | Navigation | The mission node is running and Nav2 is up (yellow: mapping runs but Nav2 isn't ready yet) | Open Logs, filter Warnings and up, look for `lifecycle_manager` or `controller_server` errors |
+| Jetson | The Jetson's detection messages arrived in the last second | Is it on and on the cable (`ping 192.168.1.2` from the Pi)? `follow_sender.service` running on it (`journalctl -u follow_sender.service`)? |
 | Connection | The page can reach the Pi | Are you on `lucia-control`? Is the Pi on? |
+| Battery | The Roomba's charge: green 30% and up, yellow 15-30%, red under 15%; ⚡ = charging | "Battery -": no reading in the last 6 s (not mapping, or the Roomba isn't answering: Reconnect Roomba) |
 
 Yellow means the topic has gone quiet for 1-5 seconds; red means longer, or never.
 
@@ -523,19 +552,18 @@ def ask(pkt):
 r = ask(22); print("battery voltage:", len(r), "of 2 bytes", int.from_bytes(r, 'big') if len(r) == 2 else '')
 EOF
 ```
-As of 2026-10-16 this gets **0 bytes**: commands reach the Roomba, but nothing
-comes back. See Known issues.
+With the old cable (2026-10-16) this got **0 bytes**. With Noel's new cable
+(2026-11-10) it gets all of them: 16224 mV, and 2522 of 2697 mAh charged.
 
 ---
 
 ## Known issues
 
-- **Roomba replies don't reach the Pi** (battery, encoders, sensors). Commands
-  work; the Roomba's transmit line (mini-DIN pin 4) to the FTDI adapter is broken
-  somewhere. Until it's fixed, `/odom` is estimated from commanded wheel speed,
-  and the IMU provides heading. Next step: a loopback test. Unplug from the Roomba,
-  jumper pins 3 and 4 on the cable's plug, send bytes and see if they come back.
-  If they do, the fault is at the Roomba end; if not, replace the adapter or cable.
+- **Fixed 2026-11-10: Roomba replies now reach the Pi** (Noel's new cable,
+  `BG046PKO`). The battery is read and shown on the page. `/odom` is still
+  estimated from commanded wheel speed (the IMU gives heading); the wheel
+  encoders can now be read, which is the next improvement. With the old cable
+  (`BG03LJ9U`) nothing came back.
 - **Lidar freezes after `Start`** (rare, seen once on a first run): the motor
   spins, but there's no `current scan mode` line and no `/scan`, and Ctrl+C is
   ignored. On the page: Stop mapping, then Start mapping. In a terminal: Ctrl+\ and rerun.

@@ -61,3 +61,25 @@ def test_pack_xyz():
     assert len(data) == 24
     assert struct.unpack('<6f', data) == (1.0, 2.0, 3.0, -0.5, 0.25, 0.0)
     assert pack_xyz([]) == b''
+
+
+def test_zone_kinds():
+    from lucia_tof.obstacles import zone_kind
+    floor = FLOOR_MM['middle']
+    assert zone_kind(13, 606, floor, Z) == 'floor'
+    assert zone_kind(13, 450, floor, Z) == 'obstacle'
+    assert zone_kind(5, 1400, floor, Z) == 'far'
+    assert zone_kind(0, 900, floor, Z) == 'high'       # top row, about 53 cm up
+    assert zone_kind(0, 0, floor, Z) == 'none' and zone_kind(0, -1, floor, Z) == 'none'
+
+
+def test_radar_points_are_on_the_robot():
+    from lucia_tof.obstacles import radar_points
+    from lucia_tof.zones import MOUNTS
+    shoe = list(OPEN_FLOOR['middle'])
+    shoe[13] = 450
+    pts = radar_points(shoe, FLOOR_MM['middle'], MOUNTS['middle'])
+    kinds = [k for _, _, k in pts]
+    assert kinds.count('obstacle') == 1 and kinds.count('floor') == 3
+    x, y, k = next(p for p in pts if p[2] == 'obstacle')
+    assert x == pytest.approx(0.094 + 0.45, abs=0.01) and abs(y) < 0.2

@@ -83,22 +83,26 @@ Folder: `src/ros2/lucia_control/`
 **Step B — Position tracking and battery**
 - [x] Checked 2026-09-18: **the Roomba's replies don't reach the Pi.** Battery voltage reads 0, encoders read 0. Driving still works, so the Pi-to-Roomba direction is fine.
 - [x] Rechecked 2026-10-16, counting bytes instead of decoding them: **zero bytes** come back for battery voltage (packet 22) or either encoder (43/44), even while turning a wheel by hand. The old "reads 0" was really "no reply at all" (the driver turns an empty read into 0). The encoders themselves are untested. A beep command played in the same session, so the Roomba was awake and receiving: only the Roomba-to-Pi direction is broken
-- [ ] Fix the reply path (Roomba TX to the adapter's RX, FTDI FT232R). Loopback test: unplug from the Roomba, jumper pins 3 and 4 on the cable's mini-DIN plug, send bytes, see if they echo. Echo → the fault is at the Roomba end (reseat); no echo → the adapter/cable (replace, e.g. a ready-made Create 2 serial cable)
+- [x] **Fixed 2026-11-10 by Noel's new cable: the Roomba's replies reach the Pi** (16224 mV, 2522 of 2697 mAh
+  in the reply check). Was: fix the reply path (Roomba TX to the adapter's RX, FTDI FT232R). Loopback test: unplug from the Roomba, jumper pins 3 and 4 on the cable's mini-DIN plug, send bytes, see if they echo. Echo → the fault is at the Roomba end (reseat); no echo → the adapter/cable (replace, e.g. a ready-made Create 2 serial cable)
 - [ ] Noel's new cable (BG046PKOA, 2026-10-25): its BRC (wake) wire is on RTS; an RTS pulse woke the Roomba,
   DTR did nothing. `RoombaOI.wake()` pulses RTS and DTR together since 2026-11-10, so Reconnect Roomba works
   with either cable. On the robot by 2026-11-10 (FTDI FT232R, serial `BG046PKO`; "BG046PKOA" is how Windows
-  shows it); its `/dev/roomba` udev line was added on the Pi that day. Next: Reconnect Roomba (should beep),
-  and the Roomba reply check (Diagnostics): if replies come back, the reply path above is fixed
+  shows it); its `/dev/roomba` udev line was added on the Pi that day. Replies come back with it (above).
+  Still to try: Reconnect Roomba (should beep)
 - [x] Added position tracking (`/odom` + the `odom`→`base_link` transform) to the control program (2026-10-09) — **open-loop**, estimated from commanded wheel speed, not a sensor reading, since the cable above isn't fixed yet. Will drift more than real encoder feedback. See `odometry.py` and `docs/changelogs/2026-10-09.md`.
 - [x] Tried `/odom` on the real robot: position and heading both tracked driving + turning correctly.
-- [ ] Once the cable is fixed: measure wheel size and encoder counts per turn (drive a known distance, read the raw counts), then switch `/odom` to use real encoder readings instead of commanded speed. `odometry.py`'s math doesn't change either way — only what feeds it does.
-- [ ] Add battery to the control program (needs the cable fixed too)
+- [ ] **Now possible (the cable works):** measure wheel size and encoder counts per turn (drive a known distance, read the raw counts), then switch `/odom` to use real encoder readings instead of commanded speed. `odometry.py`'s math doesn't change either way — only what feeds it does.
+- [x] Battery (2026-11-10): `roomba_bridge` reads charging state, voltage, current, temperature, charge and capacity in
+  one Query List request every 2 s (`battery.py`, 0.1 s read timeout so driving isn't held up) and publishes
+  `/battery` (`sensor_msgs/BatteryState`); the page shows it in the header and Telemetry. Tested here; not yet on
+  the robot
 - [x] Recover after the Roomba is power-cycled (2026-10-17, not yet tried on the robot): a **Reconnect Roomba** button on
   the page calls `roomba_bridge`'s `~/reconnect` service, which reopens the port, wakes the Roomba (BRC pulse), sends
   Start + Safe and beeps; mapping keeps running. It's manual because nothing comes back from the Roomba, so
   `roomba_bridge` can't tell it was power-cycled (and sending Start every second would drop it to Passive each time).
   Also: a serial error (adapter unplugged) is now logged instead of crashing `roomba_bridge`
-- [ ] Automatic recovery once the reply cable works (read the OI mode, packet 35, and re-send Start only when needed)
+- [ ] Automatic recovery, now that the reply cable works (read the OI mode, packet 35, and re-send Start only when needed)
 
 ---
 
@@ -286,6 +290,12 @@ Folder: `src/ros2/lucia_bringup/`
 ## Phase 5 — One command starts everything
 
 Folder: `src/ros2/lucia_bringup/`, `src/ros2/lucia_web/`, `docker/compose.yml`
+- [x] Page layout v3 (2026-11-10, Christian's list): three columns: radar + metrics + controls | map + drawer |
+  Jetson camera + ToF sensors + telemetry. ⤢ swaps the radar, camera or ToF card into the middle (remembered per
+  browser). The radar shows the ToF sensors (fans, low obstacles orange, floor grey, the stop zone); the ToF card
+  shows the three 4x4 grids; Telemetry: Roomba battery, graphs (battery 10 min, current, speed, Pi temperature),
+  message rates, Pi. Header: ToF and Jetson lights, battery. Checked here in a browser against fake robot data
+  (wide, laptop, dark, phone); not yet on the robot
 - [x] `mapping.launch.py`: control + IMU + EKF + lidar + slam_toolbox (2026-10-16). Same evening: + safety gate (`use_tof`) and Nav2 + mission (`use_nav`); Nav2 runs on the robot since 2026-10-17, `use_tof:=true` not yet tried
 - [x] Web control page `lucia_web` (2026-10-16, working on the Pi the same day, see below): status lights for lidar/IMU/wheels,
   Start/Stop mapping (runs `mapping.launch.py`, IMU on/off), live map with the robot's position, hold-to-drive pad
@@ -378,8 +388,10 @@ same web page.
   wrong address, recovery); not yet on the Pi
 - [x] Page: **Camera** in the map toolbar opens the camera over the map's corner (bigger / smaller, address,
   close). Overlay on/off = which script runs on the Jetson
-- [ ] Page: a Jetson light in the header (messages arriving), people as dots on the radar (needs the UDP
-  detections into `web_ui`)
+- [x] Page (2026-11-10): `web_ui` listens for the Jetson's UDP detections (port 5005, `logic.JetsonFeed`): a Jetson
+  light in the header, and under the camera how many people, how far, and the last sign. The camera has its own
+  card in the right column (⏸ pauses it, ⤢ makes it big)
+- [ ] People as dots on the radar (needs which way the ZED's x / y / z point, and where the ZED sits on the robot)
 - [x] The Jetson link (2026-11-10): Ethernet cable Pi ↔ Nano. Pi `192.168.1.1` (static), its `dnsmasq` gives the
   Nano's MAC (`48:b0:2d:5b:0e:c3`) `192.168.1.2` and nothing else; `follow_sender.service` sends to
   `--host 192.168.1.1`. Lease and ping work. Setup and checks: `docs/setup/ros2-pi.md`, "The Jetson link"

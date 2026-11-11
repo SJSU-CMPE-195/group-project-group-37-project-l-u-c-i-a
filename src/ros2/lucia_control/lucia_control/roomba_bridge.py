@@ -48,7 +48,11 @@ ROS2 node that owns the Roomba's serial port (nothing else may open it).
 - A serial error (adapter unplugged) is logged instead of crashing the node;
   plug it back in and reconnect.
 
-Battery is not read yet.
+- Publishes the Roomba's battery on /battery (sensor_msgs/BatteryState) every
+  battery_period_s (2 s; 0 = off): charge %, voltage, current, charging state,
+  temperature, in one Query List request (battery.py). The Roomba's replies
+  reach the Pi since Noel's new cable (2026-11-10); /odom is still open-loop
+  (the wheel encoders are the next thing to read).
 
 Usage:
     ros2 run lucia_control roomba_bridge --ros-args -p port:=/dev/ttyUSB0
@@ -63,10 +67,12 @@ from nav_msgs.msg import Odometry as OdometryMsg
 from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 from serial import SerialException
+from sensor_msgs.msg import BatteryState
 from std_msgs.msg import String
 from std_srvs.srv import Trigger
 from tf2_ros import TransformBroadcaster
 
+from lucia_control import battery
 from lucia_control.motion import ramp_twist, twist_to_wheel_speeds
 from lucia_control.odometry import Odometry
 from lucia_control.roomba_oi import RoombaOI
@@ -97,6 +103,7 @@ class RoombaBridge(Node):
         # against the IMU. Not measured; revisit with real encoder data.
         self.declare_parameter('linear_velocity_variance', 0.0025)    # (m/s)^2, ~5 cm/s
         self.declare_parameter('angular_velocity_variance', 0.04)     # (rad/s)^2, ~11 deg/s
+        self.declare_parameter('battery_period_s', 2.0)     # 0 = don't read the battery
 
         port = self.get_parameter('port').value
         self._oi_mode = self.get_parameter('oi_mode').value
@@ -154,6 +161,11 @@ class RoombaBridge(Node):
         self.create_service(Trigger, '~/reconnect', self._on_reconnect)
         self.create_subscription(String, '~/song', self._on_song, 10)
         self._song_timers = []              # one-shot timers playing the later slots of a tune
+        self._battery_pub = self.create_publisher(BatteryState, 'battery', 10)
+        self._battery_quiet = False         # logged that the Roomba isn't answering
+        battery_period_s = self.get_parameter('battery_period_s').value
+        if battery_period_s > 0:
+            self.create_timer(battery_period_s, self._poll_battery)
 
         self.get_logger().info(
             f'Ready: mode={self._oi_mode}, wheel_base={self._wheel_base_mm} mm, '
@@ -320,6 +332,46 @@ class RoombaBridge(Node):
             timer.cancel()
             self.destroy_timer(timer)
         self._song_timers = []
+
+    def _poll_battery(self):
+        """Ask the Roomba for its battery state and publish it (see battery.py)."""
+        if self._roomba is None:
+            return
+        try:
+            reply = self._roomba.query(battery.QUERY, battery.REPLY_LEN)
+        except (SerialException, OSError):
+            return                          # _write logs serial errors
+        state = battery.parse(reply)
+        if state is None:
+            if not self._battery_quiet:
+                self.get_logger().warning(
+                    f'No battery reply from the Roomba ({len(reply or b"")} of {battery.REPLY_LEN} bytes): '
+                    'is it on? (Reconnect Roomba wakes it)')
+            self._battery_quiet = True
+            return
+        if self._battery_quiet:
+            self.get_logger().info('Roomba answering again: battery readings back')
+            self._battery_quiet = False
+        msg = BatteryState()
+        msg.header.stamp = self.get_clock().now().to_msg()
+        msg.voltage = state['voltage_mv'] / 1000.0
+        msg.current = state['current_ma'] / 1000.0
+        msg.temperature = float(state['temperature_c'])
+        msg.charge = state['charge_mah'] / 1000.0
+        msg.capacity = state['capacity_mah'] / 1000.0
+        msg.design_capacity = math.nan
+        msg.percentage = math.nan if state['percent'] is None else state['percent'] / 100.0
+        if battery.is_charging(state):
+            msg.power_supply_status = BatteryState.POWER_SUPPLY_STATUS_CHARGING
+        elif state['current_ma'] < 0:
+            msg.power_supply_status = BatteryState.POWER_SUPPLY_STATUS_DISCHARGING
+        else:
+            msg.power_supply_status = BatteryState.POWER_SUPPLY_STATUS_NOT_CHARGING
+        if state['charging_state'] == 5:
+            msg.power_supply_health = BatteryState.POWER_SUPPLY_HEALTH_UNSPEC_FAILURE
+        msg.present = True
+        msg.location = state['charging_text']   # the Roomba's own words, for the page
+        self._battery_pub.publish(msg)
 
     def _write(self, action):
         """

@@ -34,10 +34,12 @@ own WiFi.
   from MIDI files), drive by keyboard for testing, save and download maps.
 - **Starts by itself:** power on and the Pi brings up its hotspot and the page; no screen,
   keyboard or other network needed.
-- **In progress:** a time-of-flight safety stop for things below the lidar (Noel), object
+- **In progress:** a time-of-flight safety stop for things below the lidar (Noel; the
+  sensors' view and the low obstacles they see show on the control page), object
   recognition with a ZED 2i camera on a Jetson Nano (Ethan), whose camera view (with the
-  people it tracks drawn on) already shows on the control page, relayed by the Pi. Not working yet: battery and
-  wheel encoder readings (the Roomba's serial replies don't reach the Pi).
+  people it tracks drawn on) and detections already show on the control page, relayed by
+  the Pi. Since a new serial cable (November), the Roomba's battery shows on the page too;
+  its wheel encoder readings are next.
 
 ![First maps: wheels only vs. wheels + IMU](media/maps/2026-10-16_room1_vs_room2.png)
 
@@ -84,8 +86,8 @@ flowchart TB
 How a run works:
 
 1. **Sense.** The lidar scans about 12 times a second, the IMU reports heading 50 times a
-   second, and `roomba_bridge` reports the wheel speeds it commanded (`/odom`; the
-   Roomba's own encoder readings don't reach the Pi yet, so this is an estimate).
+   second, and `roomba_bridge` reports the wheel speeds it commanded (`/odom`; an
+   estimate until the Roomba's own encoder readings are used, now that they reach the Pi).
 2. **Localize and map.** An EKF (robot_localization) combines the wheel speeds with the
    IMU heading. slam_toolbox lines each scan up with the map so far, corrects the
    robot's position, and grows the map.
@@ -210,12 +212,12 @@ python3 -m pytest test
 
 | Package | What the tests cover | Tests |
 |---|---|---|
-| `lucia_control` | Wheel-speed math, gradual speed changes (keeping the robot on its curve), position estimate, Roomba Open Interface commands (including the wake pulse), tunes | 52 |
-| `lucia_tof` | Reading the sensor Pico: packets, corruption, clock sync, IMU readings from either Pico program, turning an upside-down board's readings over, the ToF glitch filter, where each reading is on the robot and whether it's in its path, which readings are obstacles for Nav2's map, the sensor check | 50 |
+| `lucia_control` | Wheel-speed math, gradual speed changes (keeping the robot on its curve), position estimate, Roomba Open Interface commands (including the wake pulse), reading the battery, tunes | 60 |
+| `lucia_tof` | Reading the sensor Pico: packets, corruption, clock sync, IMU readings from either Pico program, turning an upside-down board's readings over, the ToF glitch filter, where each reading is on the robot and whether it's in its path, which readings are obstacles for Nav2's map and the radar, the sensor check | 52 |
 | `lucia_imu` | Reading the IMU-only Pico program's output: valid lines, half-received lines, garbage, heading math | 13 |
 | `lucia_nav` | Finding frontiers, the mission's decisions (Explore, HOME, stuck, pause and resume), a full simulated exploration of two rooms, the stuck check against a simulated lidar in a room and a hallway | 87 |
 | `lucia_bringup` | The safety gate: time-of-flight block, slowing down in tight spaces | 12 |
-| `lucia_web` | The control page's logic (drive commands, map encoding, metrics, resuming after driving by hand), the settings menu (checking values, the parameters file it writes), starting and stopping mapping, tunes and MIDI import | 131 |
+| `lucia_web` | The control page's logic (drive commands, map encoding, metrics, resuming after driving by hand), the settings menu (checking values, the parameters file it writes), starting and stopping mapping, tunes and MIDI import, the Jetson's detection messages | 135 |
 
 **On the robot.** Anything that needs ROS 2 is checked on the robot itself, following the
 checklists in [`TODO.md`](TODO.md); the results are written up in
@@ -322,6 +324,6 @@ Latest version of each printed part; earlier versions are in
 ## What's next
 
 - Time-of-flight safety stop, so it can run without someone next to it
-- Fix the Roomba's serial reply line: battery level and wheel encoders (more precise driving)
+- Wheel encoders from the Roomba (more precise driving; its replies reach the Pi since November)
 - Object recognition on the Jetson (ZED 2i + YOLO), sent to the Pi
 - Later ideas: target tracking (follow a chosen object at a distance), 3D mapping with the camera

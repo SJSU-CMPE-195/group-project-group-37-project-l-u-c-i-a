@@ -21,9 +21,8 @@ tof_node:
     mark_max_mm: 1000           # obstacles up to 1 m out
     free_max_mm: 1500           # "nothing in range" = free up to 1.5 m
     floor_margin_mm: 100        # bottom row: this much shorter than the floor = something on it
-    floor_mm_left: [713, 699, 698, 711]     # bottom row's floor, open floor 2026-11-10 (tof_check)
-    floor_mm_middle: [633, 606, 648, 643]
-    floor_mm_right: [550, 534, 550, 560]
+    # Each sensor's bottom-row floor distances are in lucia_tof/obstacles.py (FLOOR_MM),
+    # which the web page's radar uses too; floor_mm_<name>: [...] here would override them.
     near_frames: 3              # frames in a row before a sensor's answer changes (~50 ms)
     min_range_mm: 20            # closer readings are glitches, unless half the zones agree
     near_mm: 300                # only for sensors zones.py doesn't know: closer than this = near

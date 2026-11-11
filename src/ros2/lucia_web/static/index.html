@@ -11,11 +11,13 @@
     /* Where the robot has driven. One value for both themes: the map image itself is
        always light (white floor, grey unknown, black walls). */
     --trail: #8b2cf5;
+    --tof: #f76707;           /* what the ToF sensors see low down */
   }
   @media (prefers-color-scheme: dark) {
     :root {
       --bg: #12151b; --card: #1b2029; --text: #e6e9ef; --muted: #98a2b3; --line: #2c3340;
       --accent: #5b8ff0; --ok: #34c274; --warn: #f0b429; --bad: #f06363; --pad: #242a35;
+      --tof: #ff8c3a;
     }
   }
   * { box-sizing: border-box; }
@@ -36,15 +38,34 @@
   #message { margin-left: auto; font-size: 13px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   #message.err { color: var(--bad); } #message.okmsg { color: var(--ok); }
   .headbtns { flex: none; gap: 6px; }
+  /* Roomba battery in the header: a small battery that fills up */
+  .batt { position: relative; width: 20px; height: 10px; border: 1.5px solid currentColor; border-radius: 2px; color: var(--muted); }
+  .batt::after { content: ''; position: absolute; right: -4px; top: 2px; width: 2px; height: 4px; background: currentColor;
+                 border-radius: 0 1px 1px 0; }
+  .batt i { position: absolute; left: 1px; top: 1px; bottom: 1px; width: 0; background: currentColor; border-radius: 1px; }
+  #p-battery.ok .batt { color: var(--ok); } #p-battery.stale .batt { color: var(--warn); } #p-battery.missing .batt { color: var(--bad); }
+  #battText { font-variant-numeric: tabular-nums; }
   .headbtns button { padding: 5px 12px; }
 
-  /* ---- Layout: sidebar (about 1/5) | map ---- */
-  main { flex: 1; min-height: 0; display: grid; grid-template-columns: clamp(300px, 20vw, 400px) minmax(0, 1fr); }
-  /* The sidebar doesn't scroll: the radar card takes whatever height the others leave */
+  /* ---- Layout: left column (radar, metrics, controls) | the big panel + drawer | right column
+     (camera, ToF, telemetry). The ⤢ button on a panel swaps it into the big spot (setMain). ---- */
+  main { flex: 1; min-height: 0; display: grid;
+         grid-template-columns: clamp(280px, 19vw, 380px) minmax(0, 1fr) clamp(300px, 24vw, 440px); }
   aside { overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 12px; min-width: 0; }
   aside > .card { flex: none; }
-  aside > #radarCard { flex: 1 1 auto; min-height: 180px; display: flex; flex-direction: column; }
+  /* The left column doesn't scroll: the radar card takes whatever height the others leave */
+  #left > #radarCard { flex: 1 1 auto; min-height: 180px; display: flex; flex-direction: column; }
+  #side { padding-left: 0; }
   #mapArea { display: flex; flex-direction: column; min-height: 0; min-width: 0; padding: 12px 12px 12px 0; gap: 8px; }
+  #mainSlot { flex: 1; min-height: 0; display: flex; }
+  #mainSlot > * { flex: 1 1 auto; min-width: 0; min-height: 0; }
+  #mainSlot > .card { display: flex; flex-direction: column; }
+  /* The map in a side column: a 4:3 box showing only its ⤢ button */
+  aside #mapWrap { flex: none; aspect-ratio: 4 / 3; min-height: 160px; }
+  aside #mapWrap .maptools > :not(.swapbtn), aside #mapWrap .legend { display: none; }
+  #mainSlot #mapWrap .swapbtn { display: none; }
+  button.swapbtn { padding: 2px 8px; font-size: 13px; line-height: 1.3; }
+  .cardhead .right { display: flex; gap: 6px; align-items: center; }
 
   .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 12px; }
   .card h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .07em; color: var(--muted); margin: 0 0 8px; }
@@ -123,22 +144,48 @@
   #midiInfo.err { color: var(--bad); }
   #savePanel { top: 48px; right: 10px; width: 280px; }
 
-  /* ---- Jetson camera: a panel over the map's top-left corner, under the map buttons ---- */
-  .campanel { position: absolute; top: 52px; left: 10px; z-index: 15; width: min(380px, calc(100% - 20px));
-              background: var(--card); border: 1px solid var(--line); border-radius: 10px; overflow: hidden;
-              box-shadow: 0 6px 24px rgba(0,0,0,.22); }
-  .campanel.large { width: min(72%, 1000px); }
-  .camhead { display: flex; align-items: center; gap: 6px; padding: 5px 6px 5px 10px; }
-  .camhead b { font-size: 12px; text-transform: uppercase; letter-spacing: .07em; color: var(--muted); }
-  .camhead .grow { flex: 1; }
-  .camhead button { padding: 2px 8px; font-size: 12px; }
-  #camState { font-size: 12px; color: var(--muted); }
+  /* ---- Jetson camera (right column) ---- */
+  #cameraCard .cardhead { gap: 6px; }
+  #cameraCard .cardhead .grow { flex: 1; }
+  #cameraCard .cardhead button { padding: 2px 8px; font-size: 12px; }
+  #camState { font-size: 12px; color: var(--muted); white-space: nowrap; }
   #camState.live { color: var(--ok); } #camState.bad { color: var(--bad); }
-  .cambody { position: relative; aspect-ratio: 16 / 9; background: #000; }
+  .cambody { position: relative; aspect-ratio: 16 / 9; background: #000; border-radius: 6px; overflow: hidden; }
+  #mainSlot .cambody { aspect-ratio: auto; flex: 1; min-height: 0; }
   #camImg { width: 100%; height: 100%; object-fit: contain; display: block; }
   #camMsg { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; text-align: center;
             padding: 14px; color: #ddd; font-size: 13px; }
-  #camAddr { padding: 6px 8px; border-top: 1px solid var(--line); flex-wrap: nowrap; }
+  #camAddr { margin-top: 6px; flex-wrap: nowrap; }
+  #jetsonInfo { margin: 6px 0 0; font-size: 12.5px; color: var(--text); }
+  #jetsonInfo .sign { font-weight: 700; color: var(--accent); }
+  #jetsonInfo .na { color: var(--muted); }
+
+  /* ---- ToF sensors (right column): each sensor's 4x4 zones as seen from behind it ---- */
+  .tofgrids { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+  #mainSlot .tofgrids { flex: 1; align-content: center; gap: 18px; }
+  .tofs h4 { margin: 0 0 3px; font-size: 11px; font-weight: 600; color: var(--muted); display: flex; justify-content: space-between; }
+  .tofgrid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 2px; aspect-ratio: 1; }
+  .tofgrid span { display: flex; align-items: center; justify-content: center; border-radius: 3px; font-size: 10px; min-width: 0;
+                  font-variant-numeric: tabular-nums; color: #fff; background: var(--pad); overflow: hidden; }
+  #mainSlot .tofgrid span { font-size: 16px; }
+  .tofgrid span.floor { background: var(--line); color: var(--muted); }
+  .tofgrid span.none { background: var(--pad); }
+  .tofgrid span.high, .tofgrid span.far { background: var(--pad); color: var(--muted); }
+  .badge { font-size: 11px; font-weight: 700; padding: 1px 7px; border-radius: 999px; background: var(--pad); color: var(--muted); }
+  .badge.bad { background: var(--bad); color: #fff; } .badge.ok { background: var(--ok); color: #fff; }
+  .toflegend, .radarlegend { display: flex; flex-wrap: wrap; gap: 2px 10px; margin-top: 6px; font-size: 11px; color: var(--muted); }
+  .toflegend i, .radarlegend i { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 4px; vertical-align: -1px; }
+  .radarlegend i.dot { border-radius: 50%; }
+  .radarlegend i.box { border: 1.5px dashed var(--tof); background: none; }
+
+  /* ---- Telemetry (right column) ---- */
+  .battbig { display: flex; align-items: center; gap: 10px; }
+  .battbig .pct { font-size: 26px; font-weight: 700; font-variant-numeric: tabular-nums; min-width: 3.2em; }
+  .battbar { flex: 1; height: 12px; border-radius: 6px; background: var(--pad); overflow: hidden; }
+  .battbar i { display: block; height: 100%; width: 0; background: var(--ok); transition: width .5s; }
+  .battbar.warn i { background: var(--warn); } .battbar.bad i { background: var(--bad); }
+  #battDetail { font-size: 12px; color: var(--muted); margin: 3px 0 8px; }
+  canvas.spark { width: 100%; height: 26px; display: block; margin-top: 2px; }
 
   /* ---- Settings (opens on Start mapping) ---- */
   dialog#settingsDlg { width: min(640px, 94vw); max-height: 88vh; padding: 0; border: 1px solid var(--line); border-radius: 12px;
@@ -217,13 +264,13 @@
     body { overflow: auto; height: auto; }
     main { display: flex; flex-direction: column; }
     #mapArea { order: 1; height: 75vh; padding: 12px 12px 0; }
-    aside { order: 2; overflow: visible; }
-    aside > #radarCard { min-height: 0; }
+    #left { order: 2; }                          /* radar, drive arrows and Start mapping first, as before */
+    #side { order: 3; padding-left: 12px; }
+    aside { overflow: visible; }
+    #left > #radarCard { min-height: 0; }
     .radarBox { container-type: normal; }
     #radarWrap { width: 100%; max-width: 420px; height: auto; aspect-ratio: 1; }
     #hornMenu { right: auto; left: 0; width: min(300px, calc(100vw - 32px)); }
-    .campanel { top: 96px; }                     /* the map buttons take two rows here */
-    .campanel.large { width: calc(100% - 20px); }
     #message { margin-left: 0; flex-basis: 100%; }
     body.busy #haltFloat { display: block; }
     body.busy { padding-bottom: 80px; }
@@ -237,9 +284,12 @@
     <span class="pill" id="p-mapping"><span class="dot"></span>Mapping</span>
     <span class="pill" id="p-lidar"><span class="dot"></span>Lidar</span>
     <span class="pill" id="p-imu"><span class="dot"></span>IMU</span>
+    <span class="pill" id="p-tof" title="The three ToF distance sensors"><span class="dot"></span>ToF</span>
     <span class="pill" id="p-wheels"><span class="dot"></span>Wheels</span>
     <span class="pill" id="p-nav" title="Nav2 + the mission node"><span class="dot"></span>Navigation</span>
+    <span class="pill" id="p-jetson" title="The Jetson's detections arriving (UDP)"><span class="dot"></span>Jetson</span>
     <span class="pill" id="p-link"><span class="dot"></span>Connection</span>
+    <span class="pill" id="p-battery" title="Roomba battery"><span class="batt"><i></i></span><span id="battText">-</span></span>
   </div>
   <span id="message"></span>
   <span class="row headbtns">
@@ -279,12 +329,15 @@
 </header>
 
 <main>
-  <aside>
+  <aside id="left">
     <section class="card" id="radarCard">
       <div class="cardhead">
         <h2>Radar</h2>
-        <span class="seg" id="radarRange">
-          <button data-m="1">1 m</button><button data-m="2" class="on">2 m</button><button data-m="4">4 m</button>
+        <span class="right">
+          <span class="seg" id="radarRange">
+            <button data-m="1">1 m</button><button data-m="2" class="on">2 m</button><button data-m="4">4 m</button>
+          </span>
+          <button class="swapbtn" data-swap="radarCard" title="Make it big (swap it into the middle)">⤢</button>
         </span>
       </div>
       <div class="radarBox">
@@ -300,6 +353,12 @@
             <button class="arrow down" data-l="-1" data-a="0" data-k="b" title="Back: hold (or S / Down)">▼</button>
           </div>
         </div>
+      </div>
+      <div class="radarlegend">
+        <span><i class="dot" style="background:var(--accent)"></i>Lidar</span>
+        <span><i class="dot" style="background:var(--tof)"></i>ToF: something low</span>
+        <span><i class="dot" style="background:var(--muted)"></i>ToF: floor</span>
+        <span><i class="box"></i>Stop zone</span>
       </div>
     </section>
 
@@ -340,6 +399,7 @@
   </aside>
 
   <section id="mapArea">
+    <div id="mainSlot">
     <div id="mapWrap">
       <canvas id="map"></canvas>
       <div id="mapEmpty">No map yet. Press Start mapping, then Explore.</div>
@@ -349,21 +409,8 @@
         <button id="fit" title="Show the whole map">Fit</button>
         <button id="follow" title="Keep the robot in the middle">Follow</button>
         <button id="clickGo" title="Then click the map to send the robot there">Click to go</button>
-        <button id="cameraBtn" title="What the Jetson's camera sees (relayed through the Pi)">Camera</button>
         <button id="saveMapBtn" title="Save the map, or download a saved one">Save map ▾</button>
-      </div>
-      <div id="cameraPanel" class="campanel" hidden>
-        <div class="camhead">
-          <b>Jetson camera</b><span id="camState"></span><span class="grow"></span>
-          <button id="camSize" title="Bigger / smaller">⤢</button>
-          <button id="camEdit" title="The camera's address">⚙</button>
-          <button id="camClose" title="Close (stops the video)">×</button>
-        </div>
-        <div class="cambody"><img id="camImg" alt="What the Jetson's camera sees"><div id="camMsg"></div></div>
-        <div id="camAddr" class="row" hidden>
-          <input type="text" id="camUrl" placeholder="Jetson address, e.g. 192.168.1.20:8080" style="flex:1">
-          <button id="camSave" class="primary">Save</button>
-        </div>
+        <button class="swapbtn" data-swap="mapWrap" title="Put the map back in the middle">⤢</button>
       </div>
       <div id="savePanel" class="popover" hidden>
         <h3>Save the map</h3>
@@ -383,6 +430,7 @@
         <span><i style="background:var(--bad)"></i>Lidar &lt; 0.3 m</span>
         <span style="color:var(--bad);font-weight:700">! Got stuck</span>
       </div>
+    </div>
     </div>
 
     <div id="drawer">
@@ -445,14 +493,70 @@
               <div class="tile"><span class="k">CPU temp</span><span class="v" id="mTemp">-</span></div>
               <div class="tile"><span class="k">CPU</span><span class="v" id="mCpu">-</span></div>
               <div class="tile"><span class="k">Memory</span><span class="v" id="mMem">-</span></div>
-              <div class="tile" title="Needs the Roomba's serial replies, which don't reach the Pi yet (TODO.md, Phase 1 Step B)">
-                <span class="k">Battery</span><span class="v na">n/a: cable</span></div>
+              <div class="tile" title="Roomba battery (roomba_bridge reads it every 2 s)">
+                <span class="k">Battery</span><span class="v" id="mBatt">-</span></div>
+              <div class="tile wide" title="Frames per second, each ToF sensor"><span class="k">ToF left · middle · right</span><span class="v" id="mTofRates">-</span></div>
             </div>
           </section>
         </div>
       </div>
     </div>
   </section>
+
+  <aside id="side">
+    <section class="card" id="cameraCard">
+      <div class="cardhead">
+        <h2>Jetson camera</h2><span id="camState"></span><span class="grow"></span>
+        <button id="camPause" title="Pause the video (saves WiFi)">⏸</button>
+        <button id="camEdit" title="The camera's address">⚙</button>
+        <button class="swapbtn" data-swap="cameraCard" title="Make it big (swap it into the middle)">⤢</button>
+      </div>
+      <div class="cambody"><img id="camImg" alt="What the Jetson's camera sees"><div id="camMsg"></div></div>
+      <div id="camAddr" class="row" hidden>
+        <input type="text" id="camUrl" placeholder="Jetson stream, e.g. 192.168.1.2:8080" style="flex:1">
+        <button id="camSave" class="primary">Save</button>
+      </div>
+      <p id="jetsonInfo"><span class="na">No detections from the Jetson yet.</span></p>
+    </section>
+
+    <section class="card" id="tofCard">
+      <div class="cardhead">
+        <h2>ToF sensors</h2>
+        <span class="right">
+          <span class="badge" id="tofNear" title="The ToF stop: something in the robot's path?">-</span>
+          <button class="swapbtn" data-swap="tofCard" title="Make it big (swap it into the middle)">⤢</button>
+        </span>
+      </div>
+      <div class="tofgrids">
+        <div class="tofs"><h4>Left <span id="tofHz-left">-</span></h4><div class="tofgrid" id="tofGrid-left"></div></div>
+        <div class="tofs"><h4>Middle <span id="tofHz-middle">-</span></h4><div class="tofgrid" id="tofGrid-middle"></div></div>
+        <div class="tofs"><h4>Right <span id="tofHz-right">-</span></h4><div class="tofgrid" id="tofGrid-right"></div></div>
+      </div>
+      <div class="toflegend">
+        <span><i style="background:var(--tof)"></i>something (cm)</span>
+        <span><i style="background:var(--line)"></i>floor</span>
+        <span><i style="background:var(--pad);outline:1px solid var(--line)"></i>nothing, far or higher than the robot</span>
+      </div>
+      <p class="hint" id="tofStopInfo">The ToF sensors run while mapping.</p>
+    </section>
+
+    <section class="card" id="telemetryCard">
+      <h2>Telemetry</h2>
+      <div class="battbig"><span class="pct" id="battPct">-</span><div class="battbar" id="battBar"><i></i></div></div>
+      <p id="battDetail">Roomba battery: no reading yet (it's read while mapping).</p>
+      <div class="tiles">
+        <div class="tile wide" title="Roomba battery charge, the last 10 minutes"><span class="k">Battery, last 10 min</span><canvas class="spark" id="sparkBatt"></canvas></div>
+        <div class="tile" title="Roomba battery current: negative = draining"><span class="k">Current</span><span class="v" id="tCurrent">-</span><canvas class="spark" id="sparkCurrent"></canvas></div>
+        <div class="tile" title="What the wheels are being told, the last 2 minutes"><span class="k">Speed</span><span class="v" id="tSpeed">-</span><canvas class="spark" id="sparkSpeed"></canvas></div>
+        <div class="tile wide" title="Messages per second"><span class="k">Lidar · IMU · Wheels</span><span class="v" id="tRates">-</span></div>
+        <div class="tile wide" title="Frames per second, each ToF sensor"><span class="k">ToF left · middle · right</span><span class="v" id="tTofRates">-</span></div>
+        <div class="tile" title="Detection messages per second from the Jetson"><span class="k">Jetson</span><span class="v" id="tJetson">-</span></div>
+        <div class="tile"><span class="k">Pi CPU</span><span class="v" id="tCpu">-</span></div>
+        <div class="tile" title="The last 10 minutes"><span class="k">Pi temp</span><span class="v" id="tTemp">-</span><canvas class="spark" id="sparkTemp"></canvas></div>
+        <div class="tile"><span class="k">Pi memory</span><span class="v" id="tMem">-</span></div>
+      </div>
+    </section>
+  </aside>
 </main>
 
 <button class="halt" id="haltFloat">STOP</button>
@@ -503,7 +607,7 @@ async function pollStatus() {
   setPill('p-link', connected ? 'ok' : 'missing');
   if (!connected || !status) return;
   setPill('p-mapping', status.mapping ? 'ok' : 'missing');
-  for (const k of ['lidar', 'imu', 'wheels']) setPill('p-' + k, status.sensors[k]);
+  for (const k of ['lidar', 'imu', 'wheels', 'tof', 'jetson']) setPill('p-' + k, status.sensors[k]);
   $('start').disabled = status.mapping;
   $('stop').disabled = !status.mapping;
   $('reconnect').disabled = !status.mapping || reconnecting;
@@ -523,6 +627,9 @@ async function pollStatus() {
   if (lidarGone && radar) { radar = null; drawRadar(); }
   showMetrics();
   showCamera(status.camera);
+  showBattery(status.battery);
+  showJetson(status.jetson);
+  showTelemetry();
   if (status.map_version !== mapVersion) pollMap();
   if (status.trail && (status.trail.session !== trail.session || status.trail.len > trail.points.length)) pollTrail();
   requestDraw();
@@ -751,8 +858,9 @@ function drawRadar() {
       ctx.fillStyle = col('muted'); ctx.fillText(text, x, y);
     }
   };
+  drawTof(ctx, cx, cy, s, col, Math.max(2, W / 160));
   // The robot at its real size, with a tick showing forward (left out without data)
-  if (!radar) { labelRings(); return; }
+  if (!radar && !tofLive()) { labelRings(); return; }
   const rr = Math.max(5, robotRadius() * s);
   ctx.fillStyle = col('text'); ctx.globalAlpha = 0.85;
   ctx.beginPath(); ctx.arc(cx, cy, rr, 0, 2 * Math.PI); ctx.fill(); ctx.globalAlpha = 1;
@@ -1222,16 +1330,17 @@ function camConnect() {
   if (!camUrl) { camShow("Type the Jetson's stream address below."); $('camAddr').hidden = false; return; }
   $('camImg').src = '/api/camera.mjpg?t=' + camTried;
 }
+// The video runs unless paused (⏸, saves WiFi); the choice is kept in this browser.
 function setCamera(open) {
   camOpen = open;
-  $('cameraPanel').hidden = !open;
-  $('cameraBtn').classList.toggle('on', open);
-  if (open) { camShow('Connecting...'); $('camState').textContent = ''; camConnect(); }
-  else $('camImg').removeAttribute('src');
+  try { localStorage.setItem('lucia.camera', open ? 'on' : 'off'); } catch (e) {}
+  $('camPause').textContent = open ? '⏸' : '▶';
+  $('camPause').title = open ? 'Pause the video (saves WiFi)' : 'Show the video';
+  $('camState').textContent = '';
+  if (open) { camShow('Connecting...'); camConnect(); }
+  else { $('camImg').removeAttribute('src'); camShow('Video paused. ▶ shows it again.'); }
 }
-$('cameraBtn').onclick = () => setCamera(!camOpen);
-$('camClose').onclick = () => setCamera(false);
-$('camSize').onclick = () => $('cameraPanel').classList.toggle('large');
+$('camPause').onclick = () => setCamera(!camOpen);
 $('camEdit').onclick = () => { $('camAddr').hidden = !$('camAddr').hidden; if (!$('camAddr').hidden) $('camUrl').focus(); };
 $('camSave').onclick = async () => {
   const r = await post('/api/camera', { url: $('camUrl').value });
@@ -1253,8 +1362,11 @@ function showCamera(c) {
   if (Date.now() - camTried > 4000) camConnect();
 }
 async function loadCamera() {
-  try { camUrl = (await (await fetch('/api/camera')).json()).url || ''; } catch (e) { return; }
+  try { camUrl = (await (await fetch('/api/camera')).json()).url || ''; } catch (e) { camUrl = ''; }
   $('camUrl').value = camUrl;
+  let on = true;
+  try { on = localStorage.getItem('lucia.camera') !== 'off'; } catch (e) {}
+  setCamera(on);
 }
 
 // ---- Popovers: the horn menu and Save map -------------------------------------
@@ -1468,8 +1580,194 @@ $('settingsStart').onclick = async () => {
   pollStatus();
 };
 
+// ---- ToF sensors: on the radar, and the ToF card ------------------------------------
+// /api/tof: each sensor's position and grid (16 zones, mm, as seen from behind it), what
+// each zone is (obstacle / floor / high / far / none), the readings as points on the robot,
+// and the stop zone.
+let tofView = null;
+const TOF_NAMES = ['left', 'middle', 'right'];
+const KIND_TEXT = { obstacle: 'something in reach', floor: 'the floor', high: 'higher than the robot',
+                    far: 'further than 1 m' };
+const tofLive = () => !!tofView && tofView.sensors.some(x => x.grid);
+async function pollTof() {
+  try { tofView = await (await fetch('/api/tof')).json(); } catch (e) { return; }
+  renderTof();
+  drawRadar();
+}
+// Robot frame (x forward, y left, meters) on the radar canvas: forward is up
+function drawTof(ctx, cx, cy, s, col, dot) {
+  if (!tofLive()) return;
+  const P = (x, y) => [cx - y * s, cy - x * s], tof = col('tof');
+  const st = tofView.stop;
+  if (st) {        // the stop zone: dashed; filled red while it stops the robot
+    const [x0, y0] = P(st.front + st.ahead, st.half_width), [x1, y1] = P(st.front, -st.half_width);
+    const hit = st.on && tofView.near;
+    ctx.save();
+    if (hit) { ctx.fillStyle = col('bad'); ctx.globalAlpha = 0.25; ctx.fillRect(x0, y0, x1 - x0, y1 - y0); ctx.globalAlpha = 1; }
+    ctx.setLineDash([4, 3]); ctx.lineWidth = 1.5;
+    ctx.strokeStyle = hit ? col('bad') : st.on ? tof : col('muted');
+    ctx.strokeRect(x0, y0, x1 - x0, y1 - y0);
+    ctx.restore();
+  }
+  const reach = Math.min(1.0, radarRange) * s;
+  for (const se of tofView.sensors) {
+    const [sx, sy] = P(se.x, se.y);
+    const yaw = se.yaw_deg * Math.PI / 180, half = se.fov_deg / 2 * Math.PI / 180;
+    ctx.beginPath(); ctx.moveTo(sx, sy);                 // its view, out to 1 m
+    ctx.arc(sx, sy, reach, -Math.PI / 2 - yaw - half, -Math.PI / 2 - yaw + half); ctx.closePath();
+    ctx.fillStyle = tof; ctx.globalAlpha = se.grid ? 0.08 : 0.03; ctx.fill();
+    ctx.globalAlpha = 0.35; ctx.strokeStyle = tof; ctx.lineWidth = 1; ctx.stroke(); ctx.globalAlpha = 1;
+    for (const [x, y, kind] of se.points) {
+      if (Math.hypot(x, y) > radarRange) continue;
+      const [px, py] = P(x, y);
+      ctx.beginPath();
+      if (kind === 'obstacle') {
+        ctx.arc(px, py, dot * 1.6, 0, 2 * Math.PI); ctx.fillStyle = tof; ctx.fill();
+        ctx.strokeStyle = col('card'); ctx.lineWidth = 1; ctx.stroke();
+      } else if (kind === 'floor') {
+        ctx.arc(px, py, dot * 0.8, 0, 2 * Math.PI); ctx.fillStyle = col('muted'); ctx.globalAlpha = 0.6; ctx.fill(); ctx.globalAlpha = 1;
+      } else {         // higher than the robot, or further than 1 m: just a ring
+        ctx.arc(px, py, dot, 0, 2 * Math.PI); ctx.strokeStyle = col('muted'); ctx.lineWidth = 1; ctx.stroke();
+      }
+    }
+  }
+}
+function renderTof() {
+  const v = tofView, col = colOf(css());
+  for (const name of TOF_NAMES) {
+    const se = v && v.sensors.find(x => x.name === name), el = $('tofGrid-' + name);
+    if (el.children.length !== 16) el.innerHTML = '<span></span>'.repeat(16);
+    $('tofHz-' + name).textContent = se && se.grid ? se.hz.toFixed(0) + ' Hz' : '-';
+    [...el.children].forEach((cell, i) => {
+      const mm = se && se.grid ? se.grid[i] : 0, kind = se && se.kinds ? se.kinds[i] : 'none';
+      cell.className = kind;
+      cell.style.background = kind === 'obstacle' ? (mm < 300 ? col('bad') : mm < 600 ? col('warn') : col('tof')) : '';
+      cell.textContent = kind === 'none' ? '' : Math.round(mm / 10);
+      cell.title = kind === 'none' ? 'nothing in range' : `${Math.round(mm / 10)} cm: ${KIND_TEXT[kind] || kind}`;
+    });
+  }
+  const nb = $('tofNear');
+  if (!v || v.near == null) { nb.textContent = '-'; nb.className = 'badge'; }
+  else if (v.near) { nb.textContent = 'NEAR'; nb.className = 'badge bad'; }
+  else { nb.textContent = 'clear'; nb.className = 'badge ok'; }
+  const st = v && v.stop;
+  $('tofStopInfo').textContent = !tofLive() ? 'The ToF sensors run while mapping.'
+    : `ToF stop ${st.on ? 'on' : 'off'} (something in its path within ${Math.round(st.ahead * 100)} cm of the front) · `
+      + `low obstacles on the map ${v.map_on ? 'on' : 'off'}`;
+}
+
+// ---- Battery, the Jetson's detections, telemetry ---------------------------------
+const esc = t => String(t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const hist = { batt: [], current: [], speed: [], temp: [] };
+const KEEP_S = { batt: 600, current: 120, speed: 120, temp: 600 };
+function remember(name, v) {
+  const now = Date.now() / 1000, h = hist[name];
+  if (v != null && isFinite(v)) h.push([now, v]);
+  while (h.length && now - h[0][0] > KEEP_S[name]) h.shift();
+}
+function spark(id, name, color, lo, hi) {             // a small line graph of hist[name]
+  const c = $(id), w = c.clientWidth, h = c.clientHeight, dpr = window.devicePixelRatio || 1;
+  if (!w || !h) return;
+  if (c.width !== Math.round(w * dpr) || c.height !== Math.round(h * dpr)) {
+    c.width = Math.round(w * dpr); c.height = Math.round(h * dpr);
+  }
+  const ctx = c.getContext('2d');
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, w, h);
+  const pts = hist[name];
+  if (pts.length < 2) return;
+  const now = Date.now() / 1000, span = KEEP_S[name];
+  let min = lo ?? Math.min(...pts.map(p => p[1])), max = hi ?? Math.max(...pts.map(p => p[1]));
+  if (max - min < 1e-6) { max += 0.5; min -= 0.5; }
+  ctx.strokeStyle = color; ctx.lineWidth = 1.5; ctx.beginPath();
+  pts.forEach(([t, v], k) => {
+    const x = w - (now - t) / span * w, y = h - 2 - (v - min) / (max - min) * (h - 4);
+    k ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+  });
+  ctx.stroke();
+}
+const battLevel = pct => pct == null ? '' : pct < 15 ? 'bad' : pct < 30 ? 'warn' : 'ok';
+function showBattery(b) {
+  const pill = $('p-battery'), pct = b ? b.percent : null, lvl = battLevel(pct);
+  pill.className = 'pill ' + ({ bad: 'missing', warn: 'stale', ok: 'ok' }[lvl] || '');
+  pill.querySelector('.batt i').style.width = pct == null ? '0' : `calc(${Math.max(5, pct)}% - 2px)`;
+  $('battText').textContent = pct == null ? 'Battery -' : `${pct.toFixed(0)}%${b.charging ? ' ⚡' : ''}`;
+  pill.title = b ? `Roomba battery: ${pct == null ? '?' : pct.toFixed(0) + '%'}, ${b.voltage.toFixed(2)} V, ${b.text}`
+                 : "Roomba battery: no reading (it's read while mapping)";
+  $('battPct').textContent = pct == null ? '-' : pct.toFixed(0) + '%';
+  $('battBar').className = 'battbar' + (lvl && lvl !== 'ok' ? ' ' + lvl : '');
+  $('battBar').firstElementChild.style.width = (pct ?? 0) + '%';
+  $('battDetail').textContent = b
+    ? [`${b.voltage.toFixed(2)} V`, b.charge_mah != null ? `${b.charge_mah} of ${b.capacity_mah} mAh` : null,
+       b.temperature_c != null ? `${b.temperature_c} °C` : null, b.text].filter(Boolean).join(' · ')
+    : "Roomba battery: no reading yet (it's read while mapping).";
+  setV('tCurrent', b ? `${b.current >= 0 ? '+' : ''}${b.current.toFixed(2)} A` : '-');
+  setV('mBatt', pct == null ? '-' : `${pct.toFixed(0)}% · ${b.voltage.toFixed(1)} V`, lvl === 'ok' ? '' : lvl);
+  remember('batt', pct);
+  remember('current', b ? b.current : null);
+}
+function showJetson(j) {
+  const el = $('jetsonInfo');
+  if (!j) { el.innerHTML = '<span class="na">No detections from the Jetson yet.</span>'; return; }
+  if (j.age_s > 3) { el.innerHTML = `<span class="na">The Jetson has been quiet for ${Math.round(j.age_s)} s.</span>`; return; }
+  const n = j.people.length;
+  let text = n ? `${n} ${n === 1 ? 'person' : 'people'}: ` + j.people.map(p => `ID ${p.id} at ${p.dist_m.toFixed(1)} m`).join(', ')
+               : 'Nobody in view';
+  text = esc(text);
+  if (j.sign && j.sign_age_s != null && j.sign_age_s < 30)
+    text += ` · sign <span class="sign">${esc(j.sign.kind)}</span> (ID ${esc(j.sign.id)}, ${Math.round(j.sign_age_s)} s ago)`;
+  el.innerHTML = text;
+}
+function showTelemetry() {
+  const t = status.telemetry || {}, r = t.rates || {}, tr = t.tof_rates || {}, pi = t.pi || {}, j = status.jetson;
+  const speed = t.cmd ? Math.abs(t.cmd.linear) * 100 : null;
+  setV('tSpeed', speed == null ? '-' : speed.toFixed(0) + ' cm/s');
+  remember('speed', speed);
+  setV('tRates', `${fmt(r.lidar, 1, '')} · ${fmt(r.imu, 0, '')} · ${fmt(r.wheels, 0, '')} Hz`,
+       status.mapping && (!r.lidar || !r.wheels) ? 'warn' : '');
+  const tofText = TOF_NAMES.map(n => fmt(tr[n], 0, '')).join(' · ') + ' Hz';
+  const tofLow = status.mapping && TOF_NAMES.some(n => !tr[n]) ? 'warn' : '';
+  setV('tTofRates', tofText, tofLow);
+  setV('mTofRates', tofText, tofLow);
+  setV('tJetson', j && j.age_s < 3 ? `${j.hz.toFixed(0)} msgs/s` : '-');
+  setV('tCpu', pi.cpu_pct == null ? '-' : `${pi.cpu_pct.toFixed(0)}%`, pi.cpu_pct >= 90 ? 'warn' : '');
+  setV('tTemp', fmt(pi.temp_c, 0, ' °C'), pi.temp_c >= 80 ? 'bad' : pi.temp_c >= 70 ? 'warn' : '');
+  setV('tMem', fmt(pi.mem_pct, 0, '%'), pi.mem_pct >= 90 ? 'warn' : '');
+  remember('temp', pi.temp_c);
+  const col = colOf(css());
+  spark('sparkBatt', 'batt', col('ok'), 0, 100);
+  spark('sparkCurrent', 'current', col('accent'));
+  spark('sparkSpeed', 'speed', col('accent'), 0);
+  spark('sparkTemp', 'temp', col('warn'));
+}
+
+// ---- ⤢: swap a panel into the big spot in the middle -------------------------------
+// Each panel has a marker where it lives; the one in the middle trades places with the map.
+const SWAPPABLE = ['mapWrap', 'radarCard', 'cameraCard', 'tofCard'];
+const homeOf = {};
+for (const id of SWAPPABLE) { const m = document.createComment(id); $(id).before(m); homeOf[id] = m; }
+let mainId = 'mapWrap';
+function setMain(id) {
+  if (!SWAPPABLE.includes(id)) id = 'mapWrap';
+  for (const k of SWAPPABLE) homeOf[k].after($(k));            // everything back home
+  if (id !== 'mapWrap') { homeOf[id].after($('mapWrap')); $('mainSlot').append($(id)); }
+  mainId = id;
+  try { localStorage.setItem('lucia.main', id); } catch (e) {}
+  document.querySelectorAll('.swapbtn').forEach(b => {
+    const big = b.dataset.swap === mainId;
+    b.textContent = big ? '⤡' : '⤢';
+    b.title = big ? 'Back to its own spot (the map goes back to the middle)' : 'Make it big (swap it into the middle)';
+  });
+  requestDraw(); drawRadar(); renderTof();
+}
+document.querySelectorAll('.swapbtn').forEach(b =>
+  b.onclick = () => setMain(mainId === b.dataset.swap ? 'mapWrap' : b.dataset.swap));
+
 // ---- Start ---------------------------------------------------------------
-pollStatus(); loadMaps(); drawRadar(); pollLogs(); loadTunes(); loadCamera();
+let savedMain = 'mapWrap';
+try { savedMain = localStorage.getItem('lucia.main') || 'mapWrap'; } catch (e) {}
+setMain(savedMain);
+pollStatus(); loadMaps(); drawRadar(); pollLogs(); loadTunes(); loadCamera(); renderTof();
+setInterval(pollTof, 200);
 setInterval(pollStatus, 1000);
 setInterval(pollScan, 200);
 setInterval(pollMap, 2000);

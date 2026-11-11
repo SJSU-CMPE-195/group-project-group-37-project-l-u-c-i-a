@@ -31,6 +31,24 @@ FLOOR_MM = {
 }
 
 
+def zone_kind(index, d, floor_row_mm, mount_z, min_mm=20, mark_max_mm=1000,
+              floor_margin_mm=100, z_max_m=0.45, radial=False):
+    """What one zone's reading (mm, image order) is:
+    'none' (nothing in range, or a glitch), 'floor', 'obstacle' (within
+    mark_max_mm and low enough to hit), 'high' (higher than the robot: it
+    passes under) or 'far' (further than mark_max_mm)."""
+    if d < min_mm:
+        return 'none'
+    bottom = (zones.SIDE - 1) * zones.SIDE
+    if index >= bottom and floor_row_mm is not None and d >= floor_row_mm[index - bottom] - floor_margin_mm:
+        return 'floor'
+    if d > mark_max_mm:
+        return 'far'
+    if mount_z + zones.sensor_point(index, d / 1000.0, radial)[2] > z_max_m:
+        return 'high'
+    return 'obstacle'
+
+
 def classify(image_mm, floor_row_mm, mount_z, min_mm=20, mark_max_mm=1000,
              free_max_mm=1500, floor_margin_mm=100, z_max_m=0.45, radial=False):
     """One frame (16 distances in mm, image order, -1 = no reading) ->
@@ -38,19 +56,28 @@ def classify(image_mm, floor_row_mm, mount_z, min_mm=20, mark_max_mm=1000,
     floor_row_mm: the bottom row's floor distances, or None if unknown (then
     the bottom row is treated like the others)."""
     obstacles, free = [], []
-    bottom = (zones.SIDE - 1) * zones.SIDE
     for i, d in enumerate(image_mm):
-        if d < min_mm:                      # nothing in range, or a glitch
+        kind = zone_kind(i, d, floor_row_mm, mount_z, min_mm, mark_max_mm, floor_margin_mm, z_max_m, radial)
+        if kind == 'obstacle':
+            obstacles.append(zones.sensor_point(i, d / 1000.0, radial))
+        elif kind == 'none':                 # free up to free_max_mm
             free.append(zones.sensor_point(i, free_max_mm / 1000.0, radial))
-            continue
-        point = zones.sensor_point(i, d / 1000.0, radial)
-        if i >= bottom and floor_row_mm is not None and d >= floor_row_mm[i - bottom] - floor_margin_mm:
-            free.append(point)              # the floor
-        elif d <= mark_max_mm and mount_z + point[2] <= z_max_m:
-            obstacles.append(point)
-        else:                               # far away, or higher than the robot
+        else:                                # floor, far, high: free up to the reading
             free.append(zones.sensor_point(i, min(d, free_max_mm) / 1000.0, radial))
     return obstacles, free
+
+
+def radar_points(image_mm, floor_row_mm, mount, min_mm=20, mark_max_mm=1000,
+                 floor_margin_mm=100, z_max_m=0.45, radial=False):
+    """For the web page's radar: [(x, y, kind)] in base_link (m) for every
+    zone with a reading, kind as zone_kind."""
+    out = []
+    for i, d in enumerate(image_mm):
+        kind = zone_kind(i, d, floor_row_mm, mount.z, min_mm, mark_max_mm, floor_margin_mm, z_max_m, radial)
+        if kind != 'none':
+            x, y, _ = zones.zone_point(i, d / 1000.0, mount, radial)
+            out.append((round(x, 3), round(y, 3), kind))
+    return out
 
 
 def pack_xyz(points):

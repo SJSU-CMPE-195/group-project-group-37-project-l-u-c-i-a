@@ -4,6 +4,7 @@ logic.py
 Pure helpers for the web UI, kept free of ROS so they can be tested anywhere.
 """
 
+import json
 import math
 import os
 import re
@@ -383,3 +384,60 @@ def cpu_percent(previous, current):
 def log_level_name(level):
     """rcl_interfaces/msg/Log level number as a word."""
     return LOG_LEVELS.get(level, str(level))
+
+
+class JetsonFeed:
+    """
+    What the Jetson sees, from its detection messages: follow_sender.py sends
+    UDP JSON about 10 times a second (docs/jetson-deployment/Scripts):
+        {"seq": n, "people": [{"id", "x", "y", "z", "conf"}, ...],
+         "sign": {"id", "kind"} or null}
+    x, y, z in meters from the camera. A sign is sent once, when it fires, so
+    the last one is kept with its time.
+    """
+
+    def __init__(self):
+        self._last = None           # (time, [people])
+        self._sign = None           # (time, {'id', 'kind'})
+        self._rate = RateMeter()
+        self.bad = 0                # messages that weren't what follow_sender sends
+
+    def feed(self, data, now):
+        """One datagram (bytes). Returns False if it wasn't a detection message."""
+        try:
+            msg = json.loads(data)
+            people_in = msg.get('people') or []
+            if not isinstance(people_in, list):
+                raise ValueError
+        except (ValueError, TypeError, AttributeError):
+            self.bad += 1
+            return False
+        people = []
+        for p in people_in:
+            try:
+                dist = math.sqrt(float(p['x']) ** 2 + float(p['y']) ** 2 + float(p['z']) ** 2)
+                if not math.isfinite(dist):
+                    continue
+                people.append({'id': int(p['id']), 'dist_m': round(dist, 2),
+                               'conf': round(float(p.get('conf', 0.0)), 2)})
+            except (KeyError, TypeError, ValueError):
+                continue
+        self._last = (now, people)
+        self._rate.tick(now)
+        sign = msg.get('sign')
+        if isinstance(sign, dict) and sign.get('kind'):
+            self._sign = (now, {'id': sign.get('id'), 'kind': str(sign['kind'])[:20]})
+        return True
+
+    def status(self, now):
+        """For the page, or None if nothing has arrived yet."""
+        if self._last is None:
+            return None
+        t, people = self._last
+        return {
+            'age_s': round(now - t, 2),
+            'hz': round(self._rate.hz(now), 1),
+            'people': people,
+            'sign': self._sign[1] if self._sign else None,
+            'sign_age_s': round(now - self._sign[0], 1) if self._sign else None,
+        }

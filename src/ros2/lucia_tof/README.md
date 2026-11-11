@@ -170,7 +170,7 @@ and which Pico program sent them. View with `rqt_robot_monitor` or
 | `map_obstacles` | true | publish `tof/<name>/obstacles` and `free` |
 | `mark_max_mm`, `free_max_mm` | 1000, 1500 | obstacles up to 1 m; nothing in range = free up to 1.5 m |
 | `floor_margin_mm` | 100 | bottom row: this much shorter than the floor = something on it |
-| `floor_mm_<name>` | measured | each sensor's bottom-row floor distances (4 zones, mm) |
+| `floor_mm_<name>` | `obstacles.FLOOR_MM` | each sensor's bottom-row floor distances (4 zones, mm); measured values live in `obstacles.py`, which the web page uses too |
 | `base_frame` | `base_link` | parent frame of the `tof_<name>_link` transforms |
 | `near_mm` | 300 | only for a sensor `zones.py` doesn't know: closer than this = near |
 | `near_frames` | 3 | frames in a row before a sensor's near / clear answer changes |

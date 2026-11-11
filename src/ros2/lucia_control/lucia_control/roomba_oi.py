@@ -242,6 +242,22 @@ class RoombaOI:
         size = self.PACKET_SIZES.get(packet_id, 1)
         return self.ser.read(size)
 
+    def query(self, request, reply_len, timeout_s=0.1):
+        """
+        Send a sensor request (e.g. battery.QUERY, a Query List) and read its
+        reply, waiting at most timeout_s so a silent Roomba can't hold up
+        driving. Returns the bytes that arrived (fewer than reply_len if not
+        all did). (ROS2 copy only.)
+        """
+        self.ser.reset_input_buffer()
+        self.ser.write(bytes(request))
+        old = self.ser.timeout
+        self.ser.timeout = timeout_s
+        try:
+            return self.ser.read(reply_len)
+        finally:
+            self.ser.timeout = old
+
     def read_sensor_int(self, packet_id, signed=False):
         """
         Request a sensor packet and decode it as an integer.

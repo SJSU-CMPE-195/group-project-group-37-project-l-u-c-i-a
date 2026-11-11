@@ -50,12 +50,16 @@ Usage:
     ros2 run lucia_web web_ui --ros-args -p http_port:=8080
 """
 
+import array
 import base64
 import collections
 import http.client
 import json
+import math
 import os
+import socket
 import subprocess
+import sys
 import tempfile
 import threading
 import time
@@ -73,12 +77,14 @@ from rclpy.node import Node
 from rclpy.qos import (DurabilityPolicy, QoSProfile, ReliabilityPolicy,
                        qos_profile_sensor_data)
 from rclpy.time import Time
-from sensor_msgs.msg import Imu, LaserScan
-from std_msgs.msg import String
+from sensor_msgs.msg import BatteryState, Image, Imu, LaserScan
+from std_msgs.msg import Bool, String
 from std_srvs.srv import Trigger
 from tf2_ros import Buffer, TransformException, TransformListener
 
-from lucia_web.logic import (AutoResume, RateMeter, Trail, camera_url, clamp_speed, cpu_percent,
+from lucia_tof import obstacles as tof_obstacles
+from lucia_tof import zones as tof_zones
+from lucia_web.logic import (AutoResume, JetsonFeed, RateMeter, Trail, camera_url, clamp_speed, cpu_percent,
                              cpu_times, drive_to_twist, encode_grid,
                              log_level_name, mapped_area_m2, mission_text,
                              parse_loadavg, parse_meminfo, parse_temp,
@@ -101,6 +107,8 @@ RECONNECT_TIMEOUT_S = 20.0  # roomba_bridge's reconnect takes about 5 s
 MIDI_MAX_BYTES = 2_000_000
 CAMERA_TIMEOUT_S = 5.0      # the relay gives up on a camera that sends nothing for this long
 CAMERA_TYPES = ('multipart/x-mixed-replace', 'image/jpeg')     # what the relay passes on
+TOF_NAMES = ('left', 'middle', 'right')
+BATTERY_FRESH_S = 6.0       # roomba_bridge reads it every 2 s
 
 
 class WebUi(Node):
@@ -117,6 +125,7 @@ class WebUi(Node):
         self.declare_parameter('resume_after_s', 3.0)       # driving by hand: carry on this long after; 0 = never
         self.declare_parameter('radar_slices', 180)         # 2 degrees each
         self.declare_parameter('robot_radius_m', 0.23)      # for drawing; 18 in across (nav2.yaml has the same)
+        self.declare_parameter('jetson_port', 5005)         # the Jetson's detections (UDP JSON); 0 = don't listen
 
         self._http_port = self.get_parameter('http_port').value
         self.maps_dir = self.get_parameter('maps_dir').value
@@ -155,6 +164,11 @@ class WebUi(Node):
         self._cpu_prev = None
         self._logs = collections.deque(maxlen=LOG_KEEP)
         self._log_seq = 0
+        self._tof = {name: None for name in TOF_NAMES}      # name -> (time, 16 distances in mm, 0 = none)
+        self._tof_rates = {name: RateMeter() for name in TOF_NAMES}
+        self._tof_near = None       # (time, bool) from tof/near
+        self._battery = None        # (time, dict) from roomba_bridge's /battery
+        self._jetson = JetsonFeed()
 
         self.create_subscription(LaserScan, 'scan', self._on_scan, qos_profile_sensor_data)
         self.create_subscription(Imu, 'imu/data', self._on_imu, 10)
@@ -168,6 +182,11 @@ class WebUi(Node):
         rosout_qos = QoSProfile(depth=200, reliability=ReliabilityPolicy.RELIABLE,
                                 durability=DurabilityPolicy.TRANSIENT_LOCAL)
         self.create_subscription(Log, 'rosout', self._on_log, rosout_qos)
+        for name in TOF_NAMES:
+            self.create_subscription(Image, f'tof/{name}/image',
+                                     lambda msg, n=name: self._on_tof(n, msg), qos_profile_sensor_data)
+        self.create_subscription(Bool, 'tof/near', self._on_tof_near, 10)
+        self.create_subscription(BatteryState, 'battery', self._on_battery, 10)
 
         self._cmd_pub = self.create_publisher(Twist, 'cmd_vel', 10)
         self._mission_pub = self.create_publisher(String, 'mission/command', 10)
@@ -194,6 +213,10 @@ class WebUi(Node):
         self.create_timer(1.0, self._publish_speed_limit)
         self.create_timer(2.0, self._read_pi_health)
 
+        jetson_port = self.get_parameter('jetson_port').value
+        if jetson_port:
+            threading.Thread(target=self._listen_jetson, args=(jetson_port,), daemon=True).start()
+
         handler = type('Handler', (_Handler,), {'ui': self})
         self._server = ThreadingHTTPServer(('0.0.0.0', self._http_port), handler)
         self._server.daemon_threads = True
@@ -216,6 +239,95 @@ class WebUi(Node):
         self._seen('imu')
         with self._lock:
             self._gyro = (time.monotonic(), msg.angular_velocity.z)
+
+    def _on_tof(self, name, msg):
+        mm = array.array('H')
+        mm.frombytes(bytes(msg.data))
+        if msg.is_bigendian != (sys.byteorder == 'big'):
+            mm.byteswap()
+        now = time.monotonic()
+        with self._lock:
+            self._tof[name] = (now, list(mm))
+            self._tof_rates[name].tick(now)
+
+    def _on_tof_near(self, msg):
+        with self._lock:
+            self._tof_near = (time.monotonic(), msg.data)
+
+    def _on_battery(self, msg):
+        pct = None if math.isnan(msg.percentage) else round(msg.percentage * 100, 1)
+        state = {
+            'percent': pct,
+            'voltage': round(msg.voltage, 2),
+            'current': round(msg.current, 2),
+            'charge_mah': None if math.isnan(msg.charge) else round(msg.charge * 1000),
+            'capacity_mah': None if math.isnan(msg.capacity) else round(msg.capacity * 1000),
+            'temperature_c': None if math.isnan(msg.temperature) else round(msg.temperature),
+            'charging': msg.power_supply_status == BatteryState.POWER_SUPPLY_STATUS_CHARGING,
+            'text': msg.location,       # the Roomba's charging state, in words (roomba_bridge)
+        }
+        with self._lock:
+            self._battery = (time.monotonic(), state)
+
+    def _listen_jetson(self, port):
+        """The Jetson's detections over UDP (follow_sender.py --host <this Pi>)."""
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            sock.bind(('0.0.0.0', port))
+            sock.settimeout(1.0)
+        except OSError as exc:
+            self.get_logger().warning(f'Not listening for the Jetson on UDP port {port}: {exc}')
+            return
+        self.get_logger().info(f'Listening for the Jetson\'s detections on UDP port {port}')
+        while rclpy.ok():
+            try:
+                data, _ = sock.recvfrom(65535)
+            except socket.timeout:
+                continue
+            except OSError:
+                time.sleep(1.0)
+                continue
+            with self._lock:
+                self._jetson.feed(data, time.monotonic())
+
+    def tof_view(self):
+        """What the ToF sensors see, for the page's radar and ToF card."""
+        now = time.monotonic()
+        with self._lock:
+            frames = dict(self._tof)
+            rates = {n: round(m.hz(now), 1) for n, m in self._tof_rates.items()}
+            near = self._tof_near
+            settings = dict(self._settings)
+            radius = self._robot_radius
+        sensors = []
+        for name in TOF_NAMES:
+            mount = tof_zones.MOUNTS[name]
+            frame = frames[name]
+            fresh = frame is not None and now - frame[0] < 1.0
+            grid = frame[1] if fresh else None
+            sensors.append({
+                'name': name, 'x': mount.x, 'y': mount.y, 'yaw_deg': mount.yaw_deg,
+                'fov_deg': tof_zones.FOV_DEG, 'hz': rates[name],
+                'age_s': None if frame is None else round(now - frame[0], 2),
+                'grid': grid,
+                'kinds': None if grid is None else [
+                    tof_obstacles.zone_kind(i, d, tof_obstacles.FLOOR_MM.get(name), mount.z)
+                    for i, d in enumerate(grid)],
+                'points': [] if grid is None else tof_obstacles.radar_points(
+                    grid, tof_obstacles.FLOOR_MM.get(name), mount),
+            })
+        return {
+            'sensors': sensors,
+            'near': near[1] if near is not None and now - near[0] < 1.0 else None,
+            'stop': {
+                'on': self.mapping.running and bool(settings.get('use_tof')),
+                'front': tof_zones.ROOMBA_FRONT_M,
+                'ahead': settings.get('tof_stop', 0.15),
+                'half_width': radius + 0.02,
+            },
+            'map_on': self.mapping.running and bool(settings.get('tof_map')),
+        }
 
     def _on_cmd_safe(self, msg):
         with self._lock:
@@ -663,6 +775,14 @@ class WebUi(Node):
         with self._lock:
             sensors = {name: topic_status(None if t is None else now - t)
                        for name, t in self._last_seen.items()}
+            tof_states = [topic_status(None if f is None else now - f[0]) for f in self._tof.values()]
+            sensors['tof'] = ('ok' if all(st == 'ok' for st in tof_states)
+                              else 'missing' if all(st == 'missing' for st in tof_states) else 'stale')
+            jetson = self._jetson.status(now)
+            sensors['jetson'] = topic_status(None if jetson is None else jetson['age_s'])
+            battery = None
+            if self._battery is not None and now - self._battery[0] < BATTERY_FRESH_S:
+                battery = dict(self._battery[1], age_s=round(now - self._battery[0], 1))
             pose = self._pose
             map_version = self._map['version'] if self._map else None
             speed = self._speed
@@ -683,6 +803,7 @@ class WebUi(Node):
                 'trip_s': self.mapping.uptime_s,
                 'area_m2': self._area_m2,
                 'rates': {name: round(m.hz(now), 1) for name, m in self._rates.items()},
+                'tof_rates': {name: round(m.hz(now), 1) for name, m in self._tof_rates.items()},
                 'pi': self._pi,
             }
             trail = {'session': self._trail.session, 'len': len(self._trail.points)}
@@ -701,6 +822,9 @@ class WebUi(Node):
             'trail': trail,
             'robot_radius_m': self._robot_radius,
             'camera': self.camera_state(),
+            'battery': battery,
+            'jetson': jetson,
+            'tof_near': self._tof_near[1] if self._tof_near and now - self._tof_near[0] < 1.0 else None,
         }
 
     def map_if_newer(self, version):
@@ -772,6 +896,8 @@ class _Handler(BaseHTTPRequestHandler):
                 self.end_headers()
             else:
                 self._send_json(radar)
+        elif path == '/api/tof':
+            self._send_json(self.ui.tof_view())
         elif path == '/api/logs':
             self._send_json(self.ui.logs_after(_query_int(query, 'after')))
         elif path == '/api/launchlog':
