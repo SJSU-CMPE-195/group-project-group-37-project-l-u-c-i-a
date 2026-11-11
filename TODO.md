@@ -168,9 +168,14 @@ Decided 2026-10-16: built on the **ToF distance sensors** the team is implementi
   `use_tof:=false` = pass-through. Rules in `safety_logic.py` (tested)
 - [x] `tof_node` in `mapping.launch.py` (2026-11-10): starts when `use_imu` or `use_tof` is on. "ToF safety
   stop" in the page's settings sets `use_tof` (off by default)
-- [ ] Wire and mount the three ToF sensors on the Pico (`src/pico2/README.md`), load `src/pico2/main.py` onto it
-  (same page), and check `tof/near` (the gate's stop is ramped like every stop: about 2 cm extra at 15 cm/s,
-  8 cm at 30 cm/s, inside the 300 mm)
+- [x] ToF sensors checked on the robot (2026-11-10, Noel's Pico with his `main.py`, read straight from `/dev/imu`
+  with mapping stopped): all three at 60 frames/s, IMU 88/s, no damaged packets. Hand test: each sensor alone
+  dropped to 16-26 cm and flagged NEAR, so left / middle / right are in the right order (Noel's names are as seen
+  facing the robot: his "left" is the robot's right). The cones overlap: a hand between two shows in both. The
+  bottom rows of middle and right see the floor at 53-66 cm, beyond the 30 cm NEAR line. Two "0 mm NEAR"
+  readings from the middle sensor in the first run, none in the second (probably a hand on it; watch for it)
+- [ ] The stop itself (the gate's stop is ramped like every stop: about 2 cm extra at 15 cm/s, 8 cm at 30 cm/s,
+  inside the 300 mm): "ToF safety stop" on, drive toward a wall by keyboard
 - [ ] Noel's known gaps (`lucia_tof/README.md`): image orientation (`flip_h` / `flip_v`) and radial vs.
   straight-ahead distance not checked; no `base_link`→`tof_*_link` transforms yet
 - [ ] Test it on its own, driving by keyboard toward a wall, before Explore relies on it
