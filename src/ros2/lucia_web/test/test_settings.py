@@ -74,6 +74,8 @@ def test_ros_params_have_the_types_the_nodes_declared():
     mission = p['mission']['ros__parameters']
     assert isinstance(mission['max_stuck'], int) and isinstance(mission['goal_timeout_s'], float)
     assert mission['clearance_m'] == 0.25                   # robot radius + 2 cm, as before
+    tof = p['tof_node']['ros__parameters']
+    assert tof['stop_distance_m'] == 0.15 and tof['half_width_m'] == 0.25
     local = p['local_costmap']['local_costmap']['ros__parameters']
     assert local['robot_radius'] == 0.23 and local['inflation_layer']['inflation_radius'] == 0.45
 

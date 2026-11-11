@@ -115,7 +115,7 @@ def generate_launch_description():
             parameters=[tof_config, {
                 'port': LaunchConfiguration('pico_port'),
                 'publish_imu': use_imu,
-            }],
+            }, settings],
             output='screen',
             condition=IfCondition(OrSubstitution(use_imu, use_tof)),
         ),

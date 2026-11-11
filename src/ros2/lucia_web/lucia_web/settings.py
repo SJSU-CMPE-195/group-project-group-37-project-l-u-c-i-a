@@ -52,8 +52,12 @@ SETTINGS = [
     Setting('use_imu', 'Robot', 'Use the IMU', 'bool', True,
             help='Heading from the IMU (straighter maps). Off: wheels only, if the IMU is unplugged.'),
     Setting('use_tof', 'Robot', 'ToF safety stop', 'bool', False,
-            help='Stops forward driving while the ToF sensors see something within 30 cm, or send '
-                 'nothing. Turning and backing up still work. Leave off until they are mounted.'),
+            help='Stops forward driving while the ToF sensors see something in its path (see the '
+                 'next setting), or send nothing. Turning and backing up still work.'),
+    Setting('tof_stop', 'Robot', 'ToF stop distance', 'float', 0.15, 0.05, 0.40, 0.01, 'm',
+            'How far past the front of the Roomba something in its path stops it (it brakes a few cm '
+            'more). Things lower than about 15 cm can drop out of the sensors\' view before it gets '
+            'this close.'),
     Setting('robot_radius', 'Robot', 'Robot radius', 'float', 0.23, 0.15, 0.40, 0.01, 'm',
             'Center to its furthest edge (18 in across = 0.23). For planning, the tight-space slowdown and drawing.'),
     # Tight spaces (safety_gate)
@@ -198,6 +202,10 @@ def ros_params(s):
             'ahead_slow_m': float(s['tight_ahead_slow']),
             'ahead_fast_m': float(s['tight_ahead_fast']),
             'robot_radius_m': radius,
+        }},
+        'tof_node': {'ros__parameters': {
+            'stop_distance_m': float(s['tof_stop']),
+            'half_width_m': radius + CLEARANCE_MARGIN_M,     # its path: as wide as the robot, plus a little
         }},
         'mission': {'ros__parameters': {
             'robot_radius_m': radius,

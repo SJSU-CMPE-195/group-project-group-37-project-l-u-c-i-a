@@ -178,8 +178,20 @@ Decided 2026-10-16: built on the **ToF distance sensors** the team is implementi
   now decides near itself (`lucia_tof/near_filter.py`): drops readings under 20 mm unless half the zones agree
   (covered), and a sensor's answer changes only after 3 frames in a row (about 50 ms). Tested here; not yet on
   the robot. `ros2 run lucia_tof tof_check` replaces the pasted check script and counts glitches
-- [ ] The stop itself (the gate's stop is ramped like every stop: about 2 cm extra at 15 cm/s, 8 cm at 30 cm/s,
-  inside the 300 mm): "ToF safety stop" on, drive toward a wall by keyboard
+- [x] Where the sensors sit (Christian, 2026-11-10, bracket drawing): 25.4 cm up, level; middle straight ahead,
+  7.6 cm behind the Roomba's front; left / right on the bracket's side faces at 72.5° outward, 1.6 cm to the
+  side and 1.2 cm behind the middle one (`lucia_tof/zones.py`). The bracket can't be tilted
+- [x] The stop only counts what's **in the robot's path** (2026-11-10): within its width, no further than the
+  page's new **"ToF stop distance"** (default 15 cm past the Roomba's front; it was 30 cm from the sensors, about
+  22 cm past the front). Before, the side sensors (almost sideways) would have blocked forward driving along
+  any wall. Tested with the robot's recorded grids and a simulated wall; not yet on the robot
+- [ ] The stop itself (ramped like every stop: about 2 cm extra at 15 cm/s, 8 cm at 30 cm/s): "ToF safety
+  stop" on, drive toward a wall by keyboard; also along a wall (it must not stop)
+- [ ] Low obstacles: from 25.4 cm up, level, the sensors lose a low object as the robot nears it (5 cm tall:
+  at about 42 cm from the front; 10 cm: 30 cm; 15 cm: 17 cm). Plan: put what the ToF sensors see on Nav2's map
+  (its own layer, so the lidar can't erase it), so a low object seen further out is remembered and planned
+  around. Needs on the robot first: which grid column is which side (`flip_h`), radial vs straight-out
+  distances, and where the floor shows up in each sensor's bottom rows (53-66 cm for middle / right)
 - [ ] Noel's known gaps (`lucia_tof/README.md`): image orientation (`flip_h` / `flip_v`) and radial vs.
   straight-ahead distance not checked; no `base_link`→`tof_*_link` transforms yet
 - [ ] Test it on its own, driving by keyboard toward a wall, before Explore relies on it
@@ -248,8 +260,8 @@ Nav2's progress checker watches the same open-loop odom, so a stuck robot went u
   then Explore skips that frontier, HOME / go-to try again. 3 in a row without reaching a goal: stop,
   play a tune for help. Driving by hand it only says so. Page: **Really moving?** metric, red **!** on
   the map. `stuck_check:=false` on the mission node turns it off
-- [ ] On the robot: drive Explore into something low the lidar can't see; noticed in 2-3 s? Backs up and
-  goes elsewhere? No false "stuck" in a normal Explore or a hallway (watch Really moving? and Logs)
+- [x] On the robot: Explore ran into something low the lidar can't see and backed off on its own (Christian,
+  reported 2026-11-10; height unknown). Still to watch: no false "stuck" in a normal Explore or a hallway
 - [ ] Later: tell Nav2 where it got stuck (a small obstacle layer of stuck spots, which the lidar can't
   clear), so plans route around them; today only the frontier is skipped
 

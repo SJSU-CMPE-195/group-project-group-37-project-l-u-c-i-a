@@ -21,7 +21,7 @@ from rclpy.time import Time
 from sensor_msgs.msg import Image, Imu, Range
 from std_msgs.msg import Bool
 
-from lucia_tof import imu, protocol
+from lucia_tof import imu, protocol, zones
 from lucia_tof.near_filter import NearFilter
 
 # A sequence jump bigger than this is taken as a Pico restart, not drops.
@@ -70,10 +70,22 @@ class TofNode(Node):
         self.flip_v = self.declare_parameter('flip_v', False).value
         self.max_range = self.declare_parameter('max_range', 4.0).value
         self.stale_timeout = self.declare_parameter('stale_timeout', 0.5).value
-        # Near / clear per sensor, with the glitch guards in near_filter.py
-        self.near_mm = self.declare_parameter('near_mm', 300).value
+        # Near / clear per sensor, with the glitch guards in near_filter.py.
+        # Near = something in the robot's path (zones.py): within its width
+        # (half_width_m from the middle), no further than stop_distance_m
+        # ahead of the Roomba's front, between z_min_m (above the floor) and
+        # z_max_m (higher things it passes under). Sensors not in zones.MOUNTS
+        # fall back to "anything closer than near_mm".
         self.near_frames = self.declare_parameter('near_frames', 3).value
         self.min_range_mm = self.declare_parameter('min_range_mm', 20).value
+        self.near_mm = self.declare_parameter('near_mm', 300).value
+        self.stop_box = zones.StopBox(
+            front=self.declare_parameter('front_m', zones.ROOMBA_FRONT_M).value,
+            ahead=self.declare_parameter('stop_distance_m', 0.15).value,
+            half_width=self.declare_parameter('half_width_m', 0.25).value,
+            z_min=self.declare_parameter('z_min_m', 0.02).value,
+            z_max=self.declare_parameter('z_max_m', 0.45).value)
+        self.radial = self.declare_parameter('radial', True).value
         near_rate = self.declare_parameter('near_rate', 10.0).value
         # The IMU on the same Pico, published like lucia_imu's imu_bridge did:
         # same topic, frame and variances (rough values, not measured).
@@ -94,6 +106,10 @@ class TofNode(Node):
         self.sensors = [SensorState(n, prefix + n + '_link') for n in names]
         self.near_filters = [NearFilter(self.near_mm, self.near_frames, self.min_range_mm)
                              for _ in names]
+        self.mounts = [zones.MOUNTS.get(n) for n in names]
+        self.get_logger().info(
+            'ToF stop: something in the robot\'s path within {:.2f} m of its front'.format(
+                self.stop_box.ahead))
         self.image_pubs = [
             self.create_publisher(Image, 'tof/{}/image'.format(n), qos_profile_sensor_data)
             for n in names]
@@ -180,7 +196,11 @@ class TofNode(Node):
 
     def handle_packet(self, pkt, recv_ns):
         s = self.sensors[pkt.sensor]
-        nearest_mm, near = self.near_filters[pkt.sensor].update(pkt.distances)
+        image = [pkt.distances[i] for i in self.zone_map]     # image order (zones.py)
+        mount = self.mounts[pkt.sensor]
+        in_way = None if mount is None else zones.in_the_way(
+            image, mount, self.stop_box, self.min_range_mm, self.radial)
+        nearest_mm, near = self.near_filters[pkt.sensor].update(pkt.distances, in_way)
         stamp = Time(nanoseconds=self.clock_sync.stamp(pkt.ticks_ms, recv_ns)).to_msg()
 
         with self.lock:
@@ -201,8 +221,7 @@ class TofNode(Node):
         img.is_bigendian = 0
         img.step = protocol.SIDE * 2
         # 0 = no reading (ROS depth image convention), also for readings too close to be real
-        mm = array.array('H', (d if d >= self.min_range_mm else 0
-                               for d in (pkt.distances[i] for i in self.zone_map)))
+        mm = array.array('H', (d if d >= self.min_range_mm else 0 for d in image))
         if sys.byteorder != 'little':
             mm.byteswap()
         img.data = mm.tobytes()

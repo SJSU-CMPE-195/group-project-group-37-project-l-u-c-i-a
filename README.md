@@ -211,7 +211,7 @@ python3 -m pytest test
 | Package | What the tests cover | Tests |
 |---|---|---|
 | `lucia_control` | Wheel-speed math, gradual speed changes (keeping the robot on its curve), position estimate, Roomba Open Interface commands (including the wake pulse), tunes | 52 |
-| `lucia_tof` | Reading the sensor Pico: packets, corruption, clock sync, IMU readings from either Pico program, turning an upside-down board's readings over, the ToF glitch filter, the sensor check | 34 |
+| `lucia_tof` | Reading the sensor Pico: packets, corruption, clock sync, IMU readings from either Pico program, turning an upside-down board's readings over, the ToF glitch filter, where each reading is on the robot and whether it's in its path, the sensor check | 44 |
 | `lucia_imu` | Reading the IMU-only Pico program's output: valid lines, half-received lines, garbage, heading math | 13 |
 | `lucia_nav` | Finding frontiers, the mission's decisions (Explore, HOME, stuck, pause and resume), a full simulated exploration of two rooms, the stuck check against a simulated lidar in a room and a hallway | 87 |
 | `lucia_bringup` | The safety gate: time-of-flight block, slowing down in tight spaces | 12 |

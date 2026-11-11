@@ -5,8 +5,10 @@ mapping runs).
     ros2 run lucia_tof tof_check                  # 10 s on /dev/imu
     ros2 run lucia_tof tof_check --seconds 20
 
-Twice a second: each sensor's nearest distance, and NEAR the way tof_node
-decides it (near_filter.py). At the end: frames per second, readings too close
+Twice a second: each sensor's nearest distance, and NEAR when tof_node would
+stop the robot: something in its path within the stop distance (zones.py,
+--stop, default 0.15 m past the front of the Roomba), with the glitch guards
+(near_filter.py). At the end: frames per second, readings too close
 to be real (glitches the filter drops), each sensor's 4x4 grid in mm (-1 = no
 reading, row 0 at the top), the IMU's rate and the Pico's own messages.
 
@@ -18,7 +20,7 @@ import argparse
 import os
 import time
 
-from lucia_tof import protocol
+from lucia_tof import protocol, zones
 from lucia_tof.near_filter import COVERED_ZONES, INVALID, NearFilter, too_close
 
 NAMES = ['left', 'middle', 'right']
@@ -32,10 +34,12 @@ def _show(nearest_mm, near):
     return text + (' NEAR' if near else '')
 
 
-def check(read, seconds, clock=time.monotonic, out=print, min_mm=20):
+def check(read, seconds, clock=time.monotonic, out=print, min_mm=20, stop_m=0.15):
     """Read packets with read() (bytes) for `seconds`; print as it goes and a
     summary. Returns the counts, for tests."""
     parser = protocol.Parser(len(NAMES))
+    box = zones.StopBox(front=zones.ROOMBA_FRONT_M, ahead=stop_m, half_width=0.25,
+                        z_min=0.02, z_max=0.45)
     filters = [NearFilter(min_mm=min_mm) for _ in NAMES]
     frames = [0] * len(NAMES)
     glitches = [0] * len(NAMES)
@@ -50,7 +54,8 @@ def check(read, seconds, clock=time.monotonic, out=print, min_mm=20):
                 frames[i] += 1
                 if 0 < too_close(item.distances, min_mm) < COVERED_ZONES:
                     glitches[i] += 1
-                last[i] = (item,) + filters[i].update(item.distances)
+                in_way = zones.in_the_way(item.distances, zones.MOUNTS[NAMES[i]], box, min_mm)
+                last[i] = (item,) + filters[i].update(item.distances, in_way)
             elif isinstance(item, protocol.ImuPacket):
                 imu += 1
             else:
@@ -98,6 +103,8 @@ def main(argv=None):
     ap = argparse.ArgumentParser(description='Show what the ToF sensors see (stop mapping first).')
     ap.add_argument('--port', default='/dev/imu', help='the sensor Pico (default /dev/imu)')
     ap.add_argument('--seconds', type=float, default=10.0)
+    ap.add_argument('--stop', type=float, default=0.15,
+                    help='stop distance past the front of the Roomba, m (default 0.15)')
     args = ap.parse_args(argv)
 
     if tof_node_running():
@@ -111,7 +118,7 @@ def main(argv=None):
         print('Is the Pico plugged in? (ls -la /dev/imu)')
         return 1
     try:
-        check(lambda: port.read(port.in_waiting or 1), args.seconds)
+        check(lambda: port.read(port.in_waiting or 1), args.seconds, stop_m=args.stop)
     except KeyboardInterrupt:
         pass
     finally:

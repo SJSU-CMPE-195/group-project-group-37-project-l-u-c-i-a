@@ -9,9 +9,16 @@ tof_node:
     max_range: 4.0              # m, Range.max_range
     stale_timeout: 0.5          # s without a frame before tof/near goes true
     near_rate: 10.0             # Hz, tof/near is also sent on every frame
-    near_mm: 300                # closer than this = near (same as the Pico's NEAR_MM)
+    # Near = something in the robot's path (lucia_tof/zones.py, where the sensors sit):
+    stop_distance_m: 0.15       # this far past the front of the Roomba (the page's "ToF stop distance")
+    front_m: 0.17               # front of the Roomba from its middle (34 cm across)
+    half_width_m: 0.25          # its path: robot radius + 2 cm each side of the middle
+    z_min_m: 0.02               # lower = the floor
+    z_max_m: 0.45               # higher = it passes under
+    radial: true                # readings along each zone's line of sight (not yet checked)
     near_frames: 3              # frames in a row before a sensor's answer changes (~50 ms)
     min_range_mm: 20            # closer readings are glitches, unless half the zones agree
+    near_mm: 300                # only for sensors zones.py doesn't know: closer than this = near
     publish_imu: true           # IMU readings on imu/data (mapping.launch.py sets this from use_imu)
     imu_frame_id: imu_link
     orientation_variance: 0.0025          # about 3 deg; rough, not measured (same as imu_bridge)

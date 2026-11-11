@@ -12,8 +12,10 @@ stop on, each would stop the robot for nothing. So:
   odd frame can't stop the robot, or let it go. At 60 frames/s, 3 frames add
   50 ms to a stop (1.5 cm at 30 cm/s).
 
-The Pico's own near flag (FLAG_NEAR, from NEAR_MM in src/pico2/main.py) isn't
-used for this; near_mm here should match NEAR_MM (300).
+What counts as near for one frame is up to the caller: tof_node asks
+zones.in_the_way (something in the robot's path, within the stop distance);
+without that, a reading under near_mm. The Pico's own near flag (FLAG_NEAR,
+NEAR_MM in src/pico2/main.py) isn't used.
 """
 
 INVALID = -1
@@ -46,15 +48,17 @@ class NearFilter:
         self.near = True
         self._against = 0       # frames in a row that disagree with self.near
 
-    def update(self, distances):
-        """Feed one frame's 16 distances (mm, -1 = invalid).
+    def update(self, distances, frame_near=None):
+        """Feed one frame's 16 distances (mm, -1 = invalid), and optionally
+        whether this frame has something in the way (decided by the caller).
         Returns (nearest_mm, near): nearest_mm is 0 when the sensor is covered,
         INVALID when nothing is in range."""
-        if too_close(distances, self.min_mm) >= COVERED_ZONES:
-            nearest_mm = 0
-        else:
-            nearest_mm = nearest(distances, self.min_mm)
-        frame_near = 0 <= nearest_mm < self.near_mm
+        covered = too_close(distances, self.min_mm) >= COVERED_ZONES
+        nearest_mm = 0 if covered else nearest(distances, self.min_mm)
+        if covered:
+            frame_near = True       # can't see: count it as danger
+        elif frame_near is None:
+            frame_near = 0 <= nearest_mm < self.near_mm
         if frame_near == self.near:
             self._against = 0
         else:

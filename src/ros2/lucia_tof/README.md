@@ -87,9 +87,15 @@ image it came from.
 
 True when any of these holds:
 
-- some sensor sees something closer than `near_mm` (300 mm, the same as the
-  Pico's `NEAR_MM`), decided with two guards against glitches
-  (`lucia_tof/near_filter.py`): readings closer than the sensor can measure
+- some sensor sees something **in the robot's path**: within its width
+  (`half_width_m`, robot radius + 2 cm each side), no further than
+  `stop_distance_m` (0.15 m, the page's "ToF stop distance") past the front of
+  the Roomba, above the floor and below `z_max_m`. `lucia_tof/zones.py` turns
+  each zone's reading into a point on the robot, from where the sensors sit
+  (25.4 cm up, level; the middle one straight ahead 7.6 cm behind the front, the
+  side ones at 72.5° on the bracket). So the side sensors, which look almost
+  sideways, don't stop it for a wall it's driving along. Decided with two
+  guards against glitches (`lucia_tof/near_filter.py`): readings closer than the sensor can measure
   (`min_range_mm`, 20) are dropped, unless half or more of the zones read that
   close at once (something pressed against it); and a sensor's answer only
   changes after `near_frames` (3) frames in a row agree, about 50 ms. On the
@@ -153,7 +159,12 @@ and which Pico program sent them. View with `rqt_robot_monitor` or
 | `max_range` | 4.0 | m, reported in `Range.max_range` |
 | `stale_timeout` | 0.5 | s without a frame before a sensor counts as stale |
 | `near_rate` | 10.0 | Hz, minimum `tof/near` publish rate |
-| `near_mm` | 300 | closer than this = near |
+| `stop_distance_m` | 0.15 | something in the path this far past the front of the Roomba = near (the page sets it) |
+| `half_width_m` | 0.25 | the path's half width (the page sets it from the robot radius + 2 cm) |
+| `front_m` | 0.17 | front of the Roomba from its middle |
+| `z_min_m`, `z_max_m` | 0.02, 0.45 | lower = floor, higher = it passes under |
+| `radial` | true | readings along each zone's line of sight (else straight out from the face; not yet checked) |
+| `near_mm` | 300 | only for a sensor `zones.py` doesn't know: closer than this = near |
 | `near_frames` | 3 | frames in a row before a sensor's near / clear answer changes |
 | `min_range_mm` | 20 | readings closer than this are glitches (unless half the zones agree: covered) |
 | `publish_imu` | true | publish `imu/data` (`mapping.launch.py` sets it from `use_imu`) |
@@ -172,10 +183,21 @@ ros2 run lucia_tof tof_check            # 10 s; --seconds 20 for longer
 
 Stop mapping first (it refuses while `tof_node` runs: both would read the same
 port). Twice a second it prints each sensor's nearest distance and NEAR, decided
-the way `tof_node` does; then frames per second (about 60 each), frames with a
+the way `tof_node` does (in the path within `--stop`, default 0.15 m); then frames per second (about 60 each), frames with a
 glitch, each sensor's 4x4 grid in mm (-1 = no reading, row 0 at the top), the
 IMU's rate and anything the Pico printed. For the hand test, hold a hand about
 15 cm in front of one sensor at a time: only that one should drop and say NEAR.
+
+## Low obstacles: what the sensors can't see
+
+Mounted 25.4 cm up and level, their view only reaches 22.5° down, so a low object
+drops out of view as the robot gets close (distances from the front of the
+Roomba): 5 cm tall at about 42 cm, 10 cm at about 30 cm, 15 cm at about 17 cm;
+20 cm and taller stay in view. The lidar (30 cm up) only sees things taller than
+that. So the stop can't catch things lower than about 15 cm at a 15 cm stop
+distance. The bracket can't be tilted (2026-11-10); the plan is to put what the
+sensors see on Nav2's map, which remembers a low object seen further out after
+it drops out of view.
 
 ## Known gaps
 
