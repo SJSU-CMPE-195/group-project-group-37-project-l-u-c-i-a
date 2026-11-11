@@ -201,7 +201,8 @@ Transform tree: `map` → `odom` (slam_toolbox) → `base_link` (EKF, or
 
 The hotspot has no internet, so updates need a network that does.
 
-1. Put the Pi on a WiFi with internet (see "Network modes" below), or plug in Ethernet.
+1. Put the Pi on a WiFi with internet (see "Network modes" below). Not Ethernet: since
+   2026-11-10 the Ethernet port is the Jetson's (see "The Jetson link").
 2. On the Pi:
    ```bash
    cd ~/repos/group-project-group-37-project-l-u-c-i-a
@@ -234,15 +235,15 @@ deletes untracked files such as saved maps.)
 |---|---|---|---|
 | Hotspot `lucia-control` (`pi-ap`) | Default at every boot | `10.42.0.1` | No |
 | Shared WiFi | For updates | Varies: `ip -4 addr show wlan0` on the Pi | Yes |
-| Ethernet | Bench work, or as a safe way in while switching WiFi | Varies: `ip -4 addr show eth0` | Depends |
+| Ethernet | Always: the Jetson link (see below) | `192.168.1.1` (Jetson `192.168.1.2`) | No |
 
 The Pi has one WiFi radio, so it's either a hotspot or on a shared WiFi, not both.
 At boot it always starts the hotspot: `pi-ap` has autoconnect priority 100 and
 every saved WiFi has 0 (checked 2026-10-17). Saved WiFi on the Pi: Christian's
 personal network and `LiveLaughLove`.
 
-**Switch to a shared WiFi.** Ethernet SSH is the safest way in, but it works over
-the hotspot too; the session just drops when the hotspot goes away:
+**Switch to a shared WiFi.** Do it from an SSH session over the hotspot; the
+session just drops when the hotspot goes away, and you reconnect over that WiFi:
 ```bash
 nmcli connection show                        # saved networks
 sudo systemctl stop dnsmasq                  # the hotspot's address server - stop it first
@@ -275,6 +276,47 @@ Don't hold it down: that cuts the power. Or `sudo poweroff` over SSH. Either way
 the container gets told to stop, so mapping stops and the Roomba is released
 cleanly before the Pi powers off. (The two-press behavior is from the Pi docs,
 not yet tried on this robot.)
+
+---
+
+## The Jetson link (Ethernet)
+
+Since 2026-11-10 the Pi's Ethernet port goes straight to the Jetson Nano. The Pi
+is `192.168.1.1` on it and hands the Jetson `192.168.1.2` by DHCP; the Jetson's
+own network settings stay on "automatic". Set up on the Pi:
+
+- `Wired connection 1` (NetworkManager): `ipv4.method manual`,
+  `ipv4.addresses 192.168.1.1/24`, `ipv4.never-default yes`.
+- `/etc/dnsmasq.conf` (the hotspot's DHCP server) got these lines. The `static`
+  range means only the Jetson's MAC gets an address, so the Pi can't hand out
+  addresses if its port ever ends up on another network; no gateway or DNS is
+  sent, so the Jetson keeps its own internet if it has any:
+  ```
+  interface=eth0
+  dhcp-range=set:jetson,192.168.1.0,static,255.255.255.0,24h
+  dhcp-host=48:b0:2d:5b:0e:c3,192.168.1.2,lucia-jetson
+  dhcp-option=tag:jetson,3
+  dhcp-option=tag:jetson,6
+  ```
+- On the Jetson, `follow_sender.service` runs `follow_sender.py --host 192.168.1.1
+  --port 5005 --stream --stream-port 8080`: detections to the Pi's port 5005,
+  the camera at `http://192.168.1.2:8080/stream.mjpg` (on the page: Camera → ⚙ →
+  `192.168.1.2:8080`). It keeps retrying every few seconds if the camera isn't
+  found (`journalctl -u follow_sender.service` on the Jetson).
+
+Check from the Pi: `cat /var/lib/misc/dnsmasq.leases` lists the Jetson,
+`ping 192.168.1.2`, and `curl -s --max-time 2 -o /dev/null -w '%{http_code}\n'
+http://192.168.1.2:8080/stream.mjpg` prints 200 once the camera runs. To get into
+the Jetson: SSH into the Pi, then `ssh lucia@192.168.1.2`. If the Jetson came up
+before the Pi, unplug and replug its cable so it asks for an address again.
+Stopping `dnsmasq` (switching WiFi) doesn't cut the Jetson off: its address lasts
+24 h.
+
+**Never change the Ethernet settings while you're SSH'd in through that port**
+(2026-11-10: that locked Christian out). Check with `echo $SSH_CONNECTION`: it
+should start with `10.42.0.` (the hotspot). To give the port back to a router:
+`sudo nmcli connection modify "Wired connection 1" ipv4.method auto ipv4.addresses ""`
+and remove the lines above from `/etc/dnsmasq.conf`.
 
 ---
 

@@ -353,8 +353,12 @@ same web page.
   close). Overlay on/off = which script runs on the Jetson
 - [ ] Page: a Jetson light in the header (messages arriving), people as dots on the radar (needs the UDP
   detections into `web_ui`)
-- [ ] On the robot: the Jetson reachable from the Pi (the Ethernet link, or the hotspot), and the stream
-  smooth over the hotspot
+- [x] The Jetson link (2026-11-10): Ethernet cable Pi ↔ Nano. Pi `192.168.1.1` (static), its `dnsmasq` gives the
+  Nano's MAC (`48:b0:2d:5b:0e:c3`) `192.168.1.2` and nothing else; `follow_sender.service` sends to
+  `--host 192.168.1.1`. Lease and ping work. Setup and checks: `docs/setup/ros2-pi.md`, "The Jetson link"
+- [ ] The camera stream over the link: the ZED wasn't detected on 2026-11-10 ("CAMERA NOT DETECTED", the service
+  retries every few seconds). ZED straight into a USB 3.0 port, Nano on its 5 V 4 A supply; then `curl` from the
+  Pi gives 200, and the page's Camera at `192.168.1.2:8080`. Then: is it smooth over the hotspot?
 - [ ] Sign test: does a raised hand at 1.5-2 m stay in view and fire `follow`?
 
 Flow: ZED 2 → Nano (finds people, reads the sign) → network → Pi node (`/person`, `/gesture`) → mission `follow`
@@ -372,8 +376,7 @@ Decide first:
   and two ROS2 versions talking to each other isn't officially supported. Suggested: Ethan's Python script sends a
   small JSON message over UDP about 10 times a second (person ID, position in meters, gesture), and a node on the Pi
   turns it into ROS2 topics. The Nano stays plain Python and the Pi side can be tested on the laptop
-- [ ] **The link.** A short Ethernet cable Nano ↔ Pi with fixed addresses (the Pi's Ethernet port is free while it
-  runs the hotspot), or the Nano joins `lucia-control` (needs WiFi on the Nano; check the Waveshare board)
+- [x] **The link.** Ethernet cable Nano ↔ Pi, the Pi hands the Nano its address (2026-11-10, see above)
 
 Nano side (Ethan's area):
 - [ ] Body tracking runs on the Nano fast enough (aim for 10 Hz or more). Check whether SDK 3.8.2 can run it
